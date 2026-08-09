@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://janlegenddry.github.io/sitemap-index.xml

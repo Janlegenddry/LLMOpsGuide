@@ -1,0 +1,56 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+import { entries } from "../data";
+
+interface Props {
+  frontmatter: {
+    title: string;
+    description: string;
+    section: string;
+    updated: string;
+    status?: string;
+  };
+}
+
+const { frontmatter } = Astro.props;
+---
+
+<BaseLayout title={`${frontmatter.title} · Janlegenddry`} description={frontmatter.description}>
+  <div class="article-shell">
+    <aside class="article-index" aria-label="知识索引">
+      <p class="eyebrow">知识索引</p>
+      <nav>
+        {entries.map((entry) => (
+          <a href={entry.href} aria-current={Astro.url.pathname === entry.href ? "page" : undefined}>
+            <span>{entry.section}</span>
+            {entry.title}
+          </a>
+        ))}
+      </nav>
+    </aside>
+
+    <article class="article" data-pagefind-body>
+      <nav class="breadcrumb" aria-label="面包屑">
+        <a href="/">首页</a>
+        <span aria-hidden="true">/</span>
+        <span>{frontmatter.section}</span>
+      </nav>
+      <header class="article-header">
+        <p class="eyebrow">{frontmatter.section}</p>
+        <h1>{frontmatter.title}</h1>
+        <p class="article-deck">{frontmatter.description}</p>
+        <dl class="article-meta">
+          <div><dt>更新</dt><dd>{frontmatter.updated}</dd></div>
+          <div><dt>状态</dt><dd>{frontmatter.status || "持续更新"}</dd></div>
+        </dl>
+      </header>
+      <div class="prose">
+        <slot />
+      </div>
+      <footer class="article-end">
+        <p>这篇笔记会随着实践继续校正。发现问题，欢迎在 GitHub 交流。</p>
+        <a href="https://github.com/Janlegenddry" target="_blank" rel="noopener">前往 GitHub</a>
+      </footer>
+    </article>
+  </div>
+</BaseLayout>
