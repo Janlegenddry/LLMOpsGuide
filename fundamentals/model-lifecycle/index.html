@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><meta name="generator" content="Astro v7.2.0"><meta name="description" content="训练、评测、部署、推理和反馈闭环分别解决什么问题。"><link rel="icon" type="image/svg+xml" href="/LLMOpsGuide/favicon.svg"><link rel="canonical" href="https://janlegenddry.github.io/LLMOpsGuide/fundamentals/model-lifecycle/"><meta property="og:type" content="website"><meta property="og:title" content="模型生命周期与 LLMOps 边界 · LLMOpsGuide"><meta property="og:description" content="训练、评测、部署、推理和反馈闭环分别解决什么问题。"><meta property="og:url" content="https://janlegenddry.github.io/LLMOpsGuide/fundamentals/model-lifecycle/"><title>模型生命周期与 LLMOps 边界 · LLMOpsGuide</title><script>
+      const savedTheme = localStorage.getItem("theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light");
+    </script><link rel="stylesheet" href="/LLMOpsGuide/_astro/BaseLayout.BwDXR2_W.css"></head><body><a class="skip-link" href="#main-content">跳到正文</a><header class="site-header"><div class="site-header__inner"><a class="wordmark" href="/LLMOpsGuide/" aria-label="LLMOpsGuide 首页"><span class="wordmark__mark" aria-hidden="true">L</span><span>LLMOpsGuide</span></a><nav class="site-nav" aria-label="主导航"><a href="/LLMOpsGuide/#path">学习路径</a><a href="/LLMOpsGuide/#notes">全部笔记</a></nav><div class="site-header__actions"><button class="search-pill" id="search-open" type="button" aria-label="搜索笔记" aria-haspopup="dialog" aria-controls="search-dialog"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg><span class="search-pill__label">搜索笔记</span><span class="search-pill__keys" aria-hidden="true"><kbd>⌘</kbd><kbd>K</kbd></span></button><dialog class="search-dialog" id="search-dialog" aria-labelledby="search-title"><div class="search-dialog__panel"><div class="search-dialog__field"><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg><label class="sr-only" for="search-input" id="search-title">搜索全部笔记</label><input id="search-input" type="search" autocomplete="off" placeholder="输入主题或关键词"><button class="search-dialog__close" id="search-close" type="button" aria-label="关闭搜索">Esc</button></div><p class="search-dialog__meta" id="search-count" aria-live="polite">输入关键词，或选择最近更新</p><div class="search-dialog__results" id="search-results" role="listbox" aria-label="搜索结果"></div><p class="search-dialog__empty" id="search-empty" hidden>没有找到相关笔记。可以换一个关键词，或从学习路线开始。</p><div class="search-dialog__footer" aria-hidden="true"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>Enter</kbd> 打开</span><span><kbd>Esc</kbd> 关闭</span></div></div></dialog><script type="application/json" id="search-data">[{"title":"LLMOps 系统化学习路线","description":"从模型生命周期到生产运维的知识地图与推荐学习顺序。","href":"/LLMOpsGuide/roadmap/llmops-roadmap/","section":"学习路线","status":"持续更新","updated":"2026-08-09"},{"title":"模型生命周期与 LLMOps 边界","description":"训练、评测、部署、推理和反馈闭环分别解决什么问题。","href":"/LLMOpsGuide/fundamentals/model-lifecycle/","section":"基础体系","status":"已发布","updated":"2026-08-09"},{"title":"SGLang Hang 现场诊断方法","description":"从进程、GPU、Python/Native 栈和日志建立证据链。","href":"/LLMOpsGuide/inference/sglang-hang-diagnosis/","section":"推理服务","status":"持续更新","updated":"2026-08-09"},{"title":"Metrics、Logs 与 Traces","description":"理解三类信号的职责，并用请求生命周期组织排障证据。","href":"/LLMOpsGuide/observability/three-pillars/","section":"可观测性","status":"已发布","updated":"2026-08-09"}]</script><script type="module">var e=document.querySelector(`#search-dialog`),t=document.querySelector(`#search-open`),n=document.querySelector(`#search-close`),r=document.querySelector(`#search-input`),i=document.querySelector(`#search-results`),a=document.querySelector(`#search-count`),o=document.querySelector(`#search-empty`),s=document.querySelector(`#search-data`),c=s?JSON.parse(s.textContent||`[]`):[],l=0,u=c,d=e=>e.toLocaleLowerCase().replace(/\s+/g,``);function f(e=``){if(!i||!a||!o)return;let t=d(e);u=t?c.filter(e=>d(`${e.title}${e.description}${e.section}`).includes(t)):c,l=0,i.innerHTML=``,o.hidden=u.length>0,a.textContent=e?`找到 ${u.length} 篇笔记`:`最近更新`,u.forEach((e,t)=>{let n=document.createElement(`a`);n.className=`search-result${t===l?` is-active`:``}`,n.href=e.href,n.setAttribute(`role`,`option`),n.setAttribute(`aria-selected`,String(t===l)),n.innerHTML=`<span class="search-result__section"></span><strong></strong><span class="search-result__description"></span>`;let r=n.querySelector(`.search-result__section`),a=n.querySelector(`strong`),o=n.querySelector(`.search-result__description`);r&&(r.textContent=e.section),a&&(a.textContent=e.title),o&&(o.textContent=e.description),i.append(n)})}function p(e){let t=[...document.querySelectorAll(`.search-result`)];t.length&&(l=(e+t.length)%t.length,t.forEach((e,t)=>{let n=t===l;e.classList.toggle(`is-active`,n),e.setAttribute(`aria-selected`,String(n))}),t[l]?.scrollIntoView({block:`nearest`}))}function m(){!e||!r||(f(r.value),e.showModal(),document.querySelector(`main`)?.setAttribute(`inert`,``),window.setTimeout(()=>r.focus(),0))}function h(){e&&(e.close(),document.querySelector(`main`)?.removeAttribute(`inert`),t?.focus({preventScroll:!0}))}t?.addEventListener(`click`,m),n?.addEventListener(`click`,h),r?.addEventListener(`input`,()=>f(r.value)),e?.addEventListener(`click`,t=>{t.target===e&&h()}),e?.addEventListener(`close`,()=>document.querySelector(`main`)?.removeAttribute(`inert`)),document.addEventListener(`keydown`,t=>{if((t.metaKey||t.ctrlKey)&&t.key.toLowerCase()===`k`){t.preventDefault(),e?.open?h():m();return}e?.open&&(t.key===`ArrowDown`?(t.preventDefault(),p(l+1)):t.key===`ArrowUp`?(t.preventDefault(),p(l-1)):t.key===`Enter`&&document.activeElement===r&&(t.preventDefault(),document.querySelectorAll(`.search-result`)[l]?.click()))});</script><button class="icon-button" id="theme-toggle" type="button" aria-label="切换深色模式" aria-pressed="false"><svg class="theme-icon theme-icon--light" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg><svg class="theme-icon theme-icon--dark" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path d="M20 15.2A8.2 8.2 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"></path></svg></button><a class="icon-button" href="https://github.com/Janlegenddry/LLMOpsGuide" target="_blank" rel="noopener" aria-label="打开 LLMOpsGuide 的 GitHub 仓库"><svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19"><path d="M12 2.5a9.5 9.5 0 0 0-3 18.5c.5.1.7-.2.7-.5v-1.8c-2.9.6-3.5-1.2-3.5-1.2-.5-1.2-1.2-1.5-1.2-1.5-1-.7.1-.7.1-.7 1.1.1 1.7 1.1 1.7 1.1 1 1.7 2.5 1.2 3.1.9.1-.7.4-1.2.7-1.5-2.3-.3-4.7-1.2-4.7-4.7 0-1 .4-1.9 1-2.6-.1-.3-.4-1.3.1-2.6 0 0 .8-.3 2.6 1a9 9 0 0 1 4.8 0c1.8-1.2 2.6-1 2.6-1 .5 1.3.2 2.3.1 2.6.6.7 1 1.6 1 2.6 0 3.6-2.4 4.4-4.7 4.7.4.3.7 1 .7 1.9v2.8c0 .3.2.6.7.5A9.5 9.5 0 0 0 12 2.5Z"></path></svg></a></div></div></header><script type="module">var e=document.querySelector(`#theme-toggle`),t=document.documentElement;function n(){let n=t.dataset.theme===`dark`;e?.setAttribute(`aria-pressed`,String(n)),e?.setAttribute(`aria-label`,n?`切换浅色模式`:`切换深色模式`)}e?.addEventListener(`click`,()=>{let e=t.dataset.theme===`dark`?`light`:`dark`;t.dataset.theme=e,localStorage.setItem(`theme`,e),n()}),n();</script><main id="main-content"><div class="article-shell"><aside class="article-index" aria-label="知识索引"><p class="eyebrow">知识索引</p><nav><a href="/LLMOpsGuide/roadmap/llmops-roadmap/"><span>学习路线</span>LLMOps 系统化学习路线</a><a href="/LLMOpsGuide/fundamentals/model-lifecycle/" aria-current="page"><span>基础体系</span>模型生命周期与 LLMOps 边界</a><a href="/LLMOpsGuide/inference/sglang-hang-diagnosis/"><span>推理服务</span>SGLang Hang 现场诊断方法</a><a href="/LLMOpsGuide/observability/three-pillars/"><span>可观测性</span>Metrics、Logs 与 Traces</a></nav></aside><article class="article" data-pagefind-body><nav class="breadcrumb" aria-label="面包屑"><a href="/LLMOpsGuide/">首页</a><span aria-hidden="true">/</span><span>基础体系</span></nav><header class="article-header"><p class="eyebrow">基础体系</p><h1>模型生命周期与 LLMOps 边界</h1><p class="article-deck">训练、评测、部署、推理和反馈闭环分别解决什么问题。</p><dl class="article-meta"><div><dt>更新</dt><dd>2026-08-09T00:00:00.000Z</dd></div><div><dt>状态</dt><dd>已发布</dd></div></dl></header><div class="prose"><p>理解 LLMOps 的第一步，不是记住平台组件，而是明确每个阶段交付什么，以及它对下一阶段作出了哪些承诺。</p>
+<h2 id="五个阶段五类交付物">五个阶段，五类交付物</h2>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>核心问题</th>
+<th>主要交付物</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>训练与微调</td>
+<td>模型怎样获得目标能力</td>
+<td>权重、tokenizer、训练配置、数据版本</td>
+</tr>
+<tr>
+<td>评测</td>
+<td>能力和风险是否达到门槛</td>
+<td>数据集、评测代码、分数与失败样本</td>
+</tr>
+<tr>
+<td>制品化</td>
+<td>结果能否稳定复现</td>
+<td>镜像、模型制品、依赖锁定、校验值</td>
+</tr>
+<tr>
+<td>部署与推理</td>
+<td>怎样在资源约束下对外服务</td>
+<td>服务配置、容量模型、SLO、回滚方案</td>
+</tr>
+<tr>
+<td>线上反馈</td>
+<td>真实流量暴露了什么</td>
+<td>业务指标、异常样本、故障记录、改进任务</td>
+</tr>
+</tbody>
+</table>
+<h2 id="llmops-的边界在哪里">LLMOps 的边界在哪里</h2>
+<p>LLMOps 会与 MLOps、平台工程和 SRE 重叠，但关注点不同：</p>
+<ul>
+<li><strong>MLOps</strong> 更广，覆盖传统机器学习与大模型的全生命周期。</li>
+<li><strong>LLMOps</strong> 更关注大模型特有的问题，例如超大制品、GPU 资源、Prompt 与上下文、推理调度和生成质量。</li>
+<li><strong>平台工程</strong> 提供标准化基础设施和自助能力。</li>
+<li><strong>SRE</strong> 用 SLO、错误预算和工程手段约束可靠性风险。</li>
+</ul>
+<p>实际组织里不必强行划出部门边界。更有价值的是明确责任接口：谁定义评测门槛，谁对部署配置负责，谁在异常发生时拥有止损权限。</p>
+<h2 id="一次发布至少要能回答什么">一次发布至少要能回答什么</h2>
+<ol>
+<li>运行的是哪一份模型和 tokenizer？</li>
+<li>它通过了哪一版评测，失败项是什么？</li>
+<li>使用什么镜像、引擎版本和启动参数？</li>
+<li>目标流量下的容量、P95 TTFT 和 P95 TPOT 是多少？</li>
+<li>灰度、回滚与兼容策略是什么？</li>
+<li>哪些指标能够证明发布成功或发生退化？</li>
+</ol>
+<p>如果这些问题无法被同一条发布记录串起来，系统仍然存在不可追踪的断点。</p>
+<h2 id="一个实用判断">一个实用判断</h2>
+<p>把 LLMOps 看作“模型供应链加生产反馈闭环”更准确：前半段保证交付物可信，后半段保证服务可控，并把线上事实重新带回模型改进。</p>
+</div><footer class="article-end"><p>这篇笔记会随着实践继续校正。发现问题，欢迎在 GitHub 交流。</p><a href="https://github.com/Janlegenddry/LLMOpsGuide/issues" target="_blank" rel="noopener">提交反馈</a></footer></article></div></main><footer class="site-footer"><div class="site-footer__inner"><p>LLMOpsGuide · 大模型运维系统学习知识库</p><div class="site-footer__links"><a href="https://github.com/Janlegenddry/LLMOpsGuide" target="_blank" rel="noopener">GitHub</a><a href="/LLMOpsGuide/#notes">知识索引</a></div><p>内容持续校正与更新</p></div></footer></body></html>
