@@ -1,17 +1,18 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { entries, learningPath, sections } from "../data";
+import { withBase } from "../paths";
 ---
 
 <BaseLayout>
   <div class="home-shell">
     <section class="home-intro" aria-labelledby="intro-title">
-      <p class="eyebrow">LLMOps Notes · 2026</p>
+      <p class="eyebrow">LLMOpsGuide · 2026</p>
       <h1 id="intro-title">LLMOps，系统地学。</h1>
       <p>这里记录我对模型生命周期、推理服务、可观测性与生产运维的理解。内容按学习顺序组织，也保留真实故障现场里的判断过程。</p>
       <div class="home-intro__links">
         <a class="text-link" href="#path">从学习路径开始</a>
-        <a class="text-link text-link--muted" href="https://github.com/Janlegenddry" target="_blank" rel="noopener">在 GitHub 交流</a>
+        <a class="text-link text-link--muted" href="https://github.com/Janlegenddry/LLMOpsGuide" target="_blank" rel="noopener">在 GitHub 交流</a>
       </div>
     </section>
 
@@ -26,7 +27,7 @@ import { entries, learningPath, sections } from "../data";
       <ol class="learning-path">
         {learningPath.map((step) => (
           <li>
-            <a href={step.href}>
+            <a href={withBase(step.href)}>
               <span class="learning-path__index">{step.index}</span>
               <span class="learning-path__body"><strong>{step.title}</strong><span>{step.description}</span></span>
               <span class="learning-path__arrow" aria-hidden="true">↗</span>
@@ -56,7 +57,7 @@ import { entries, learningPath, sections } from "../data";
               <ul>
                 {sectionEntries.map((entry) => (
                   <li>
-                    <a href={entry.href}>
+                    <a href={withBase(entry.href)}>
                       <span><strong>{entry.title}</strong><span>{entry.description}</span></span>
                       <span class="note-group__meta">{entry.status}</span>
                     </a>

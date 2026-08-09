@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "./BaseLayout.astro";
 import { entries } from "../data";
+import { withBase } from "../paths";
 
 interface Props {
   frontmatter: {
@@ -15,13 +16,13 @@ interface Props {
 const { frontmatter } = Astro.props;
 ---
 
-<BaseLayout title={`${frontmatter.title} · Janlegenddry`} description={frontmatter.description}>
+<BaseLayout title={`${frontmatter.title} · LLMOpsGuide`} description={frontmatter.description}>
   <div class="article-shell">
     <aside class="article-index" aria-label="知识索引">
       <p class="eyebrow">知识索引</p>
       <nav>
         {entries.map((entry) => (
-          <a href={entry.href} aria-current={Astro.url.pathname === entry.href ? "page" : undefined}>
+          <a href={withBase(entry.href)} aria-current={Astro.url.pathname === withBase(entry.href) ? "page" : undefined}>
             <span>{entry.section}</span>
             {entry.title}
           </a>
@@ -31,7 +32,7 @@ const { frontmatter } = Astro.props;
 
     <article class="article" data-pagefind-body>
       <nav class="breadcrumb" aria-label="面包屑">
-        <a href="/">首页</a>
+        <a href={withBase("/")}>首页</a>
         <span aria-hidden="true">/</span>
         <span>{frontmatter.section}</span>
       </nav>
@@ -49,7 +50,7 @@ const { frontmatter } = Astro.props;
       </div>
       <footer class="article-end">
         <p>这篇笔记会随着实践继续校正。发现问题，欢迎在 GitHub 交流。</p>
-        <a href="https://github.com/Janlegenddry" target="_blank" rel="noopener">前往 GitHub</a>
+        <a href="https://github.com/Janlegenddry/LLMOpsGuide/issues" target="_blank" rel="noopener">提交反馈</a>
       </footer>
     </article>
   </div>

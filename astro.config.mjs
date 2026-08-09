@@ -3,6 +3,7 @@ import sitemap from "@astrojs/sitemap";
 
 export default defineConfig({
   site: "https://janlegenddry.github.io",
+  base: "/LLMOpsGuide",
   integrations: [sitemap()],
   markdown: {
     shikiConfig: {

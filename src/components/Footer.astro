@@ -1,9 +1,13 @@
+---
+import { withBase } from "../paths";
+---
+
 <footer class="site-footer">
   <div class="site-footer__inner">
-    <p>Janlegenddry · LLMOps 学习笔记</p>
+    <p>LLMOpsGuide · 大模型运维系统学习知识库</p>
     <div class="site-footer__links">
-      <a href="https://github.com/Janlegenddry" target="_blank" rel="noopener">GitHub</a>
-      <a href="/#notes">知识索引</a>
+      <a href="https://github.com/Janlegenddry/LLMOpsGuide" target="_blank" rel="noopener">GitHub</a>
+      <a href={withBase("/#notes")}>知识索引</a>
     </div>
     <p>内容持续校正与更新</p>
   </div>

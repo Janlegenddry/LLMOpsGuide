@@ -1,6 +1,9 @@
-# Janlegenddry · LLMOps Notes
+# LLMOpsGuide
 
-个人 LLMOps 系统化学习知识库，使用 Astro 构建并发布到 GitHub Pages。
+面向大模型运维的系统学习知识库，覆盖模型生命周期、推理服务、可观测性与生产实践。使用 Astro 构建并发布到 GitHub Pages。
+
+- 在线阅读：<https://janlegenddry.github.io/LLMOpsGuide/>
+- 维护说明：[CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## 本地开发
 
@@ -9,7 +12,7 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:4321`。
+打开终端显示的地址。由于线上站点位于项目路径，本地地址通常是 `http://localhost:4321/LLMOpsGuide/`。
 
 ## 新增文章
 
@@ -29,14 +32,14 @@ updated: 2026-08-09
 正文从这里开始。
 ```
 
-新增后同步更新 `src/data.ts`，首页目录与搜索框就会出现该文章。
+新增后同步更新 `src/data.ts`，首页目录与搜索框就会出现该文章。完整步骤见 `CONTRIBUTING.md`。
 
 ## 发布
 
 推送到 `main` 分支后，GitHub Actions 自动构建并发布：
 
 ```text
-https://janlegenddry.github.io/
+https://janlegenddry.github.io/LLMOpsGuide/
 ```
 
-首次发布前，需要在仓库 `Settings → Pages → Build and deployment` 中将 Source 设为 `GitHub Actions`。
+工作流会构建 `dist` 并发布到 `gh-pages` 分支。仓库 `Settings → Pages → Build and deployment` 的 Source 需设置为 `Deploy from a branch`，分支选择 `gh-pages`、目录选择 `/ (root)`。
