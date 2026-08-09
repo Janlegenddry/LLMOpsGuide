@@ -1,12 +1,18 @@
 {
-  "date": "2026-08-09",
-  "framework": "Astro",
-  "status": "greenfield",
-  "preserve": [],
+  "date": "2026-08-10",
+  "framework": "Astro 7",
+  "status": "design.md-managed app",
+  "preserve": [
+    "Astro routes and Markdown content",
+    "Space Grotesk / Inter / JetBrains Mono",
+    "light and dark modes",
+    "accessible command search"
+  ],
   "introduce": [
-    "Cobalt design tokens",
-    "Index-First macrostructure",
-    "accessible command search",
-    "responsive documentation layout"
+    "Almanac design tokens",
+    "Ecosystem Index home",
+    "Long Document articles",
+    "N3 responsive side-rail navigation",
+    "article table of contents"
   ]
 }

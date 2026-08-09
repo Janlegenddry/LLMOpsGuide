@@ -1,53 +1,23 @@
 ---
-import SearchDialog from "./SearchDialog.astro";
 import { withBase } from "../paths";
 ---
 
-<header class="site-header">
-  <div class="site-header__inner">
-    <a class="wordmark" href={withBase("/")} aria-label="LLMOpsGuide 首页">
-      <span class="wordmark__mark" aria-hidden="true">L</span>
-      <span>LLMOpsGuide</span>
-    </a>
-    <nav class="site-nav" aria-label="主导航">
-      <a href={withBase("/#path")}>学习路径</a>
-      <a href={withBase("/#notes")}>全部笔记</a>
-    </nav>
-    <div class="site-header__actions">
-      <SearchDialog />
-      <button class="icon-button" id="theme-toggle" type="button" aria-label="切换深色模式" aria-pressed="false">
-        <svg class="theme-icon theme-icon--light" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
-          <circle cx="12" cy="12" r="3.5"></circle>
-          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
-        </svg>
-        <svg class="theme-icon theme-icon--dark" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
-          <path d="M20 15.2A8.2 8.2 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"></path>
-        </svg>
-      </button>
-      <a class="icon-button" href="https://github.com/Janlegenddry/LLMOpsGuide" target="_blank" rel="noopener" aria-label="打开 LLMOpsGuide 的 GitHub 仓库">
-        <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19">
-          <path d="M12 2.5a9.5 9.5 0 0 0-3 18.5c.5.1.7-.2.7-.5v-1.8c-2.9.6-3.5-1.2-3.5-1.2-.5-1.2-1.2-1.5-1.2-1.5-1-.7.1-.7.1-.7 1.1.1 1.7 1.1 1.7 1.1 1 1.7 2.5 1.2 3.1.9.1-.7.4-1.2.7-1.5-2.3-.3-4.7-1.2-4.7-4.7 0-1 .4-1.9 1-2.6-.1-.3-.4-1.3.1-2.6 0 0 .8-.3 2.6 1a9 9 0 0 1 4.8 0c1.8-1.2 2.6-1 2.6-1 .5 1.3.2 2.3.1 2.6.6.7 1 1.6 1 2.6 0 3.6-2.4 4.4-4.7 4.7.4.3.7 1 .7 1.9v2.8c0 .3.2.6.7.5A9.5 9.5 0 0 0 12 2.5Z"></path>
-        </svg>
-      </a>
-    </div>
+<header class="mobile-header">
+  <a class="wordmark wordmark--mobile" href={withBase("/")} aria-label="LLMOpsGuide 首页">
+    <span class="wordmark__mark" aria-hidden="true">L</span>
+    <span>LLMOpsGuide</span>
+  </a>
+  <div class="mobile-header__actions">
+    <button class="icon-button" type="button" data-search-open aria-label="搜索笔记" aria-haspopup="dialog" aria-controls="search-dialog">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
+        <circle cx="11" cy="11" r="6.5"></circle>
+        <path d="m16 16 4 4"></path>
+      </svg>
+    </button>
+    <button class="icon-button" id="nav-open" type="button" aria-label="打开知识库目录" aria-controls="site-sidebar" aria-expanded="false">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19">
+        <path d="M4 7h16M4 12h16M4 17h16"></path>
+      </svg>
+    </button>
   </div>
 </header>
-
-<script>
-  const themeToggle = document.querySelector<HTMLButtonElement>("#theme-toggle");
-  const root = document.documentElement;
-
-  function updateThemeButton() {
-    const isDark = root.dataset.theme === "dark";
-    themeToggle?.setAttribute("aria-pressed", String(isDark));
-    themeToggle?.setAttribute("aria-label", isDark ? "切换浅色模式" : "切换深色模式");
-  }
-
-  themeToggle?.addEventListener("click", () => {
-    const next = root.dataset.theme === "dark" ? "light" : "dark";
-    root.dataset.theme = next;
-    localStorage.setItem("theme", next);
-    updateThemeButton();
-  });
-  updateThemeButton();
-</script>

@@ -1,5 +1,20 @@
 [
   {
+    "date": "2026-08-10",
+    "scope": "app",
+    "macrostructure": "Ecosystem Index / Long Document",
+    "theme": "Almanac",
+    "enrichment": "none",
+    "nav": "N3",
+    "footer": "Ft1",
+    "brief": "将 LLMOpsGuide 重构为紧凑的工程知识库与长文阅读系统",
+    "critique": "P5 H5 E4 S5 R5 V5",
+    "slopTest": "pass (58/58)",
+    "contrast": "pass (40–41)",
+    "mobile": "pass (320/375/414/768)",
+    "build": "pass (Astro 5 pages, 0 diagnostics)"
+  },
+  {
     "date": "2026-08-09",
     "macrostructure": "Index-First",
     "theme": "Cobalt",

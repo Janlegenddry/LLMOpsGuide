@@ -1,0 +1,39 @@
+<aside class="article-toc" aria-label="本文目录">
+  <p>本文目录</p>
+  <nav id="article-toc-list"></nav>
+</aside>
+
+<script>
+  const toc = document.querySelector<HTMLElement>("#article-toc-list");
+  const tocShell = document.querySelector<HTMLElement>(".article-toc");
+  const headings = [...document.querySelectorAll<HTMLElement>(".prose h2, .prose h3")];
+
+  function headingId(heading: HTMLElement, index: number) {
+    if (heading.id) return heading.id;
+    const normalized = heading.textContent?.trim().replace(/\s+/g, "-").replace(/[^\p{L}\p{N}-]/gu, "") || `section-${index + 1}`;
+    heading.id = normalized;
+    return normalized;
+  }
+
+  if (toc && headings.length > 1) {
+    headings.forEach((heading, index) => {
+      const link = document.createElement("a");
+      link.href = `#${headingId(heading, index)}`;
+      link.textContent = heading.textContent || "未命名章节";
+      link.className = heading.tagName === "H3" ? "article-toc__sub" : "";
+      toc.append(link);
+    });
+
+    const links = [...toc.querySelectorAll<HTMLAnchorElement>("a")];
+    const observer = new IntersectionObserver((items) => {
+      const visible = items.find((item) => item.isIntersecting);
+      if (!visible) return;
+      links.forEach((link) => link.removeAttribute("aria-current"));
+      links.find((link) => link.getAttribute("href") === `#${visible.target.id}`)?.setAttribute("aria-current", "location");
+    }, { rootMargin: "-18% 0px -70% 0px" });
+    headings.forEach((heading) => observer.observe(heading));
+
+  } else {
+    tocShell?.setAttribute("hidden", "");
+  }
+</script>

@@ -1,0 +1,120 @@
+---
+import { entries, sections } from "../data";
+import { withBase } from "../paths";
+
+const currentPath = Astro.url.pathname;
+---
+
+<button class="site-sidebar__scrim" type="button" data-nav-close aria-label="关闭知识库目录"></button>
+<aside class="site-sidebar" id="site-sidebar" aria-label="知识库导航">
+  <div class="site-sidebar__mast">
+    <a class="wordmark" href={withBase("/")} aria-label="LLMOpsGuide 首页">
+      <span class="wordmark__mark" aria-hidden="true">L</span>
+      <span>LLMOpsGuide</span>
+    </a>
+    <button class="icon-button site-sidebar__close" type="button" data-nav-close aria-label="关闭知识库目录">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19">
+        <path d="m6 6 12 12M18 6 6 18"></path>
+      </svg>
+    </button>
+  </div>
+
+  <button class="search-pill search-pill--rail" type="button" data-search-open aria-label="搜索笔记" aria-haspopup="dialog" aria-controls="search-dialog">
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
+      <circle cx="11" cy="11" r="6.5"></circle>
+      <path d="m16 16 4 4"></path>
+    </svg>
+    <span class="search-pill__label">搜索笔记</span>
+    <span class="search-pill__keys" aria-hidden="true"><kbd>⌘</kbd><kbd>K</kbd></span>
+  </button>
+
+  <nav class="rail-nav" aria-label="主要内容">
+    <div class="rail-nav__group">
+      <p>开始</p>
+      <a href={withBase("/")} aria-current={currentPath === withBase("/") ? "page" : undefined}>知识库首页</a>
+      <a href={withBase("/#path")}>学习路径</a>
+    </div>
+
+    {sections.map((section) => {
+      const sectionEntries = entries.filter((entry) => entry.section === section.title);
+      return (
+        <div class="rail-nav__group">
+          <a class="rail-nav__section" href={withBase(`/#section-${section.id}`)}>{section.title}</a>
+          {sectionEntries.map((entry) => (
+            <a
+              class="rail-nav__entry"
+              href={withBase(entry.href)}
+              aria-current={currentPath === withBase(entry.href) ? "page" : undefined}
+              title={entry.title}
+            >
+              {entry.title}
+            </a>
+          ))}
+        </div>
+      );
+    })}
+  </nav>
+
+  <div class="site-sidebar__tools">
+    <button class="rail-tool theme-toggle" type="button" aria-label="切换深色模式" aria-pressed="false">
+      <svg class="theme-icon theme-icon--light" aria-hidden="true" viewBox="0 0 24 24" width="17" height="17">
+        <circle cx="12" cy="12" r="3.5"></circle>
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+      </svg>
+      <svg class="theme-icon theme-icon--dark" aria-hidden="true" viewBox="0 0 24 24" width="17" height="17">
+        <path d="M20 15.2A8.2 8.2 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"></path>
+      </svg>
+      <span>显示模式</span>
+    </button>
+    <a class="rail-tool" href="https://github.com/Janlegenddry/LLMOpsGuide" target="_blank" rel="noopener">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
+        <path d="M12 2.5a9.5 9.5 0 0 0-3 18.5c.5.1.7-.2.7-.5v-1.8c-2.9.6-3.5-1.2-3.5-1.2-.5-1.2-1.2-1.5-1.2-1.5-1-.7.1-.7.1-.7 1.1.1 1.7 1.1 1.7 1.1 1 1.7 2.5 1.2 3.1.9.1-.7.4-1.2.7-1.5-2.3-.3-4.7-1.2-4.7-4.7 0-1 .4-1.9 1-2.6-.1-.3-.4-1.3.1-2.6 0 0 .8-.3 2.6 1a9 9 0 0 1 4.8 0c1.8-1.2 2.6-1 2.6-1 .5 1.3.2 2.3.1 2.6.6.7 1 1.6 1 2.6 0 3.6-2.4 4.4-4.7 4.7.4.3.7 1 .7 1.9v2.8c0 .3.2.6.7.5A9.5 9.5 0 0 0 12 2.5Z"></path>
+      </svg>
+      <span>GitHub</span>
+    </a>
+  </div>
+</aside>
+
+<script>
+  const root = document.documentElement;
+  const sidebar = document.querySelector<HTMLElement>("#site-sidebar");
+  const openButton = document.querySelector<HTMLButtonElement>("#nav-open");
+  const closeButtons = document.querySelectorAll<HTMLButtonElement>("[data-nav-close]");
+  const desktopQuery = window.matchMedia("(min-width: 64rem)");
+
+  function setNavigation(open: boolean) {
+    const isDesktop = desktopQuery.matches;
+    root.toggleAttribute("data-nav-open", open && !isDesktop);
+    openButton?.setAttribute("aria-expanded", String(open && !isDesktop));
+    sidebar?.toggleAttribute("inert", !isDesktop && !open);
+    if (open && !isDesktop) sidebar?.querySelector<HTMLButtonElement>("[data-nav-close]")?.focus({ preventScroll: true });
+  }
+
+  openButton?.addEventListener("click", () => setNavigation(true));
+  closeButtons.forEach((button) => button.addEventListener("click", () => {
+    setNavigation(false);
+    openButton?.focus({ preventScroll: true });
+  }));
+  sidebar?.querySelectorAll("a").forEach((link) => link.addEventListener("click", () => setNavigation(false)));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && root.hasAttribute("data-nav-open")) setNavigation(false);
+  });
+  desktopQuery.addEventListener("change", () => setNavigation(false));
+  setNavigation(false);
+
+  const themeToggles = document.querySelectorAll<HTMLButtonElement>(".theme-toggle");
+  function updateThemeButtons() {
+    const isDark = root.dataset.theme === "dark";
+    themeToggles.forEach((button) => {
+      button.setAttribute("aria-pressed", String(isDark));
+      button.setAttribute("aria-label", isDark ? "切换浅色模式" : "切换深色模式");
+    });
+  }
+  themeToggles.forEach((button) => button.addEventListener("click", () => {
+    const next = root.dataset.theme === "dark" ? "light" : "dark";
+    root.dataset.theme = next;
+    localStorage.setItem("theme", next);
+    updateThemeButtons();
+  }));
+  updateThemeButtons();
+</script>
