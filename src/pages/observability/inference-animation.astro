@@ -1,9 +1,10 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import InferenceLab from "../../components/InferenceLab.astro";
+import AdvancedInferenceLab from "../../components/AdvancedInferenceLab.astro";
 import { withBase } from "../../paths";
 ---
-<BaseLayout title="一次大模型推理的旅程 · LLMOpsGuide" description="交互动画详解 prompt 如何经过调度、分词、Transformer、KV Cache、Prefill 与 Decode，逐个生成 token 并流式返回。">
+<BaseLayout title="一次大模型推理的旅程 · LLMOpsGuide" description="交互动画详解大模型推理、投机解码、前缀复用与 Prefill/Decode 分离，观察 token 验证、KV 缓存与跨实例交接。">
   <article class="inference-page" data-pagefind-body>
     <nav class="breadcrumb" aria-label="面包屑"><a href={withBase("/")}>首页</a><span aria-hidden="true"> / </span><a href={withBase("/#section-observability")}>可观测性</a></nav>
     <header class="article-header">
@@ -11,9 +12,10 @@ import { withBase } from "../../paths";
       <h1>一次大模型推理的旅程</h1>
       <p class="article-deck">从你按下发送，到屏幕上的第一个字。沿着数据走进调度器与 Transformer，再跟随每一个 token 回到用户端。</p>
       <dl class="article-meta"><div><dt>更新</dt><dd>2026.09.06</dd></div><div><dt>形式</dt><dd>动画实验 + 分层讲解</dd></div></dl>
-      <nav class="reading-links" aria-label="阅读导航"><a href="#inference-lab">开始实验</a><a href="#model-math">模型内部</a><a href="#prefill-decode">Prefill 与 Decode</a><a href="#observing">对应观测信号</a><a href="#references">参考资料</a></nav>
+      <nav class="reading-links" aria-label="阅读导航"><a href="#inference-lab">基础动画</a><a href="#advanced-inference">三种优化动画</a><a href="#model-math">模型内部</a><a href="#prefill-decode">Prefill 与 Decode</a><a href="#observing">对应观测信号</a><a href="#references">参考资料</a></nav>
     </header>
     <InferenceLab />
+    <AdvancedInferenceLab />
     <div class="prose lesson">
       <h2 id="how-to-read">先跟随路径，再看数据</h2>
       <p>先用默认 prompt 播放一次，再拖动进度条回到 Attention。观察 Prefill 的因果三角形怎样在 Decode 中变成一行；随后看每层 KV 长度怎样增加，最后看用户输出何时出现。每个节点都可以点击，播放中也可以暂停、返回上一步或切换速度。</p>
@@ -52,6 +54,35 @@ Decode(上一 token)  → 选出 EOS → 结束并回收</code></pre>
       <h2 id="returning">为什么文字能一边生成，一边返回？</h2>
       <p>服务不必等完整回答结束：一旦增量解码器拥有可发送文本，就可以写入 SSE 等流式协议，网关转发，浏览器把收到的片段追加到页面。网络发送和下一轮模型计算可以重叠。一个 token 可能对应不完整字节，一个 chunk 也可能包含多个 token，因此真实用户看到的节奏不总与 GPU 解码步完全一致。</p>
       <p>结束由 EOS、输出上限、停止串、取消或错误等条件决定。服务发送相应结束原因，完成使用量统计并释放请求资源。断开连接后还应把取消传递到引擎，否则用户已经离开，服务仍可能继续消耗计算和 KV 空间。</p>
+      <h2 id="speculative-decoding">投机解码：先提出，再验证，最后才返回</h2>
+      <p>普通自回归生成每轮由目标模型推进一个 token。投机解码先用成本较低的草稿机制提出多个候选，再让目标模型批量验证，尝试在一次目标模型前向中确认多个位置。草稿不一定来自独立小模型，也可以来自其他提议机制；本页选用独立草稿模型，便于分清谁在提议、谁在裁决。</p>
+      <p>动画使用贪心策略：草稿提出“模型 / 逐个 / 检索”，目标模型在有效前缀上的选择是“模型 / 逐个 / 生成”。前两颗接受，第三颗替换为“生成”；第三颗及其后的草稿分支全部丢弃。目标模型的临时 KV 也截断到已接受前缀，替代 token 在下一次作为输入时才写入 KV。如果 3 颗全部接受，末位置的预测还可提供第 4 颗额外 token。</p>
+      <p>目标模型能并行验证多个位置，是因为这些位置的候选输入已经给出，并可使用因果遮罩计算；不是模型一次“想出了”所有未来文字。首次错误之后的分布依赖错误上下文，不应拿来继续拼接答案。草稿产生与验证的执行成本都必须计算在内。</p>
+      <h3>随机采样时，不是简单比较两个 token 是否相同</h3>
+      <p>设目标分布为 p、草稿分布为 q，候选 x 从 q 采样。经典投机采样以 <code>min(1, p(x) / q(x))</code> 的概率接受；首次拒绝后，从归一化的 <code>max(p − q, 0)</code> 残差分布采样替代项。全部接受时再从目标分布抽取额外项。正确实现这套校正可以保持目标采样分布；它不意味着逐次随机运行必定输出同一串文字。本页的 token 相等判定只演示贪心分支，不冒充随机采样算法。参见 <a href="https://arxiv.org/abs/2211.17192" target="_blank" rel="noopener">投机解码原论文</a>。</p>
+      <p>诊断时同时看接受长度分布、验证耗时、草稿耗时与端到端 ITL。接受率过低、草稿过贵，或目标验证批次带来额外资源竞争时，收益可能消失；不能把“每轮确认 4 颗”直接标成“快 4 倍”。</p>
+      <h2 id="prefix-reuse">前缀复用：跳过已经计算过的输入位置</h2>
+      <p>普通 KV Cache 在同一请求的 Decode 中复用历史；前缀复用进一步把已有前缀的各层 K/V 留给后续兼容请求。典型场景是重复的系统指令、相同长文档和多轮对话历史。它缓存中间状态，不缓存答案，主要减少重复输入的 Prefill 工作。参见 <a href="https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/" target="_blank" rel="noopener">vLLM · Automatic Prefix Caching</a>。</p>
+      <p>命中要求从开头起的 token 前缀及其计算上下文一致，不是语义相似或中间字符串相同。前面改了一个 token，后面相同文字的 K/V 也可能变化。模型权重、适配器、位置配置与缓存隔离域等同样重要，不能跨不兼容模型或不允许共享的租户盲目复用。</p>
+      <pre><code>输入 S 个位置，命中 H 个：
+前缀 [0, H) → 直接复用每层 K/V
+后缀 [H, S) → Embedding → 全部 Transformer 层
+后缀 Q      → 读取前缀 K/V + 因果可见的后缀 K/V
+末位置 logits → 选择 y1 → 普通 Decode</code></pre>
+      <p>动画以 4 token 为一个教学块，保留完整块，并至少留下末位置所在块重算，以获得新的末位置 logits；这是清晰展示数据路径的选择，不是所有缓存实现的固定块大小或全命中处理策略。命中 H 个位置，意味着这些位置不再做完整前向，但后缀仍需读取它们的 K/V。</p>
+      <p>请求结束后，解除活动引用与淘汰缓存是两件事。可复用块可以留在缓存池，内存压力下再被回收。“曾经处理过”并不保证下一次命中。除了 TTFT，要区分命中请求占比、命中 token 占比、缓存容量和淘汰率；大量只命中短前缀的请求未必节省很多计算。</p>
+      <h2 id="pd-disaggregation">Prefill/Decode 分离：把上下文交给另一组实例</h2>
+      <p>P/D 分离把输入处理和增量生成放到不同实例池，让两类负载分别调度、配置与扩缩容。它不是 Transformer 按层切分的流水线并行：P 和 D 都执行完整的模型逻辑，实例内部仍可各自采用多 GPU 并行。分离可减少 Prefill 对 Decode 的干扰，但新增 KV 传输、资源协调与失败恢复开销，不应假定吞吐必然提升。参见 <a href="https://docs.vllm.ai/en/latest/features/disagg_prefill/" target="_blank" rel="noopener">vLLM · Disaggregated Prefilling</a>；该文档仍标注为实验性能力。</p>
+      <p>本页固定一种交接协议：P 完成 Prefill 并返回 y1；D 等待所有层 KV 与关联元数据完整到达，再确认接管。D 下一步输入 y1，追加它的 K/V，然后产生 y2。动画的传输失败分支会清空 D 的半成品、保留 P 的源 KV 并重试，确保不会重复发送 y1。其他实现可能重算、终止请求，或重叠逐层传输与计算，需以所用连接器与版本为准。</p>
+      <pre><code>客户端 ← y1 ← 网关 ← P：Prefill(prompt)
+                        │
+                        └─ 各层 K/V + 请求 / 位置信息 ─→ D
+P 保留源 KV ← 等待确认 ← D：完整性校验 + 就绪
+客户端 ← y2 ← 同一响应流 ← D：Decode(y1)</code></pre>
+      <p>两端应已加载兼容权重；迁移的是 K/V 与请求状态，不是每次请求都搬运模型。KV 的数据类型、头布局、分片与位置必须对应，必要时由连接器转换或重排。取消、超时和重试也必须跨两端传递，防止 P 持有源缓存却无人接收，或 D 接管后仍被重复调度。</p>
+      <p>在这种首 token 先返回的协议下，TTFT 很好也可能出现 y1 到 y2 的长停顿。应拆分 P 排队、Prefill、KV 传输、D 等待与 D 排队，并通过同一个请求身份关联日志和 Trace。传输字节量、有效带宽、失败率与 ITL 尾延迟，能帮助判断分离是否真的改善了目标负载。</p>
+      <h3>三种机制可以组合，但不会自动消除彼此的成本</h3>
+      <p>可以先在 P 侧命中前缀缓存，只计算后缀；再把 D 缺失的上下文 KV 交过去；D 接管后继续投机解码。前缀命中不表示 D 自动拥有那份 KV，投机接受率高也无法掩盖过慢的跨实例交接。上方将三种机制分开演示，是为了看清各自改变的路径；组合部署需另外验证缓存、调度与连接器兼容性。</p>
       <h2 id="observing">把动画中的阶段映射到观测信号</h2>
       <p>动画底部记录的是事件序号，没有伪造 GPU 耗时。真正上线后，应先明确每种时延的起止边界，再关联 trace_id、rid、模型版本和实例。请求的原始 prompt 可能含敏感内容，不能直接当作高基数指标标签。</p>
       <ul>
@@ -62,13 +93,16 @@ Decode(上一 token)  → 选出 EOS → 结束并回收</code></pre>
       </ul>
       <p>继续阅读 <a href={withBase("/observability/three-pillars/")}>Metrics、Logs 与 Traces</a>，把这条数据路径变成实际排障证据链。</p>
       <h2 id="references">参考资料与适用边界</h2>
-      <p>本页按公开资料整理，于 2026-09-06 核对。动画中的调度顺序为示例，未展开投机解码、前缀复用、Prefill/Decode 分离、跨 GPU 通信和多模态编码器；它们会改变执行与资源路径，但不影响理解此处的基础自回归循环。</p>
+      <p>本页按公开资料整理，于 2026-09-06 核对。基础动画与三种优化动画均为教学状态机，不是线上推理 Trace。投机验证采用贪心示例；前缀缓存采用教学块；P/D 采用完整交接后接管的示例协议。未展开实例内部跨 GPU 算子通信与多模态编码器，也未给出性能承诺。</p>
       <ul>
         <li><a href="https://arxiv.org/abs/1706.03762" target="_blank" rel="noopener">Attention Is All You Need</a>：注意力、位置与残差结构的基础。</li>
         <li><a href="https://arxiv.org/abs/2302.13971" target="_blank" rel="noopener">LLaMA: Open and Efficient Foundation Language Models</a>：本页所采用的 RMSNorm、SwiGLU 与 RoPE 架构背景。</li>
         <li><a href="https://huggingface.co/docs/transformers/main/cache_explanation" target="_blank" rel="noopener">Hugging Face · How caching works</a>：逐层 K/V 复用、张量形状和增量生成循环。</li>
         <li><a href="https://huggingface.co/docs/transformers/main/llm_tutorial" target="_blank" rel="noopener">Hugging Face · Text generation</a>：分词、生成与解码策略。</li>
         <li><a href="https://docs.vllm.ai/en/latest/configuration/optimization/" target="_blank" rel="noopener">vLLM · Optimization and Tuning</a>：调度预算、KV 资源与分块 Prefill 的权衡。</li>
+        <li><a href="https://arxiv.org/abs/2211.17192" target="_blank" rel="noopener">Fast Inference from Transformers via Speculative Decoding</a>：提议、验证、拒绝校正与目标分布保持。</li>
+        <li><a href="https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/" target="_blank" rel="noopener">vLLM · Automatic Prefix Caching</a>：跨请求前缀 K/V 复用及收益边界。</li>
+        <li><a href="https://docs.vllm.ai/en/latest/features/disagg_prefill/" target="_blank" rel="noopener">vLLM · Disaggregated Prefilling</a>：P/D 分离、KV 连接器与延迟控制。</li>
       </ul>
     </div>
   </article>

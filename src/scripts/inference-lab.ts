@@ -192,12 +192,14 @@ export function initInferenceLab() {
     event.preventDefault();
     if (!prompt.value.trim()) { prompt.setCustomValidity("请输入非空 prompt。"); prompt.reportValidity(); return; }
     activePrompt = prompt.value; frames = buildTrace(activePrompt); seek(0);
+    document.dispatchEvent(new CustomEvent("inference-prompt-loaded", { detail: activePrompt }));
     text("play-status", "新请求已载入，点击播放或下一步");
   });
   prompt.addEventListener("input", () => { prompt.setCustomValidity(""); stop(); render(); text("play-status", "输入已修改，点击“载入请求”后生效"); });
   el("example").addEventListener("click", () => {
     prompt.value = prompt.value === "Why is the sky blue?" ? "用一句话解释 KV Cache。" : "Why is the sky blue?";
     prompt.setCustomValidity(""); activePrompt = prompt.value; frames = buildTrace(activePrompt); seek(0);
+    document.dispatchEvent(new CustomEvent("inference-prompt-loaded", { detail: activePrompt }));
   });
   root.querySelectorAll<HTMLElement>("[data-chapter]").forEach(button => button.addEventListener("click", () => seek(frames.findIndex(f => f.phase === button.dataset.chapter))));
   root.querySelectorAll<HTMLElement>("[data-node]").forEach(button => button.addEventListener("click", () => {

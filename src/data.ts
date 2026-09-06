@@ -60,7 +60,7 @@ export const learningPath = [
 export const entries: NoteEntry[] = [
   {
     title: "一次大模型推理的旅程",
-    description: "交互动画：从 prompt 调度到 Transformer、KV Cache、Prefill/Decode、token 生成与流式返回。",
+    description: "交互动画：从 prompt 到 token，深入 Transformer、投机解码、前缀复用与 Prefill/Decode 分离。",
     href: "/observability/inference-animation/",
     section: "可观测性",
     status: "已发布",

@@ -1,0 +1,23 @@
+---
+import { mechanisms } from "../lib/inference-advanced";
+import "../styles/inference-advanced.css";
+---
+<section class="inference-lab advanced-lab" id="advanced-inference" aria-label="推理优化机制动画">
+  <header class="lab-heading"><div><p class="lab-kicker">THREE OPTIMIZATIONS / 三种优化，三条数据路径</p><h2>更快生成，究竟改了哪里？</h2></div><span class="lab-mode">可切换的机制动画</span></header>
+  <p class="lab-disclaimer">沿用上方“载入请求”的 prompt。所有候选、缓存状态和故障分支均为本地教学模拟，不执行真实模型，不展示性能测量。先选机制，再切换场景观察成功与回退。</p>
+  <div class="advanced-modes" role="group" aria-label="选择推理优化机制">{Object.entries(mechanisms).map(([key, value], i) => <button type="button" data-mechanism={key} aria-pressed={i === 0 ? "true" : "false"}><span>0{i + 1}</span><strong>{value.name}</strong><small>{value.subtitle}</small></button>)}</div>
+  <div class="advanced-scenario"><label for="advanced-scenario">演示分支<select id="advanced-scenario">{mechanisms.speculative.scenarios.map(([value, label]) => <option value={value}>{label}</option>)}</select></label><p>已载入 prompt：<span id="advanced-prompt">用一句话解释 KV Cache。</span></p></div>
+  <div class="lab-controls" role="group" aria-label="优化机制播放控制"><button type="button" class="lab-primary" id="advanced-play" aria-pressed="false">播放动画</button><button type="button" id="advanced-prev">← 上一步</button><button type="button" id="advanced-next">下一步 →</button><button type="button" id="advanced-reset">回到开头</button><label class="lab-speed">播放速度<select id="advanced-speed"><option value="1">1× · 细读</option><option value="2">2×</option><option value="4">4× · 概览</option></select></label></div>
+  <div class="lab-seek"><label for="advanced-progress">步骤 <output id="advanced-position">1</output></label><input id="advanced-progress" type="range" min="0" max="1" value="0" aria-label="跳转到优化机制步骤" /></div>
+  <div class="lab-status-line"><span id="advanced-status" role="status" aria-live="polite">已暂停，可单步查看</span><a id="advanced-read-more" href="#speculative-decoding">阅读机制详解 ↓</a></div>
+  <div class="advanced-workbench">
+    <div class="advanced-diagram"><div class="lab-map-label"><h3>数据与执行位置</h3><span>步骤推进时更新，不代表真实耗时</span></div><div id="advanced-lanes"></div><div class="advanced-legend">· 等待　→ 处理中　✓ 已接受 / 就绪　× 丢弃</div><dl class="advanced-metrics"><div><dt>当前请求 KV / 层</dt><dd id="advanced-kv">0</dd></div><div><dt id="advanced-secondary-label">本轮接受草稿</dt><dd id="advanced-secondary">0 / 3</dd></div></dl></div>
+    <div class="advanced-explanation"><p class="lab-kicker" id="advanced-step-label">STEP 01</p><h3 id="advanced-title">目标模型已完成 Prefill</h3><p id="advanced-text"></p><div class="lab-flow" id="advanced-flow"></div><aside class="lab-watch"><h4>对应的观测信号</h4><p id="advanced-watch"></p></aside></div>
+  </div>
+  <div class="advanced-bottom"><section><div class="lab-map-label"><h3>只展示已返回用户的文本</h3><span id="advanced-output-count">0 个 token</span></div><p class="lab-output-text" id="advanced-output">等待首个 token…</p></section><details><summary>查看本段事件序列</summary><ol id="advanced-events"></ol></details></div>
+  <noscript><p class="lab-disclaimer">启用 JavaScript 可播放动画；下方有三种机制的完整文字讲解。</p></noscript>
+</section>
+<script>
+  import { initAdvancedInferenceLab } from "../scripts/inference-advanced";
+  initAdvancedInferenceLab();
+</script>
