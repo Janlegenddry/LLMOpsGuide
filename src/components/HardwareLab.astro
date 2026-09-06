@@ -1,0 +1,42 @@
+---
+import { cards, cardParts, rforkParts } from "../lib/hardware-lab";
+interface Props { mode: "card" | "rfork"; }
+const { mode } = Astro.props;
+const isCard = mode === "card";
+const parts = isCard ? cardParts : rforkParts;
+const id = `hardware-${mode}`;
+---
+<section class="hardware-lab" id={id} data-hardware-mode={mode} aria-label={isCard ? "加速卡 3D 拆解实验" : "R-Fork 3D 权重传输实验"}>
+  <header class="hardware-heading"><div><p>{isCard ? "CARD ANATOMY / 从外壳到硅片" : "R-FORK / 沿权重走过两台服务器"}</p><h2>{isCard ? "把一块加速卡拆开看" : "权重怎样抵达新的 GPU？"}</h2></div><span class="hardware-badge">教学重建 · 非精确 CAD</span></header>
+  <div class="hardware-config">
+    <label for={`${id}-model`}>{isCard ? "选择卡型" : "选择传输场景"}<select id={`${id}-model`} data-hw="model">{isCard ? cards.map(card => <option value={card.id}>{card.name}</option>) : <><option value="normal">正常加载 · GDR 直达显存</option><option value="failure">生命周期风险 · 清理后重试</option></>}</select></label>
+    <div><p class="hardware-model-family" data-hw="family">{isCard ? cards[0].family : "双服务器 · 一条代表性 GPU ↔ HCA 路径"}</p><p class="hardware-model-memory" data-hw="memory">{isCard ? cards[0].memory : "蓝色：READ 请求　金色：权重数据"}</p></div>
+  </div>
+  <div class="hardware-transport">
+    <div class="hardware-playback"><button type="button" class="hardware-primary" data-hw="play" aria-pressed="false">播放导览</button><button type="button" data-hw="prev" disabled>上一步</button><button type="button" data-hw="next">下一步</button><button type="button" data-hw="reset">重置</button><label>速度<select data-hw="speed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label><span data-hw="status" role="status" aria-live="polite">已暂停，可以单步查看</span></div>
+    <div class="hardware-step-range"><label for={`${id}-step`}>导览步骤 <output data-hw="position">1</output></label><input id={`${id}-step`} data-hw="step" type="range" min="0" max={isCard ? "5" : "7"} value="0" /></div>
+  </div>
+  <div class="hardware-workbench">
+    <div class="hardware-visual">
+      <div class="hardware-canvas-wrap"><div class="hardware-canvas" data-hw="canvas"></div><div class="hardware-load" data-hw="load"><p>可旋转、可拆解的 WebGL 3D 模型</p><button type="button" data-hw="start">载入 3D 场景</button><p data-hw="load-note">只在本地渲染，不上传输入或设备信息。</p></div><span class="hardware-canvas-caption">{isCard ? "尺寸 / 颗数 / 排布均为示意" : "非生产拓扑 · 不含现场故障数据"}</span></div>
+      <div class="hardware-camera" role="group" aria-label="三维视角控制"><button type="button" data-view="iso">立体</button><button type="button" data-view="top">俯视</button><button type="button" data-view="front">正面</button><button type="button" data-hw="zoom-in" aria-label="放大模型">＋</button><button type="button" data-hw="zoom-out" aria-label="缩小模型">−</button><label><input type="checkbox" data-hw="labels" checked />部件标签</label></div>
+      <p class="hardware-gesture">拖动旋转 · 画布方向键调整视角 · ＋ / − 缩放。也可用右侧部件按钮定位。</p>
+      <div class="hardware-explode"><label for={`${id}-explode`}>{isCard ? "拆解层次" : "打开机箱"}<output data-hw="explode-value">{isCard ? "0%" : "65%"}</output></label><input id={`${id}-explode`} data-hw="explode" type="range" min="0" max="100" value={isCard ? "0" : "65"} /></div>
+    </div>
+    <aside class="hardware-inspector">
+      <p class="hardware-inspector-kicker">点击部件，理解它的职责</p>
+      <div class="hardware-parts" role="group" aria-label="选择硬件部件">{parts.map((part, i) => <button type="button" data-part={part.id} aria-pressed="false"><span>{String(i + 1).padStart(2, "0")}</span>{part.name.replace(" / HBM", "")}</button>)}</div>
+      <h3 data-hw="part-title">{isCard ? "先从整卡建立空间关系" : "先区分源端、目标端与网络"}</h3><p data-hw="part-text">{isCard ? cards[0].note : "左右两台服务器各展示 8 个加速模块，但只跟踪其中一对 GPU 和 HCA。CPU 与主存控制加载过程，权重数据沿 GPU → HCA → 网络 → HCA → GPU 移动。"}</p>
+      <div class="hardware-observe"><h4>运维中看什么</h4><p data-hw="watch">{isCard ? "先核对型号与设备粒度，再关联容量、温度、功耗和互联。" : "把注册、提交、传输、完成和就绪放到同一个加载任务中追踪。"}</p></div>
+      <p class="hardware-evidence" data-hw="evidence">{isCard ? cards[0].evidence : "工作流取意于参考材料；错误分支为机制假设，非根因认定。"}</p>
+    </aside>
+  </div>
+  <div class="hardware-tour">
+    <div class="hardware-narrative"><div><p data-hw="step-kicker">{isCard ? "结构导览" : "权重加载"}</p><h3 data-hw="step-title">{isCard ? "先看整块卡的装配层次" : "源副本已有权重，目标进程开始加载"}</h3><p data-hw="step-text">点击播放，跟随场景逐步理解。</p></div>{!isCard && <dl class="hardware-transfer"><div><dt>教学传输进度</dt><dd data-hw="bytes">0%</dd></div><div><dt>MR / 在途状态</dt><dd data-hw="mr">未注册</dd></div><div><dt>模型状态</dt><dd data-hw="ready">未就绪</dd></div></dl>}</div>
+    <noscript><p>3D 场景需要 JavaScript 与 WebGL。下方的静态说明、型号边界和数据流仍可阅读。</p></noscript>
+  </div>
+</section>
+<script>
+  import { initHardwareLabs } from "../scripts/hardware-lab";
+  initHardwareLabs();
+</script>

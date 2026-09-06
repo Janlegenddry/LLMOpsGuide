@@ -1,0 +1,65 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import HardwareLab from "../../components/HardwareLab.astro";
+import { cards } from "../../lib/hardware-lab";
+import { withBase } from "../../paths";
+import "../../styles/hardware-lab.css";
+---
+<BaseLayout title="加速卡与 R-Fork：硬件 3D 实验室 · LLMOpsGuide" description="用可旋转、可拆解的 3D 模型认识 GPU/NPU、计算 die、HBM、板卡连接与服务器，并逐步观察 R-Fork 的 GPUDirect RDMA 权重传输。">
+  <article class="hardware-page" data-pagefind-body>
+    <header>
+      <nav class="breadcrumb" aria-label="面包屑"><a href={withBase("/")}>首页</a><span aria-hidden="true"> / </span><a href={withBase("/#section-infrastructure")}>基础设施</a></nav>
+      <p class="article-context">基础设施 / 交互式硬件手册</p>
+      <h1>从一颗芯片，<br />到一次跨机加载</h1>
+      <p class="hardware-deck">转动一块加速卡，抬起散热器，看清计算与存储的位置。再沿着线缆走进两台服务器，跟随权重抵达新的 GPU。</p>
+      <p class="article-meta">更新于 2026.09.06 · 8 个卡型 / 概念视图 · 2 个权重加载分支</p>
+      <nav class="hardware-jumps" aria-label="阅读导航"><a href="#hardware-card">卡型 3D 拆解</a><a href="#hardware-rfork">R-Fork 3D 链路</a><a href="#hardware-boundaries">型号与外观边界</a><a href="#hardware-references">参考资料</a></nav>
+    </header>
+    <HardwareLab mode="card" />
+    <div class="prose hardware-article">
+      <h2>不要把“卡”“die”和“设备”混成同一层</h2>
+      <p>物理板卡承载供电、连接与封装；封装内可以有一个或多个计算 die，还可能包含 HBM、I/O die 等。框架看到的逻辑设备和并行 rank 是软件层概念，不能仅凭进程名直接判断物理卡数。动画里的“单 die / 双 die”指计算 die，不是在统计封装中所有硅片。</p>
+      <p>先用“拆解层次”滑杆抬起散热器，再选择“计算 die”和“HBM 堆叠”。切到 910C，看两个计算区域及相邻存储；再切到 PPU 的通用长板示意，比较金手指、挡板和模组底部连接器。每个部件都能在画面中点击，也有可用键盘操作的文字按钮。</p>
+      <p>本页重建了散热鳍片、铜质接触面、封装基板、HBM 层叠、供电电感、电容、PCB 走线与连接触点，以增强空间辨认。它们的尺寸、数量和排布不来自厂商 CAD，也不能用作拆机或维修指引。HBM 与计算 die 是封装内关系，不要把示意拆解误认为可拆卸插槽。</p>
+    </div>
+    <HardwareLab mode="rfork" />
+    <div class="prose hardware-article">
+      <h2>R-Fork：复制权重，不是复制整台 GPU</h2>
+      <p>“R-Fork”在本页是参考材料中权重获取流程的名称：新推理进程向已有副本获取模型权重。它不是 PCIe 或 RDMA 标准的术语，也不等于操作系统 <code>fork()</code> 的完整语义。本页只演示一种以 GPU 显存作为源与目标、由目标端发起 RDMA READ 的加载路径；不声称所有实现都必须走这条路径。</p>
+      <p>图中左右两台服务器保留机箱、双 CPU 区、内存条、8 个加速模块、风扇墙和网卡端口，让数据路径与实物有对应。为避免遮挡，只突出其中一对 GPU/HCA；数量和槽位位置是教学布置，不是任何线上机器的拓扑快照。顶部机箱可打开，立体、俯视和正面视角可随时切换。</p>
+      <h3>分清请求方向、数据方向与完成时刻</h3>
+      <p>目标端提交 READ 请求，方向是目标 HCA → 网络 → 源 HCA；权重数据沿反方向返回，先由源 HCA 读取源 GPU HBM，再通过网络与目标 PCIe 路径写入目标 HBM。动画用蓝色表示请求、金色表示数据；移动光点是方向提示，既不是实际 TLP，也不表示真实分片大小或带宽。</p>
+      <pre><code>控制面：目标加载器 → MR / QP / WR → READ 请求
+数据面：源 GPU HBM → 源 PCIe → 源 HCA
+                        ↓ RDMA 网络
+        目标 GPU HBM ← 目标 PCIe ← 目标 HCA
+完成面：完成状态 → 同步与可见性 → 加载校验 → Ready</code></pre>
+      <p>MR（Memory Region）描述注册内存与访问权限，QP（Queue Pair）承载发送 / 接收工作，WR（Work Request）是提交的操作，CQE（Completion Queue Entry）报告完成状态。传输完成、GPU 可安全读取、模型初始化完成与对外 Ready 是不同边界。不能只因进度到 100% 就放行推理，也不能把单个完成项当成所有加载工作已完成。</p>
+      <p>GPUDirect RDMA 可以避免让 CPU 主存充当权重数据中转站，但 CPU 仍负责驱动、注册、提交和同步。是否可用还取决于 GPU、网卡、驱动、PCIe 拓扑与平台配置；也可能存在经主存暂存的回退路径。具体要求和内存顺序约束见 <a href="https://docs.nvidia.com/cuda/gpudirect-rdma/" target="_blank" rel="noopener">NVIDIA GPUDirect RDMA 文档</a>。</p>
+      <h3>故障演示不等于根因结论</h3>
+      <p>切换到“生命周期风险”分支，可以看到传输未结束时 MR / 缓冲区生命周期失配，目标模型保持未就绪。演示选择在取消、drain 与同步完成后清理旧状态，重新登记并重传；不是在旧请求仍可能访问时强行释放内存。不同实现可以选择安全重试、回退或失败退出。</p>
+      <p>这种软件生命周期风险不必然产生 Malformed TLP，更不能单独证明 GPU、网卡或 PCIe Switch 有缺陷。两个设备位于同一个 PCIe Switch 下，也不等于它们共享同一条下行物理链路。定位异常时，要区分检测 / 报告端点、转发路径和真正的错误来源，结合 AER / CPER、驱动记录、完成状态以及可重复的对照实验判断。</p>
+      <p>本页没有复用参考文件中的内部文档链接、主机地址、设备 BDF、现场计数、驱动批次或推测性根因结论。页面中的进度、设备摆放和异常分支均为明确标注的教学场景。</p>
+      <h2 id="hardware-boundaries">型号与外观：哪些可以确认，哪些仍是示意？</h2>
+      <p>模型名称沿用参考材料，公开资料用于核对能够确认的结构与概念。某个名称出现在监控工具中，不足以证明正式 SKU；容量相似也不能证明两个型号等价。本页不做算力排行，不把集群总量当成单卡能力。</p>
+      <dl class="hardware-spec-list">{cards.map(card => <div><dt><strong>{card.name}</strong> · {card.memory}</dt><dd>{card.evidence}。{card.note}</dd></div>)}</dl>
+      <p>H20 的 96 GB SXM5 名称可在 NVIDIA 官方支持列表中找到；910C 的双计算 die 结构可参照公开论文。H20-3e、910B2C、PPU-ZW810E 的示例容量未在本次独立核实，因此明确保留“参考配置”标记。L20X 不直接标成 H200；950PR / 950DT 只作公开架构方向参考，不将规划日期或聚合指标当成当前交付事实。</p>
+      <p>参考文件中的 CloudMatrix、Atlas 超节点与跨机组网属于系统级主题，不混入本篇单卡规格比较。本篇 R-Fork 场景补上了服务器和网络这一层，但没有声称覆盖所有超节点结构。</p>
+      <h2 id="hardware-references">公开参考资料</h2>
+      <ul>
+        <li><a href="https://docs.nvidia.com/ai-enterprise/release-6/6.2/appendix/vgpu.html" target="_blank" rel="noopener">NVIDIA AI Enterprise · GPU 支持列表</a>：H20 SXM5 96GB 的名称与容量依据。</li>
+        <li><a href="https://www.nvidia.com/en-us/data-center/h200/" target="_blank" rel="noopener">NVIDIA H200</a>：正式产品规格；不能据此反推未识别别名。</li>
+        <li><a href="https://arxiv.org/html/2506.12708v2#S3.SS3.SSS1" target="_blank" rel="noopener">Serving Large Language Models on Huawei CloudMatrix384 · v2</a>：910C 双 die 与 128 GB 的历史论文口径；后续 v3 调整了型号 / 规格表述，不作为当前板卡交付保证。</li>
+        <li><a href="https://www.huawei.com/cn/news/2025/9/hc-xu-keynote-speech" target="_blank" rel="noopener">华为 · AI 基础设施与超节点技术介绍</a>：950PR / 950DT 的公开定位与架构方向。</li>
+        <li><a href="https://docs.nvidia.com/cuda/gpudirect-rdma/" target="_blank" rel="noopener">NVIDIA · GPUDirect RDMA</a>：PCIe 可达性、注册、同步与可见性限制。</li>
+        <li><a href="https://github.com/kvcache-ai/Mooncake" target="_blank" rel="noopener">Mooncake 项目</a>：传输引擎的公开背景，不用于证明参考故障的原因。</li>
+      </ul>
+      <p>继续阅读 <a href={withBase("/observability/inference-animation/")}>一次大模型推理的旅程</a>，把 GPU 中的计算、KV Cache 与 Prefill/Decode 分离连接起来。</p>
+    </div>
+  </article>
+</BaseLayout>
+<style>
+  .hardware-spec-list > div { padding-block: var(--space-md); border-block-start: 1px solid var(--color-rule); }
+  .hardware-spec-list dt { color: var(--color-ink); }
+  .hardware-spec-list dd { margin: var(--space-xs) 0 0; font-size: var(--text-sm); color: var(--color-muted); }
+</style>

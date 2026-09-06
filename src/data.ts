@@ -19,6 +19,11 @@ export const sections = [
     description: "理解模型生命周期、GPU 资源、分布式计算和生产环境中的关键约束。",
   },
   {
+    id: "infrastructure",
+    title: "基础设施",
+    description: "从 GPU/NPU 板卡、HBM 与 PCIe 拓扑，到 RDMA 网络和模型权重加载。",
+  },
+  {
     id: "inference",
     title: "推理服务",
     description: "围绕 SGLang、调度、KV Cache、并行策略与性能调优积累实践。",
@@ -58,6 +63,14 @@ export const learningPath = [
 ] as const;
 
 export const entries: NoteEntry[] = [
+  {
+    title: "加速卡与 R-Fork：硬件 3D 实验室",
+    description: "旋转、拆解 8 个卡型 / 概念视图，跟随 GPU、HBM、HCA 与 PCIe 上的跨机权重传输。",
+    href: "/infrastructure/hardware-3d/",
+    section: "基础设施",
+    status: "已发布",
+    updated: "2026-09-06",
+  },
   {
     title: "一次大模型推理的旅程",
     description: "交互动画：从 prompt 到 token，深入 Transformer、投机解码、前缀复用与 Prefill/Decode 分离。",

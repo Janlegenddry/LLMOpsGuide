@@ -1,0 +1,70 @@
+.hardware-page { width: min(calc(100% - 2rem), 88rem); margin-inline: auto; padding-block: var(--space-xl) var(--space-2xl); }
+.hardware-page > header { max-width: 60rem; margin-block-end: var(--space-xl); }
+.hardware-page h1 { font-size: clamp(2rem, 3.4vw, 3.35rem); line-height: 1.22; letter-spacing: -.035em; }
+.hardware-page .hardware-deck { color: var(--color-muted); max-width: 58ch; font-size: var(--text-md); line-height: 1.8; }
+.hardware-jumps { display: flex; flex-wrap: wrap; gap: var(--space-md); margin-block-start: var(--space-lg); font-size: var(--text-sm); }
+.hardware-jumps a { color: var(--color-accent); text-underline-offset: 4px; white-space: nowrap; }
+.hardware-page .hardware-article { max-width: 72ch; margin-inline: auto; }
+.hardware-article code { overflow-wrap: anywhere; }
+.hardware-lab { margin-block: var(--space-xl) var(--space-2xl); border: 1px solid var(--color-rule-strong); border-radius: var(--radius-card); background: var(--color-paper); color: var(--color-ink); min-width: 0; font-size: var(--text-sm); line-height: 1.65; }
+.hardware-lab *, .hardware-lab *::before, .hardware-lab *::after { box-sizing: border-box; }
+.hardware-lab :is(h2,h3,h4,p) { margin: 0; font-style: normal; }
+.hardware-heading { padding: var(--space-lg); display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm); }
+.hardware-heading p, .hardware-inspector-kicker, .hardware-narrative > div > p:first-child { color: var(--color-accent); font: .6875rem/1.6 var(--font-mono); margin-block-end: var(--space-xs); }
+.hardware-heading h2 { font-size: clamp(1.35rem, 2vw, 1.85rem); line-height: 1.4; letter-spacing: -.025em; }
+.hardware-badge { color: var(--color-muted); font-size: .6875rem; padding-block: var(--space-xs); }
+.hardware-config { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: var(--space-md); border-block: 1px solid var(--color-rule); padding: var(--space-md) var(--space-lg); }
+.hardware-config label { display: grid; gap: var(--space-xs); font-weight: 600; }
+.hardware-lab :is(button,select) { font: inherit; min-height: 44px; padding: var(--space-xs) var(--space-sm); border: 1px solid var(--color-rule-strong); border-radius: var(--radius-sm); background: var(--color-paper); color: var(--color-ink); cursor: pointer; max-width: 100%; min-width: 0; white-space: nowrap; }
+.hardware-lab :is(button,select,input,canvas):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+.hardware-lab button:disabled { opacity: .45; cursor: default; }
+.hardware-lab .hardware-primary { background: var(--color-accent); color: var(--color-accent-ink); border-color: var(--color-accent); font-weight: 600; }
+.hardware-model-family { color: var(--color-ink-2); font-weight: 600; }
+.hardware-model-memory { font-size: .75rem; color: var(--color-muted); margin-block-start: var(--space-2xs) !important; }
+.hardware-workbench { display: grid; grid-template-columns: minmax(0,1fr); }
+.hardware-transport { border-block-end: 1px solid var(--color-rule); padding-block-end: var(--space-xs); }
+.hardware-visual, .hardware-inspector { min-width: 0; }
+.hardware-canvas-wrap { position: relative; background: #dde7e7; color: #263c43; }
+.hardware-canvas { width: 100%; height: 370px; position: relative; }
+.hardware-canvas canvas { display: block; width: 100%; height: 100%; }
+.hardware-lab .hardware-canvas canvas:focus-visible { outline-color: #255967; outline-offset: -3px; }
+.hardware-canvas-caption { position: absolute; inset-inline-start: var(--space-sm); bottom: var(--space-xs); padding: 3px 6px; background: #eaf0ef; color: #354c54; pointer-events: none; font-size: .625rem; }
+.hardware-load { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-md); text-align: center; padding: var(--space-lg); background: #dde7e7; color: #263c43; }
+.hardware-load[hidden] { display: none; }
+.hardware-load p:last-child { max-width: 34ch; font-size: .75rem; }
+.hardware-camera { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border-block-start: 1px solid var(--color-rule); }
+.hardware-camera label { display: flex; align-items: center; gap: var(--space-2xs); min-height: 44px; font-size: .75rem; white-space: nowrap; }
+.hardware-camera input { accent-color: var(--color-accent); width: 18px; height: 18px; }
+.hardware-gesture { color: var(--color-muted); font-size: .6875rem; padding: 0 var(--space-md); }
+.hardware-explode { display: grid; gap: var(--space-xs); padding: var(--space-md); }
+.hardware-explode label { display: flex; justify-content: space-between; font-size: .75rem; }
+.hardware-lab input[type="range"] { width: 100%; min-width: 0; min-height: 44px; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+.hardware-inspector { padding: var(--space-lg); background: var(--color-paper-2); color: var(--color-ink); border-block-start: 1px solid var(--color-rule); }
+.hardware-parts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-xs); margin-block: var(--space-sm) var(--space-lg); }
+.hardware-lab .hardware-parts button { text-align: start; font-size: .75rem; padding-inline: var(--space-xs); }
+.hardware-parts span { font: .625rem var(--font-mono); color: var(--color-muted); margin-inline-end: var(--space-xs); }
+.hardware-parts [aria-pressed="true"] { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
+.hardware-inspector h3 { font-size: 1.05rem; margin-block-end: var(--space-xs); }
+.hardware-inspector > p:not(.hardware-inspector-kicker):not(.hardware-evidence) { font-size: .8125rem; color: var(--color-ink-2); }
+.hardware-observe { border-block-start: 1px solid var(--color-rule); padding-block-start: var(--space-md); margin-block-start: var(--space-lg); }
+.hardware-observe h4 { font-size: .75rem; color: var(--color-accent); margin-block-end: var(--space-xs); }
+.hardware-observe p { color: var(--color-muted); font-size: .75rem; }
+.hardware-evidence { font-size: .6875rem; color: var(--color-muted); margin-block-start: var(--space-lg) !important; }
+.hardware-tour { border-block-start: 1px solid var(--color-rule-strong); }
+.hardware-playback { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); padding: var(--space-md) var(--space-lg); }
+.hardware-playback label { display: flex; align-items: center; gap: var(--space-xs); font-size: .75rem; }
+.hardware-playback > span { font-size: .6875rem; color: var(--color-muted); }
+.hardware-step-range { display: grid; grid-template-columns: auto minmax(0,1fr); gap: var(--space-md); align-items: center; padding: 0 var(--space-lg); font-size: .75rem; }
+.hardware-narrative { padding: var(--space-lg); display: grid; gap: var(--space-lg); min-height: 13rem; }
+.hardware-narrative h3 { font-size: clamp(1.15rem,2vw,1.45rem); line-height: 1.4; margin-block-end: var(--space-sm); }
+.hardware-narrative > div > p:last-child { color: var(--color-ink-2); max-width: 80ch; }
+.hardware-transfer { display: grid; gap: var(--space-sm); margin: 0; border-inline-start: 2px solid var(--color-rule-strong); padding-inline-start: var(--space-md); }
+.hardware-transfer dt { color: var(--color-muted); font-size: .6875rem; }
+.hardware-transfer dd { font: .8125rem/1.6 var(--font-mono); margin: 2px 0 0; }
+.hardware-lab[data-kind="error"] .hardware-transfer { border-color: var(--color-error); }
+.hardware-lab[data-kind="error"] [data-hw="mr"] { color: var(--color-error); }
+.hardware-lab[data-kind="complete"] [data-hw="ready"] { color: var(--color-success); }
+@media (min-width: 40rem) { .hardware-config { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .hardware-canvas { height: 480px; } }
+@media (min-width: 75rem) { .hardware-workbench { grid-template-columns: minmax(0, 1fr) 20rem; } .hardware-canvas { height: 540px; } .hardware-inspector { border-inline-start: 1px solid var(--color-rule); border-block-start: 0; } .hardware-narrative { grid-template-columns: minmax(0,1fr) auto; } .hardware-transfer { width: 18rem; } }
+@media (hover:hover) { .hardware-lab button:not(:disabled):hover { border-color: var(--color-accent); } }
+@media (prefers-reduced-motion:reduce) { .hardware-lab * { animation: none !important; transition: none !important; } }
