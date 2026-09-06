@@ -1,0 +1,75 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import InferenceLab from "../../components/InferenceLab.astro";
+import { withBase } from "../../paths";
+---
+<BaseLayout title="一次大模型推理的旅程 · LLMOpsGuide" description="交互动画详解 prompt 如何经过调度、分词、Transformer、KV Cache、Prefill 与 Decode，逐个生成 token 并流式返回。">
+  <article class="inference-page" data-pagefind-body>
+    <nav class="breadcrumb" aria-label="面包屑"><a href={withBase("/")}>首页</a><span aria-hidden="true"> / </span><a href={withBase("/#section-observability")}>可观测性</a></nav>
+    <header class="article-header">
+      <p class="article-context">可观测性 / 可交互的请求生命周期</p>
+      <h1>一次大模型推理的旅程</h1>
+      <p class="article-deck">从你按下发送，到屏幕上的第一个字。沿着数据走进调度器与 Transformer，再跟随每一个 token 回到用户端。</p>
+      <dl class="article-meta"><div><dt>更新</dt><dd>2026.09.06</dd></div><div><dt>形式</dt><dd>动画实验 + 分层讲解</dd></div></dl>
+      <nav class="reading-links" aria-label="阅读导航"><a href="#inference-lab">开始实验</a><a href="#model-math">模型内部</a><a href="#prefill-decode">Prefill 与 Decode</a><a href="#observing">对应观测信号</a><a href="#references">参考资料</a></nav>
+    </header>
+    <InferenceLab />
+    <div class="prose lesson">
+      <h2 id="how-to-read">先跟随路径，再看数据</h2>
+      <p>先用默认 prompt 播放一次，再拖动进度条回到 Attention。观察 Prefill 的因果三角形怎样在 Decode 中变成一行；随后看每层 KV 长度怎样增加，最后看用户输出何时出现。每个节点都可以点击，播放中也可以暂停、返回上一步或切换速度。</p>
+      <p>本页是机制动画，不是连接线上模型的聊天窗口。自定义输入会改变教学分词结果、输入 ID、序列长度及相关张量形状；回答固定为“模型逐个生成 token。”。色块、路由状态和 logits 都是明确标注的示意数据，动画速度不代表真实延迟。</p>
+      <h2 id="serving">请求先进入服务系统，才进入模型</h2>
+      <p>客户端发出的通常是包含角色消息、模型名、生成参数与流式开关的请求。网关验证认证和额度，选择健康且满足模型版本要求的副本。服务应用 chat template，把 system、user、assistant 等边界转换为模型训练时熟悉的序列，再由该模型的 Tokenizer 编码为整数 ID。</p>
+      <p>部署方式会改变分词和路由的位置：分词可以由前端进程、独立服务或模型副本完成。动画选用“网关路由 → 副本分词 → 引擎调度”的一种常见结构。副本可能由多张 GPU 协同承载；网关选副本与张量并行分配算子是两层不同的调度。</p>
+      <p>调度器负责接纳请求、管理 KV 空间和安排每轮执行 token。连续批处理允许每轮换入新请求、换出完成请求；分块 Prefill 则把长输入拆成若干段，与 Decode 共同争取执行预算。策略影响首 token 时延与后续 token 间隔，具体优先级要对照实际引擎版本和配置。</p>
+      <h2 id="model-math">Transformer 内部，文本变成什么？</h2>
+      <p>本页展开的是带 RMSNorm、RoPE、SwiGLU 的稠密、自回归 decoder-only 模型。假设 batch 大小 B = 1，当前新输入长度 T，隐藏维度 d = 8，注意力头数 h = 2，每头维度 dₕ = 4，层数 L = 4。这些尺寸用于教学，不能当作某个实际大模型的配置。</p>
+      <h3>1. Embedding 与归一化</h3>
+      <p><code>input_ids [B, T]</code> 通过嵌入表得到 <code>X [B, T, d]</code>。随后 RMSNorm 沿每个位置的隐藏维度调整向量尺度，不改变 token 数。角色边界、标点和子词同样有表示；模型不直接对中文字符串做矩阵乘法。</p>
+      <h3>2. 注意力读取上下文</h3>
+      <p>归一化输入分别乘以三组权重，得到 Q、K、V；RoPE 根据位置旋转 Q 和 K。普通多头注意力将它们整理为 <code>[B, h, T, dₕ]</code>。令 N 为包含当前输入的总上下文长度，注意力计算为：</p>
+      <pre><code>scores = Q @ Kᵀ / √d_head + causal_mask
+A = softmax(scores, axis=key_positions)
+context = A @ V
+H = X + Concat(context_heads) @ W_o</code></pre>
+      <p>因果遮罩把未来位置的 score 设为负无穷。softmax 把当前可见位置的 score 归一化为权重，随后对 V 加权求和。这是获取上下文信息的一次计算；注意力图本身不能直接等同于模型的推理理由。</p>
+      <h3>3. 前馈网络与多层变换</h3>
+      <p>对 H 再做 RMSNorm，经过 SwiGLU 的 Gate、Up、逐元素乘法和 Down 投影，再接残差，得到该层输出。后续每层继续执行自己的同类计算。模型权重在推理时不更新，没有训练时的反向传播；变化的是当前请求的隐藏状态、缓存和生成序列。</p>
+      <p>MoE 模型在前馈部分加入专家选择；GQA/MQA 减少 K/V 头数；一些架构使用 MLA、滑动窗口或不同位置编码。因此动画展示共同机制与一种具体结构，而不是所有 LLM 的统一实现。底层融合 kernel 也可能让多个逻辑模块对应一次 GPU 执行。</p>
+      <h3>4. 从连续向量到离散 token</h3>
+      <p>最后一层输出经过 Final Norm 和 LM Head，最后位置得到形状 <code>[B, Vocab]</code> 的 logits。第 t 次选择基于 <code>P(yₜ | prompt, y₁, …, yₜ₋₁)</code>。贪心策略选最大项；随机采样可先按温度缩放 logits，再用 top-k 或 top-p 限定候选并抽样。</p>
+      <p>softmax 概率反映当前上下文下的相对选择倾向，不保证事实正确。动画使用小型预设 logits 实际计算 softmax，目的是看懂分数到概率再到一个 ID 的转换，不声称这些数值是模型对用户 prompt 的计算结果。</p>
+      <h2 id="prefill-decode">第一颗 token 和后面的 token，路径有什么不同？</h2>
+      <p>Prefill 处理模板后的整个输入序列，长度为 S。各位置的前向计算在因果约束下并行进行，每层写入自己的 S 组 K/V。最后输入位置的输出已经可以预测第一个生成 token。</p>
+      <p>Decode 则把上一轮刚选出的 token 作为唯一的新输入，T = 1。每层为它计算新 Q/K/V，将新 K/V 追加到本层历史缓存，再用新 Q 读取全部可见 K/V，预测下一个 token。这里的“Decode”是模型增量生成阶段，“Detokenize”是 ID 转文本，两者不是同一件事。</p>
+      <pre><code>Prefill(prompt[0:S]) → KV 长度 S → 选出 y₁ → 返回文本
+Decode(y₁)          → KV 长度 S+1 → 选出 y₂ → 返回文本
+Decode(y₂)          → KV 长度 S+2 → 选出 y₃ → 返回文本
+…
+Decode(上一 token)  → 选出 EOS → 结束并回收</code></pre>
+      <p>注意时序：token 刚被选中时还没有它自己的各层 K/V，下一轮把它送入模型后才写入缓存。因此“选出了多少个输出 token”与“KV 中新增了多少个生成位置”不能始终画成相同数字。</p>
+      <p>本例 MHA 的逻辑 KV 元素数是 <code>2 × L × B × h × N × dₕ</code>，前面的 2 表示 K 和 V。乘以每个元素的字节数才是张量字节量；页式分配、元数据、碎片、并行分片和 KV 量化会改变实际显存开销。缓存不保存 Q，也不等于保存了自然语言回答。</p>
+      <h2 id="returning">为什么文字能一边生成，一边返回？</h2>
+      <p>服务不必等完整回答结束：一旦增量解码器拥有可发送文本，就可以写入 SSE 等流式协议，网关转发，浏览器把收到的片段追加到页面。网络发送和下一轮模型计算可以重叠。一个 token 可能对应不完整字节，一个 chunk 也可能包含多个 token，因此真实用户看到的节奏不总与 GPU 解码步完全一致。</p>
+      <p>结束由 EOS、输出上限、停止串、取消或错误等条件决定。服务发送相应结束原因，完成使用量统计并释放请求资源。断开连接后还应把取消传递到引擎，否则用户已经离开，服务仍可能继续消耗计算和 KV 空间。</p>
+      <h2 id="observing">把动画中的阶段映射到观测信号</h2>
+      <p>动画底部记录的是事件序号，没有伪造 GPU 耗时。真正上线后，应先明确每种时延的起止边界，再关联 trace_id、rid、模型版本和实例。请求的原始 prompt 可能含敏感内容，不能直接当作高基数指标标签。</p>
+      <ul>
+        <li><strong>首字慢：</strong>沿网关、分词、排队、Prefill、选择、解码与网络缓冲逐段检查。客户端 TTFT 从请求发出到首个可用输出；服务端 TTFT 可能采用另一测量边界。</li>
+        <li><strong>后续输出断断续续：</strong>结合 Decode 调度、每轮 kernel、KV 读带宽、通信和网络缓冲分析 ITL。平均 TPOT 常用 <code>(最后 token 时间 − 首 token 时间) / (输出 token 数 − 1)</code>，仅在 token 数大于 1 且测量口径一致时使用。</li>
+        <li><strong>长上下文吞吐下降：</strong>同时看 scheduled tokens、KV 占用、前缀命中、抢占与回收。KV Cache 避免旧 K/V 重算，但读取成本仍随可见历史增长。</li>
+        <li><strong>定位到模型内部：</strong>服务级 Trace 定位慢阶段，采样 GPU profiler 分解 attention、GEMM 和通信。不要为了复制动画，把所有层、所有 token 无差别永久埋成 span。</li>
+      </ul>
+      <p>继续阅读 <a href={withBase("/observability/three-pillars/")}>Metrics、Logs 与 Traces</a>，把这条数据路径变成实际排障证据链。</p>
+      <h2 id="references">参考资料与适用边界</h2>
+      <p>本页按公开资料整理，于 2026-09-06 核对。动画中的调度顺序为示例，未展开投机解码、前缀复用、Prefill/Decode 分离、跨 GPU 通信和多模态编码器；它们会改变执行与资源路径，但不影响理解此处的基础自回归循环。</p>
+      <ul>
+        <li><a href="https://arxiv.org/abs/1706.03762" target="_blank" rel="noopener">Attention Is All You Need</a>：注意力、位置与残差结构的基础。</li>
+        <li><a href="https://arxiv.org/abs/2302.13971" target="_blank" rel="noopener">LLaMA: Open and Efficient Foundation Language Models</a>：本页所采用的 RMSNorm、SwiGLU 与 RoPE 架构背景。</li>
+        <li><a href="https://huggingface.co/docs/transformers/main/cache_explanation" target="_blank" rel="noopener">Hugging Face · How caching works</a>：逐层 K/V 复用、张量形状和增量生成循环。</li>
+        <li><a href="https://huggingface.co/docs/transformers/main/llm_tutorial" target="_blank" rel="noopener">Hugging Face · Text generation</a>：分词、生成与解码策略。</li>
+        <li><a href="https://docs.vllm.ai/en/latest/configuration/optimization/" target="_blank" rel="noopener">vLLM · Optimization and Tuning</a>：调度预算、KV 资源与分块 Prefill 的权衡。</li>
+      </ul>
+    </div>
+  </article>
+</BaseLayout>

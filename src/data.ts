@@ -59,6 +59,14 @@ export const learningPath = [
 
 export const entries: NoteEntry[] = [
   {
+    title: "一次大模型推理的旅程",
+    description: "交互动画：从 prompt 调度到 Transformer、KV Cache、Prefill/Decode、token 生成与流式返回。",
+    href: "/observability/inference-animation/",
+    section: "可观测性",
+    status: "已发布",
+    updated: "2026-09-06",
+  },
+  {
     title: "LLMOps 系统化学习路线",
     description: "从模型生命周期到生产运维的知识地图与推荐学习顺序。",
     href: "/roadmap/llmops-roadmap/",

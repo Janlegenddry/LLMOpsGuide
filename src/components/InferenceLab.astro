@@ -1,0 +1,54 @@
+---
+import { modules } from "../lib/inference-demo";
+import "../styles/inference-lab.css";
+---
+<section class="inference-lab" id="inference-lab" aria-label="大模型推理动画实验台">
+  <header class="lab-heading">
+    <div><p class="lab-kicker">INTERACTIVE TRACE / 交互式请求追踪</p><h2>跟随一个请求，进入模型内部</h2></div>
+    <span class="lab-mode">本地教学模拟</span>
+  </header>
+  <p class="lab-disclaimer">无需 API Key，输入不会上传。采用简化分词、玩具张量和预设回答，展示真实计算流程的结构；不执行真实 LLM，不展示模型内部思维链。</p>
+  <noscript><p>启用 JavaScript 后可以播放交互动画。下方的静态章节仍可完整阅读。</p></noscript>
+  <form id="lab-form" class="lab-input">
+    <div class="lab-prompt-field"><label for="lab-prompt">你的 prompt</label><textarea id="lab-prompt" rows="2" maxlength="160" required aria-describedby="lab-input-help">用一句话解释 KV Cache。</textarea><p id="lab-input-help">最多 160 个字符。修改输入后点击“载入请求”，重新开始演示。</p></div>
+    <div class="lab-input-actions"><button type="submit" class="lab-primary">载入请求</button><button type="button" id="lab-example">换个示例</button></div>
+  </form>
+  <div class="lab-controls" role="group" aria-label="动画播放控制">
+    <button type="button" id="lab-play" class="lab-primary" aria-pressed="false">播放动画</button>
+    <button type="button" id="lab-prev" aria-label="上一步">← 上一步</button>
+    <button type="button" id="lab-next" aria-label="下一步">下一步 →</button>
+    <button type="button" id="lab-reset">回到开头</button>
+    <label class="lab-speed">播放速度<select id="lab-speed"><option value="1">1× · 细读</option><option value="2">2×</option><option value="4">4× · 概览</option></select></label>
+  </div>
+  <div class="lab-seek"><label for="lab-progress">步骤 <output id="lab-position">1</output></label><input id="lab-progress" type="range" min="0" max="1" value="0" aria-label="跳转到指定步骤" /></div>
+  <nav class="lab-chapters" aria-label="跳转到推理阶段"><button type="button" data-chapter="请求">01 请求调度</button><button type="button" data-chapter="Prefill">02 Prefill</button><button type="button" data-chapter="Decode">03 Decode 循环</button><button type="button" data-chapter="结束">04 返回与回收</button></nav>
+  <div class="lab-status-line"><span id="lab-phase">请求</span><span id="lab-round">等待播放</span><span id="lab-play-status" role="status" aria-live="polite">已暂停，可单步查看</span></div>
+  <div class="lab-workbench">
+    <details class="lab-map" open>
+      <summary>查看模块路径与 KV Cache <span aria-hidden="true">⌄</span></summary>
+      <div class="lab-map-label"><h3>请求路径</h3><span>点击节点可跳转</span></div>
+      <div class="lab-service-path">
+        {[["client", "用户 / 流式输出"], ["gateway", "网关 / 路由"], ["tokenizer", "Chat template / 分词"], ["scheduler", "Scheduler / Batch"]].map(([id, label]) => <button type="button" data-node={id}><i aria-hidden="true"></i><span>{label}</span><span class="lab-node-arrow" aria-hidden="true">↓</span></button>)}
+      </div>
+      <div class="lab-model-box"><div class="lab-map-label"><h3>GPU · Decoder-only Transformer</h3><span>4 层 / 2 头 / d = 8 · 玩具配置</span></div>
+        <div class="lab-model-path">{modules.map(([id, name, caption]) => <button type="button" data-node={id}><i aria-hidden="true"></i><strong>{name}</strong><small>{caption}</small><span class="lab-node-arrow" aria-hidden="true">↓</span></button>)}</div>
+        <p class="lab-loop">↳ token ID 回送 Embedding · 每轮重新经过全部层</p>
+      </div>
+      <div class="lab-cache"><div class="lab-map-label"><h3>每层各有一份 KV Cache</h3><span id="lab-cache-summary">空</span></div><div id="lab-cache-rows"></div><p>格子表示已写入的位置，不是 token 文本。Q 不缓存。</p></div>
+    </details>
+    <div class="lab-inspector">
+      <section class="lab-explanation" aria-labelledby="lab-step-title"><p class="lab-kicker" id="lab-step-label">STEP 01</p><h3 id="lab-step-title">把对话封装成请求</h3><p id="lab-step-text"></p><div class="lab-flow" id="lab-flow"></div></section>
+      <section class="lab-data" aria-label="本步输入和输出"><div><h4>输入数据</h4><pre id="lab-data-in"></pre></div><span class="lab-data-arrow" aria-hidden="true">↓</span><div><h4>输出数据</h4><pre id="lab-data-out"></pre></div></section>
+      <section class="lab-visual" aria-labelledby="lab-visual-title"><div class="lab-map-label"><h3 id="lab-visual-title">数据切片</h3><span id="lab-visual-label">教学示意</span></div><div id="lab-visual-content"></div></section>
+      <aside class="lab-watch"><h4>在生产环境观测什么？</h4><p id="lab-watch-text"></p></aside>
+    </div>
+  </div>
+  <div class="lab-bottom">
+    <section class="lab-output"><div class="lab-map-label"><h3>用户收到的流式文本</h3><span id="lab-output-count">0 个可见 token</span></div><p class="lab-output-text" id="lab-output" aria-live="off">等待首个 token…</p><p class="lab-output-note">固定教学回答：“模型逐个生成 token。”</p><div id="lab-stream-events" class="lab-stream-events"></div></section>
+    <section class="lab-trace"><div class="lab-map-label"><h3>请求事件序列</h3><span>序号，不是耗时</span></div><ol id="lab-event-list"></ol></section>
+  </div>
+</section>
+<script>
+  import { initInferenceLab } from "../scripts/inference-lab";
+  initInferenceLab();
+</script>
