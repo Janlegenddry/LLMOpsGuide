@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { validateReport } from './radar-report.mjs';
+import { officialSource } from './radar-sources.mjs';
 
-export const topics = ['SGLang', 'GPU 通信', 'KV Cache', 'PD 分离', '投机解码', '故障分析'];
+export const topics = ['SGLang', 'GPU 通信', 'KV Cache', 'PD 分离', '投机解码', '故障分析', 'vLLM', 'NPU/昇腾', '推理编译', '服务调度', '分布式训练'];
 export const kindNames = { release: '版本动态', analysis: '深度解读', reading: '阅读清单' };
 const fail = (message) => { throw new Error(message); };
 const keys = (object, allowed, name) => {
@@ -24,11 +25,17 @@ const array = (value, name, min = 0, max = 30) => {
 };
 export function sourceURL(raw) {
   const url = new URL(str(raw, 'source.url', 500));
-  const approved = (['lmsys.org', 'www.lmsys.org'].includes(url.hostname) && url.pathname.startsWith('/blog/')) ||
-    (url.hostname === 'github.com' && url.pathname.startsWith('/sgl-project/sglang/')) ||
-    (url.hostname === 'docs.sglang.io') ||
-    (url.hostname === 'docs.nvidia.com' && url.pathname.startsWith('/deeplearning/nccl/user-guide/docs/'));
-  if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || !approved) fail('来源必须是公开的 LMSYS blog、SGLang 官方 GitHub/文档或 NVIDIA NCCL 文档 HTTPS 地址，无认证参数');
+  const source = officialSource(url);
+  if (!source) fail('来源必须在已核验的官方 AI Infra 来源表中，使用 HTTPS 且无认证或查询参数');
+  // The root migration was checked on 2026-10-03; article redirects need collector verification.
+  if (url.hostname === 'blog.vllm.ai' && url.pathname === '/') {
+    url.hostname = 'vllm.ai';
+    url.pathname = '/blog';
+  }
+  if (source.repository) {
+    const suffix = url.pathname.split('/').slice(3).join('/');
+    url.pathname = `/${source.repository}${suffix ? `/${suffix}` : ''}`;
+  }
   url.hash = '';
   url.pathname = url.pathname.replace(/\/+$/, '');
   return url.href;

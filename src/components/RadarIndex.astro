@@ -1,5 +1,5 @@
 ---
-import { radar, topics, kindNames, radarHref } from '../radar';
+import { radar, topics, kindNames, radarHref, sourceName } from '../radar';
 import { withBase } from '../paths';
 interface Props { pageHeading?: boolean }
 const { pageHeading = false } = Astro.props;
@@ -30,7 +30,7 @@ const lastReviewed = radar.map(record => record.reviewedAt).sort().at(-1);
     {radar.map(record => <article class="radar-record" data-radar-record data-kind={record.kind} data-month={record.publishedAt.slice(0,7)} data-topics={record.topics.join('|')} data-search={`${record.title} ${record.summary} ${record.topics.join(' ')} ${kindNames[record.kind]}`}>
       <div class="reader-date"><time datetime={record.publishedAt}>{record.publishedAt.slice(5).replace('-', '.')}<span>{record.publishedAt.slice(0,4)}</span></time></div>
       <div class="reader-card">
-      <div class="radar-record__meta"><span class="radar-source">{record.sources[0].url.includes('github.com') ? 'SGLang · GitHub' : 'LMSYS · Blog'}</span><span class:list={['radar-kind', `radar-kind--${record.kind}`]}>{kindNames[record.kind]}</span></div>
+      <div class="radar-record__meta"><span class="radar-source">{sourceName(record.sources[0].url)}</span><span class:list={['radar-kind', `radar-kind--${record.kind}`]}>{kindNames[record.kind]}</span></div>
       <h3><a href={withBase(radarHref(record.id))}>{record.title}<span aria-hidden="true"> ↗</span></a></h3>
       <p>{record.summary}</p>
       <div class="radar-record__footer"><span class="reader-tags">{record.topics.map(topic => <span>{topic}</span>)}</span><span>核对 {record.reviewedAt}</span></div>

@@ -1,6 +1,7 @@
 import data from './content/radar.json';
 import { mergeRecords, kindNames, topics } from './lib/radar-store.mjs';
 export { basisNames } from './lib/radar-report.mjs';
+export { sourceName } from './lib/radar-sources.mjs';
 
 export type ReportBasis = 'official' | 'author' | 'inference' | 'pending';
 type Provenance = { basis: ReportBasis; sourceIndices: number[] };

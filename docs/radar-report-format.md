@@ -56,7 +56,7 @@
 
 条图：`series: [{label, segments: [{label, value}]}]`，value 是有限正数；按数值比例渲染并列出完整数字。不要凭空画未测占用比例。
 
-来源可以用 `publishedAt` 表示真实原文日期，或用 `accessedAt` 表示在线文档查阅日期，也可同时提供。第一来源必须有真实 `publishedAt` 并与记录原文日期一致。在线文档和 main 分支不得伪装成冻结版本。额外只放行官方 NVIDIA NCCL 文档路径，其他公开来源仍按既有 LMSYS / SGLang 白名单校验。
+来源可以用 `publishedAt` 表示真实原文日期，或用 `accessedAt` 表示在线文档查阅日期，也可同时提供。第一来源必须有真实 `publishedAt` 并与记录原文日期一致。在线文档和 main 分支不得伪装成冻结版本。按[官方 AI Infra 来源表](radar-official-sources.md)接受精确仓库、域名和路径；采集任务须核对重定向最终地址。原有 SGLang / LMSYS / NCCL 来源继续兼容。
 
 ## 不丢正文的更新规则
 
