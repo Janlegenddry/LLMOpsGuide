@@ -173,90 +173,145 @@
                   "label": "旧风险：A 请求失败",
                   "detail": "失败上报时，其他 rank 的在途写入可能还没有结束。",
                   "column": 0,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "请求 A 失败",
+                  "subtitle": "仍有在途传输",
+                  "tone": "neutral"
                 },
                 {
                   "id": "old-free",
                   "label": "KV 页提前归还",
                   "detail": "请求失败事件不能单独证明页可安全复用。",
                   "column": 1,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "提前释放",
+                  "subtitle": "错误的释放时点",
+                  "tone": "danger"
                 },
                 {
                   "id": "old-reuse",
                   "label": "B 请求复用同页",
                   "detail": "复用让旧请求写入和新请求状态发生交叉。",
                   "column": 2,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "B 复用同页",
+                  "subtitle": "页面已属于 B",
+                  "tone": "danger"
                 },
                 {
                   "id": "old-write",
                   "label": "A 迟到写污染 B",
                   "detail": "表现可能是无关请求质量异常，不一定先报通信错误。",
                   "column": 3,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "迟到写入",
+                  "subtitle": "A 污染 B 的 KV",
+                  "tone": "danger"
                 },
                 {
                   "id": "new-fail",
                   "label": "保护：A 请求失败",
                   "detail": "所有适用的传输失败要进入资源保护分支。",
                   "column": 0,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "请求 A 失败",
+                  "subtitle": "进入清理流程",
+                  "tone": "neutral"
                 },
                 {
                   "id": "new-drain",
                   "label": "通知停写并排空",
                   "detail": "失败处理和发送方排空需要关联相同 room / 请求身份。",
                   "column": 1,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "停写与排空",
+                  "subtitle": "通知相关发送方",
+                  "tone": "communication"
                 },
                 {
                   "id": "new-hold",
                   "label": "暂留页及元数据",
                   "detail": "等待相关确认，避免还在写的页面被新请求取走。",
                   "column": 2,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "暂留 KV 页",
+                  "subtitle": "保留页与元数据",
+                  "tone": "kv"
                 },
                 {
                   "id": "new-release",
                   "label": "确认后释放",
                   "detail": "恢复资源可复用状态；同时核对超时和异常分支。",
                   "column": 3,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "确认后释放",
+                  "subtitle": "满足释放条件",
+                  "tone": "kv"
                 }
               ],
               "edges": [
                 {
                   "from": "old-fail",
                   "to": "old-free",
-                  "label": "错误地把失败当作可释放"
+                  "label": "错误地把失败当作可释放",
+                  "shortLabel": "误释放"
                 },
                 {
                   "from": "old-free",
                   "to": "old-reuse",
-                  "label": "分配器把同页给 B"
+                  "label": "分配器把同页给 B",
+                  "shortLabel": "复用"
                 },
                 {
                   "from": "old-reuse",
                   "to": "old-write",
-                  "label": "A 的在途传输迟到"
+                  "label": "A 的在途传输迟到",
+                  "shortLabel": "迟到写"
                 },
                 {
                   "from": "new-fail",
                   "to": "new-drain",
-                  "label": "通知相关发送方终止 / 排空"
+                  "label": "通知相关发送方终止 / 排空",
+                  "shortLabel": "停写"
                 },
                 {
                   "from": "new-drain",
                   "to": "new-hold",
-                  "label": "保留状态直到确认"
+                  "label": "保留状态直到确认",
+                  "shortLabel": "等待确认"
                 },
                 {
                   "from": "new-hold",
                   "to": "new-release",
-                  "label": "确认路径满足后再释放"
+                  "label": "确认路径满足后再释放",
+                  "shortLabel": "安全释放"
                 }
-              ]
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧风险 · 失败后提前释放",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-fail",
+                      "old-free",
+                      "old-reuse",
+                      "old-write"
+                    ]
+                  },
+                  {
+                    "title": "保护路径 · 保留状态直到确认",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "new-fail",
+                      "new-drain",
+                      "new-hold",
+                      "new-release"
+                    ]
+                  }
+                ]
+              }
             },
             {
               "type": "paragraph",
@@ -294,66 +349,111 @@
                   "label": "局部 FFN + 待归约",
                   "detail": "FFN 的 all-reduce 可能延至后续融合消费者。",
                   "column": 0,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "局部 FFN 结果",
+                  "subtitle": "仍有待完成归约",
+                  "tone": "compute"
                 },
                 {
                   "id": "old-send",
                   "label": "传输时丢失待完成语义",
                   "detail": "部分和跨 PP 交接，接收方未得到正确归约责任。",
                   "column": 1,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "跨 PP 边界",
+                  "subtitle": "待完成语义丢失",
+                  "tone": "communication"
                 },
                 {
                   "id": "old-consume",
                   "label": "按完整结果错误消费",
                   "detail": "通信 API 无报错也可能产生数值错误。",
                   "column": 2,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "错误消费",
+                  "subtitle": "误当作完整结果",
+                  "tone": "danger"
                 },
                 {
                   "id": "new-identify",
                   "label": "识别待完成计算",
                   "detail": "边界要表达输出所有权、残差与待完成工作。",
                   "column": 0,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "识别待完成计算",
+                  "subtitle": "张量与语义一起传递",
+                  "tone": "control"
                 },
                 {
                   "id": "new-complete",
                   "label": "由契约决定谁完成",
                   "detail": "历史修复在相关发送前补归约；静态契约也可跨阶段传递部分和。",
                   "column": 1,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "明确归约责任",
+                  "subtitle": "由阶段契约决定",
+                  "tone": "compute"
                 },
                 {
                   "id": "new-handoff",
                   "label": "完整语义交接",
                   "detail": "接收方按契约消费，既不能漏归约，也不能再归约一次。",
                   "column": 2,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "完整语义交接",
+                  "subtitle": "下游按契约消费",
+                  "tone": "kv"
                 }
               ],
               "edges": [
                 {
                   "from": "old-partial",
                   "to": "old-send",
-                  "label": "部分结果进入 PP 边界"
+                  "label": "部分结果进入 PP 边界",
+                  "shortLabel": "局部结果"
                 },
                 {
                   "from": "old-send",
                   "to": "old-consume",
-                  "label": "待完成标记未正确保留"
+                  "label": "待完成标记未正确保留",
+                  "shortLabel": "语义丢失"
                 },
                 {
                   "from": "new-identify",
                   "to": "new-complete",
-                  "label": "确定归约责任"
+                  "label": "确定归约责任",
+                  "shortLabel": "确定责任"
                 },
                 {
                   "from": "new-complete",
                   "to": "new-handoff",
-                  "label": "交接张量与计算语义"
+                  "label": "交接张量与计算语义",
+                  "shortLabel": "完整语义"
                 }
-              ]
+              ],
+              "presentation": {
+                "kind": "boundary",
+                "panels": [
+                  {
+                    "title": "旧缺陷 · 边界丢失计算语义",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-partial",
+                      "old-send",
+                      "old-consume"
+                    ]
+                  },
+                  {
+                    "title": "正确契约 · 明确待完成计算",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "new-identify",
+                      "new-complete",
+                      "new-handoff"
+                    ]
+                  }
+                ]
+              }
             },
             {
               "type": "paragraph",
@@ -391,64 +491,112 @@
                   "label": "前缀缓存操作",
                   "detail": "匹配、插入、淘汰和状态维护会产生 CPU 工作。",
                   "column": 0,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "前缀缓存操作",
+                  "subtitle": "查找 / 插入 / 淘汰",
+                  "tone": "neutral"
                 },
                 {
                   "id": "select",
                   "label": "兼容性选择",
                   "detail": "受支持条件走默认核心，不支持条件按设计回退。",
                   "column": 1,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "兼容性选择",
+                  "subtitle": "先核对实际命中路径",
+                  "tone": "control"
                 },
                 {
                   "id": "rust",
                   "label": "Rust TreeCore",
                   "detail": "默认核心变化，应核对状态和行为一致性。",
                   "column": 2,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "Rust TreeCore",
+                  "subtitle": "支持场景的默认核心",
+                  "tone": "compute"
                 },
                 {
                   "id": "python",
                   "label": "Python 回退",
                   "detail": "回退要能解释，不能把回退样本当 Rust 性能结果。",
                   "column": 2,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "Python 回退",
+                  "subtitle": "兼容路径",
+                  "tone": "neutral"
                 },
                 {
                   "id": "state",
                   "label": "缓存状态 / 复用",
                   "detail": "正确性包括匹配、淘汰、锁和 KV 生命周期。",
                   "column": 3,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "缓存状态与复用",
+                  "subtitle": "匹配 / 淘汰 / 锁语义",
+                  "tone": "kv"
                 }
               ],
               "edges": [
                 {
                   "from": "operation",
                   "to": "select",
-                  "label": "通过统一入口操作"
+                  "label": "通过统一入口操作",
+                  "shortLabel": "统一入口"
                 },
                 {
                   "from": "select",
                   "to": "rust",
-                  "label": "支持场景使用默认核心"
+                  "label": "支持场景使用默认核心",
+                  "shortLabel": "支持"
                 },
                 {
                   "from": "select",
                   "to": "python",
-                  "label": "需要兼容回退时走 Python"
+                  "label": "需要兼容回退时走 Python",
+                  "shortLabel": "回退"
                 },
                 {
                   "from": "rust",
                   "to": "state",
-                  "label": "产生可复用的缓存状态"
+                  "label": "产生可复用的缓存状态",
+                  "shortLabel": "一致状态"
                 },
                 {
                   "from": "python",
                   "to": "state",
-                  "label": "保持兼容路径语义"
+                  "label": "保持兼容路径语义",
+                  "shortLabel": "一致状态"
                 }
-              ]
+              ],
+              "presentation": {
+                "kind": "cache-routing",
+                "panels": [
+                  {
+                    "title": "控制面入口",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "operation",
+                      "select"
+                    ]
+                  },
+                  {
+                    "title": "核心选择",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "rust",
+                      "python"
+                    ]
+                  },
+                  {
+                    "title": "状态与复用",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "state"
+                    ]
+                  }
+                ]
+              }
             },
             {
               "type": "paragraph",
@@ -477,76 +625,123 @@
                   "label": "普通：各 stage 前向",
                   "detail": "张量按层阶段经过流水线。",
                   "column": 0,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "各 stage 前向",
+                  "subtitle": "普通生成轮次",
+                  "tone": "compute"
                 },
                 {
                   "id": "normal-last",
                   "label": "末阶段采样",
                   "detail": "产生下一步 token。",
                   "column": 1,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "末阶段采样",
+                  "subtitle": "确定下一 token",
+                  "tone": "compute"
                 },
                 {
                   "id": "normal-back",
                   "label": "回传 token",
                   "detail": "前部阶段获得下一轮输入。",
                   "column": 2,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "回传 token",
+                  "subtitle": "进入下一轮",
+                  "tone": "communication"
                 },
                 {
                   "id": "spec-stages",
                   "label": "投机：各 stage 验证",
                   "detail": "所有阶段参与候选验证。",
                   "column": 0,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "各 stage 验证",
+                  "subtitle": "目标模型验证轮次",
+                  "tone": "compute"
                 },
                 {
                   "id": "spec-last",
                   "label": "末阶段下一轮草稿",
                   "detail": "草稿执行时间与末阶段资源需纳入成本。",
                   "column": 1,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "下一轮草稿",
+                  "subtitle": "末阶段准备候选",
+                  "tone": "control"
                 },
                 {
                   "id": "spec-back",
                   "label": "回传树 / 接受信息",
                   "detail": "新增控制与通信工作，可能造成流水空泡。",
                   "column": 2,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "回传控制信息",
+                  "subtitle": "候选树 / 接受状态",
+                  "tone": "communication"
                 }
               ],
               "edges": [
                 {
                   "from": "normal-stages",
                   "to": "normal-last",
-                  "label": "前向到末阶段"
+                  "label": "前向到末阶段",
+                  "shortLabel": "前向"
                 },
                 {
                   "from": "normal-last",
                   "to": "normal-back",
-                  "label": "采样下一 token"
+                  "label": "采样下一 token",
+                  "shortLabel": "采样"
                 },
                 {
                   "from": "normal-back",
                   "to": "normal-stages",
-                  "label": "开始下一轮"
+                  "label": "开始下一轮",
+                  "shortLabel": "下一轮"
                 },
                 {
                   "from": "spec-stages",
                   "to": "spec-last",
-                  "label": "验证后准备下一轮草稿"
+                  "label": "验证后准备下一轮草稿",
+                  "shortLabel": "验证"
                 },
                 {
                   "from": "spec-last",
                   "to": "spec-back",
-                  "label": "交换候选树和接受状态"
+                  "label": "交换候选树和接受状态",
+                  "shortLabel": "树与接受状态"
                 },
                 {
                   "from": "spec-back",
                   "to": "spec-stages",
-                  "label": "各 stage 开始下一轮验证"
+                  "label": "各 stage 开始下一轮验证",
+                  "shortLabel": "下一轮验证"
                 }
-              ]
+              ],
+              "presentation": {
+                "kind": "pipeline-loop",
+                "panels": [
+                  {
+                    "title": "普通 PP · token 回传",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "normal-stages",
+                      "normal-last",
+                      "normal-back"
+                    ]
+                  },
+                  {
+                    "title": "投机 PP · 树与接受信息回传",
+                    "tone": "control",
+                    "nodeIds": [
+                      "spec-stages",
+                      "spec-last",
+                      "spec-back"
+                    ]
+                  }
+                ]
+              }
             },
             {
               "type": "paragraph",
@@ -583,42 +778,77 @@
                   "label": "旧：专家结果",
                   "detail": "受开关影响的 FlashInfer MoE 路径。",
                   "column": 0,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "专家结果",
+                  "subtitle": "旧默认输入",
+                  "tone": "compute"
                 },
                 {
                   "id": "old-fused",
                   "label": "Fused finalize",
                   "detail": "历史默认融合路径。",
                   "column": 1,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "Fused finalize",
+                  "subtitle": "受控融合路径",
+                  "tone": "neutral"
                 },
                 {
                   "id": "new-result",
                   "label": "新：专家结果",
                   "detail": "新版默认先保障对应路径的数值准确性。",
                   "column": 0,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "专家结果",
+                  "subtitle": "新版默认输入",
+                  "tone": "compute"
                 },
                 {
                   "id": "new-unfused",
                   "label": "Unfused finalize",
                   "detail": "默认关闭融合；可显式启用，但需独立回归。",
                   "column": 1,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "Unfused finalize",
+                  "subtitle": "非融合路径",
+                  "tone": "compute"
                 }
               ],
               "edges": [
                 {
                   "from": "old-result",
                   "to": "old-fused",
-                  "label": "旧默认的受控融合路径"
+                  "label": "旧默认的受控融合路径",
+                  "shortLabel": "旧默认"
                 },
                 {
                   "from": "new-result",
                   "to": "new-unfused",
-                  "label": "新版默认对应的非融合路径"
+                  "label": "新版默认对应的非融合路径",
+                  "shortLabel": "新默认"
                 }
-              ]
+              ],
+              "presentation": {
+                "kind": "paths",
+                "panels": [
+                  {
+                    "title": "旧默认 · 受控融合路径",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "old-result",
+                      "old-fused"
+                    ]
+                  },
+                  {
+                    "title": "新版默认 · 非融合路径",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "new-result",
+                      "new-unfused"
+                    ]
+                  }
+                ]
+              }
             },
             {
               "type": "paragraph",
@@ -1243,112 +1473,180 @@
                   "label": "请求 / 网关准入",
                   "detail": "从请求进入服务开始计时，记录准入拒绝与路由选择。",
                   "column": 0,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "准入",
+                  "subtitle": "路由与拒绝",
+                  "tone": "neutral"
                 },
                 {
                   "id": "queue",
                   "label": "排队",
                   "detail": "到达率超过可交付能力时，队列可能先于 GPU 计算变长。",
                   "column": 1,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "排队",
+                  "subtitle": "等待执行",
+                  "tone": "neutral"
                 },
                 {
                   "id": "prefill",
                   "label": "Prefill",
                   "detail": "处理输入上下文，按层产生后续生成需要的 KV 状态。",
                   "column": 2,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "Prefill",
+                  "subtitle": "产生 KV",
+                  "tone": "compute"
                 },
                 {
                   "id": "handoff",
                   "label": "KV 交接",
                   "detail": "P/D 握手、D 侧分配与数据传输是不同等待。",
                   "column": 3,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "KV 交接",
+                  "subtitle": "跨实例传输",
+                  "tone": "communication"
                 },
                 {
                   "id": "response",
                   "label": "流式响应",
                   "detail": "客户端观察到的 token 间隔还会受发送批次和缓冲影响。",
                   "column": 0,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "流式响应",
+                  "subtitle": "客户端观测",
+                  "tone": "kv"
                 },
                 {
                   "id": "decode",
                   "label": "Decode 循环",
                   "detail": "沿注意力、MoE、通信与调度的关键路径提交输出。",
                   "column": 1,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "Decode 循环",
+                  "subtitle": "使用已就绪的 KV",
+                  "tone": "compute"
                 },
                 {
                   "id": "commit",
                   "label": "提交有效 token",
                   "detail": "只计算真正提交且满足质量规则的 token，避免把候选计为产出。",
                   "column": 2,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "提交",
+                  "subtitle": "有效 token",
+                  "tone": "control"
                 },
                 {
                   "id": "verify",
                   "label": "目标验证",
                   "detail": "目标模型验证草稿；较长验证不必然带来更低输出成本。",
                   "column": 3,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "验证",
+                  "subtitle": "目标模型",
+                  "tone": "control"
                 },
                 {
                   "id": "draft",
                   "label": "草稿生成",
                   "detail": "草稿会占用执行时间与状态；不能仅凭接受率决定开启。",
                   "column": 3,
-                  "row": 2
+                  "row": 2,
+                  "shortLabel": "草稿",
+                  "subtitle": "提出候选",
+                  "tone": "control"
                 }
               ],
               "edges": [
                 {
                   "from": "gateway",
                   "to": "queue",
-                  "label": "准入后进入队列"
+                  "label": "准入后进入队列",
+                  "shortLabel": "准入"
                 },
                 {
                   "from": "queue",
                   "to": "prefill",
-                  "label": "获得输入计算资源"
+                  "label": "获得输入计算资源",
+                  "shortLabel": "调度"
                 },
                 {
                   "from": "prefill",
                   "to": "handoff",
-                  "label": "交接请求所属 KV"
+                  "label": "交接请求所属 KV",
+                  "shortLabel": "生成KV"
                 },
                 {
                   "from": "handoff",
                   "to": "decode",
-                  "label": "接收端状态就绪后生成"
+                  "label": "接收端状态就绪后生成",
+                  "shortLabel": "就绪"
                 },
                 {
                   "from": "decode",
                   "to": "response",
-                  "label": "输出已提交 token"
+                  "label": "输出已提交 token",
+                  "shortLabel": "流式输出"
                 },
                 {
                   "from": "decode",
                   "to": "draft",
-                  "label": "启用投机时产生候选"
+                  "label": "启用投机时产生候选",
+                  "shortLabel": "候选"
                 },
                 {
                   "from": "draft",
                   "to": "verify",
-                  "label": "候选交给目标模型"
+                  "label": "候选交给目标模型",
+                  "shortLabel": "候选"
                 },
                 {
                   "from": "verify",
                   "to": "commit",
-                  "label": "验证并提交可接受前缀及相应输出"
+                  "label": "验证并提交可接受前缀及相应输出",
+                  "shortLabel": "接受前缀"
                 },
                 {
                   "from": "commit",
                   "to": "decode",
-                  "label": "进入下一轮生成"
+                  "label": "进入下一轮生成",
+                  "shortLabel": "下一轮"
                 }
-              ]
+              ],
+              "presentation": {
+                "kind": "request-lanes",
+                "panels": [
+                  {
+                    "title": "入口 · 网关 / 准入",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "gateway",
+                      "queue"
+                    ]
+                  },
+                  {
+                    "title": "P 实例 · 输入计算",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "prefill",
+                      "handoff"
+                    ]
+                  },
+                  {
+                    "title": "D 实例 · 生成与提交",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "decode",
+                      "draft",
+                      "verify",
+                      "commit",
+                      "response"
+                    ]
+                  }
+                ]
+              }
             },
             {
               "type": "paragraph",
@@ -1384,6 +1682,12 @@
                       "label": "通信",
                       "value": 2
                     }
+                  ],
+                  "rankTimes": [
+                    2,
+                    2,
+                    2,
+                    10
                   ]
                 },
                 {
@@ -1397,9 +1701,16 @@
                       "label": "通信",
                       "value": 4
                     }
+                  ],
+                  "rankTimes": [
+                    4,
+                    4,
+                    4,
+                    4
                   ]
                 }
-              ]
+              ],
+              "layout": "rank-timeline"
             },
             {
               "type": "paragraph",
@@ -1427,71 +1738,123 @@
                   "label": "单 rank 设备内存",
                   "detail": "预算从当前 rank 的可用设备内存起算。",
                   "column": 1,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "单 rank 设备内存",
+                  "subtitle": "总预算",
+                  "tone": "kv"
                 },
                 {
                   "id": "weights",
                   "label": "模型权重",
                   "detail": "量化会影响权重空间，但空间收益不等于执行收益。",
                   "column": 0,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "模型权重",
+                  "subtitle": "常驻参数",
+                  "tone": "compute"
                 },
                 {
                   "id": "runtime",
                   "label": "运行时 / 通信缓冲",
                   "detail": "包括执行中间量、通信工作区和图捕获相关状态。",
                   "column": 1,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "运行时通信",
+                  "subtitle": "工作区与缓冲",
+                  "tone": "communication"
                 },
                 {
                   "id": "draft-state",
                   "label": "草稿及辅助状态",
                   "detail": "投机、压缩注意力与层结构可能改变额外状态成本。",
                   "column": 2,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "草稿与辅助",
+                  "subtitle": "候选及辅助状态",
+                  "tone": "control"
                 },
                 {
                   "id": "reserve",
                   "label": "安全余量",
                   "detail": "应覆盖峰值、分页取整和故障期间暂留资源。",
                   "column": 3,
-                  "row": 1
+                  "row": 1,
+                  "shortLabel": "安全余量",
+                  "subtitle": "为峰值预留",
+                  "tone": "neutral"
                 },
                 {
                   "id": "kv-pool",
                   "label": "KV 可用池",
                   "detail": "设备内存扣除权重、运行时、通信/图/草稿状态及安全余量。",
                   "column": 1,
-                  "row": 2
+                  "row": 2,
+                  "shortLabel": "KV 可用池",
+                  "subtitle": "扣除全部预算后的余量",
+                  "tone": "kv"
                 }
               ],
               "edges": [
                 {
                   "from": "device",
                   "to": "weights",
-                  "label": "扣除权重占用"
+                  "label": "扣除权重占用",
+                  "shortLabel": "预算扣减"
                 },
                 {
                   "from": "device",
                   "to": "runtime",
-                  "label": "扣除运行时与通信状态"
+                  "label": "扣除运行时与通信状态",
+                  "shortLabel": "预算扣减"
                 },
                 {
                   "from": "device",
                   "to": "draft-state",
-                  "label": "扣除草稿及辅助状态"
+                  "label": "扣除草稿及辅助状态",
+                  "shortLabel": "预算扣减"
                 },
                 {
                   "from": "device",
                   "to": "reserve",
-                  "label": "保留安全余量"
+                  "label": "保留安全余量",
+                  "shortLabel": "预算扣减"
                 },
                 {
-                  "from": "runtime",
+                  "from": "device",
                   "to": "kv-pool",
-                  "label": "其余预算共同决定最终 KV 池"
+                  "label": "其余预算共同决定最终 KV 池",
+                  "shortLabel": "预算扣减"
                 }
-              ]
+              ],
+              "presentation": {
+                "kind": "memory-budget",
+                "panels": [
+                  {
+                    "title": "单 rank HBM 预算",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "device"
+                    ]
+                  },
+                  {
+                    "title": "四类共同扣减",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "weights",
+                      "runtime",
+                      "draft-state",
+                      "reserve"
+                    ]
+                  },
+                  {
+                    "title": "剩余 KV 预算",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "kv-pool"
+                    ]
+                  }
+                ]
+              }
             },
             {
               "type": "paragraph",
@@ -1505,6 +1868,47 @@
               "sourceIndices": [],
               "text": "每个有效输出 token 的成本，应以完整迭代墙钟时间除以实际提交 token 数。有执行重叠时取关键路径，不机械相加 kernel 时长。原创例子：普通解码 12 ms/token；A 每轮 18 ms 交付 3 token，成本为 6 ms/token；B 每轮交付 4 token，但耗时 28 ms，成本为 7 ms/token。B 接受更多，单位输出却更贵；以上不是实测。",
               "title": "投机：算实际提交 token 的完整成本"
+            },
+            {
+              "type": "bars",
+              "title": "投机：更多接受不等于更低单位成本",
+              "caption": "原创教学示例，非实测：使用正文给定的完整迭代墙钟时间和实际提交 token 数。若子步骤存在重叠，应直接测量完整轮次，不能简单相加 kernel 耗时。",
+              "unit": "ms",
+              "basis": "inference",
+              "sourceIndices": [],
+              "layout": "token-cost",
+              "series": [
+                {
+                  "label": "普通 decode",
+                  "segments": [
+                    {
+                      "label": "完整轮次",
+                      "value": 12
+                    }
+                  ],
+                  "deliveredTokens": 1
+                },
+                {
+                  "label": "投机方案 A",
+                  "segments": [
+                    {
+                      "label": "完整轮次",
+                      "value": 18
+                    }
+                  ],
+                  "deliveredTokens": 3
+                },
+                {
+                  "label": "投机方案 B",
+                  "segments": [
+                    {
+                      "label": "完整轮次",
+                      "value": 28
+                    }
+                  ],
+                  "deliveredTokens": 4
+                }
+              ]
             },
             {
               "type": "paragraph",
@@ -1842,47 +2246,95 @@
                   "label": "质量 / 稳定性过线",
                   "detail": "质量、错误恢复或隔离性不达标时，先定位问题。",
                   "column": 0,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "质量 / 稳定性过线",
+                  "subtitle": "先满足约定的质量与稳定性检查",
+                  "tone": "control"
                 },
                 {
                   "id": "slo",
                   "label": "预先约定 SLO 过线",
                   "detail": "分别检查 TTFT、生成间隔和长尾，不用均值代替分位数。",
                   "column": 1,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "预先约定 SLO 过线",
+                  "subtitle": "通过延迟与错误率验收",
+                  "tone": "compute"
                 },
                 {
                   "id": "cost",
                   "label": "Goodput / 成本比较",
                   "detail": "按包括 P、D、独立草稿在内的总 GPU 资源归一。",
                   "column": 2,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "Goodput / 总成本比较",
+                  "subtitle": "以有效请求和完整成本比较",
+                  "tone": "kv"
                 },
                 {
                   "id": "select",
                   "label": "按负载选择配置",
                   "detail": "为短、中、长输入和不同到达率明确适用范围。",
                   "column": 3,
-                  "row": 0
+                  "row": 0,
+                  "shortLabel": "按负载选择配置",
+                  "subtitle": "选择可复现且有边界的方案",
+                  "tone": "neutral"
                 }
               ],
               "edges": [
                 {
                   "from": "quality",
                   "to": "slo",
-                  "label": "质量稳定后进入延迟验收"
+                  "label": "质量稳定后进入延迟验收",
+                  "shortLabel": "通过"
                 },
                 {
                   "from": "slo",
                   "to": "cost",
-                  "label": "服务承诺满足后比较资源效率"
+                  "label": "服务承诺满足后比较资源效率",
+                  "shortLabel": "通过"
                 },
                 {
                   "from": "cost",
                   "to": "select",
-                  "label": "选择可复现且有边界的方案"
+                  "label": "选择可复现且有边界的方案",
+                  "shortLabel": "按负载选择"
                 }
-              ]
+              ],
+              "presentation": {
+                "kind": "decision-gates",
+                "panels": [
+                  {
+                    "title": "质量与稳定性",
+                    "tone": "control",
+                    "nodeIds": [
+                      "quality"
+                    ]
+                  },
+                  {
+                    "title": "服务延迟",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "slo"
+                    ]
+                  },
+                  {
+                    "title": "资源效率",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "cost"
+                    ]
+                  },
+                  {
+                    "title": "按负载决策",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "select"
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },

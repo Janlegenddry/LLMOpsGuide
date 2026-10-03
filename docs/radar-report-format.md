@@ -52,9 +52,28 @@
 | diagram | title, caption, nodes, edges | 自动生成 SVG，不接收原始 SVG / HTML |
 | bars | title, caption, unit, series | 对比时间条图，教学数字应标 inference |
 
-图节点：`{id, label, detail, column, row}`。节点 ID 唯一；column / row 为 0–3 的整数，不可重叠；label 最多 40 字符，充分解释写在 detail。图连线：`{from, to, label}`，必须指向不同的现有节点。连线编号对应图下关系说明；图下同时显示完整节点解释，窄屏在图内滚动。
+图节点：`{id, label, detail, column, row}`。节点 ID 唯一；column / row 为 0–3 的整数，不可重叠；label 最多 40 字符，充分解释写在 detail。图连线：`{from, to, label}`，必须指向不同的现有节点。完整节点与关系解释放在可展开注释中。旧坐标图继续支持，手机以可读的节点列表及关系说明显示。
+
+技术图可选 `presentation: {kind, panels: [{title, tone, nodeIds}]}`。分组必须恰好覆盖全部节点一次，不能引用不存在或重复节点。站点根据语义分组生成原创 SVG；桌面适合阅读栏宽度，手机拆分面板或改为纵向布局，无需横向拖动。节点可选 `shortLabel`、`subtitle`、`tone`，连线可选 `shortLabel`，图内短文字不替换原始 label / detail。推荐短标题 2–8 字、副标题 4–12 字；完整计算语义继续写在原字段中。
+
+| presentation.kind | panels 的节点数量 | 用途 |
+| --- | --- | --- |
+| request-lanes | 2 / 2 / 5 | 入口、P 实例、D 实例；D 内草稿、验证、提交回路 |
+| lifecycle | 4 / 4 | 风险与保护两条生命周期 |
+| boundary | 3 / 3 | 跨阶段计算责任对比 |
+| cache-routing | 2 / 2 / 1 | 入口、核心分支、共同状态 |
+| pipeline-loop | 3 / 3 | 普通及投机 PP 回传 |
+| memory-budget | 1 / 4 / 1 | 总预算、四类共同扣减、KV 余量；面积不表示未测占比 |
+| decision-gates | 1 / 1 / 1 / 1 | 质量、SLO、效率、负载选择 |
+| paths | 2 / 2 | 两条计算路径对比 |
+
+语义色 `compute / kv / communication / control / danger / neutral` 分别用于计算、KV、通信、控制、风险及普通状态。分组顺序定义绘图角色，例如 request-lanes 的 D 分组顺序为生成循环、草稿、验证、提交、响应。确认图与完整 edges 的语义一致后发布；本接口不接收可执行 SVG 或绘图脚本。
 
 条图：`series: [{label, segments: [{label, value}]}]`，value 是有限正数；按数值比例渲染并列出完整数字。不要凭空画未测占用比例。
+
+条图可选 `layout: "rank-timeline"`，每个 series 增加 `rankTimes: number[]`，segments 恰有计算与通信两段，计算值必须等于最慢 rank。图上所有方案使用相同时间尺度，等待为“最慢 rank − 当前 rank”。若示例忽略重叠，caption 必须明确说明。
+
+可选 `layout: "token-cost"`，每个 series 的 segments 恰有一段完整迭代墙钟时间，增加正整数 `deliveredTokens`。单位成本直接计算为墙钟 / 实际提交 token；不能把有重叠的 kernel 时长机械相加。无 layout 的旧条图仍可导入。上述可选字段沿用 report.version 1，未知类型或不一致数字仍整笔拒绝。
 
 来源可以用 `publishedAt` 表示真实原文日期，或用 `accessedAt` 表示在线文档查阅日期，也可同时提供。第一来源必须有真实 `publishedAt` 并与记录原文日期一致。在线文档和 main 分支不得伪装成冻结版本。按[官方 AI Infra 来源表](radar-official-sources.md)接受精确仓库、域名和路径；采集任务须核对重定向最终地址。原有 SGLang / LMSYS / NCCL 来源继续兼容。
 

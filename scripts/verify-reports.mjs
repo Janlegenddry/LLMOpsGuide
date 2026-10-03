@@ -40,7 +40,12 @@ for (const record of records) {
       if (block.type === 'bars') { expectedFigures++; block.series.forEach(series => contains(series.label)); }
     }
   }
-  assert.equal((html.match(/class="report-graph(?: report-bars)?"/g) || []).length, expectedFigures, `${record.id} figure count mismatch`);
+  assert.equal((html.match(/data-report-figure="(?:diagram|bars)"/g) || []).length, expectedFigures, `${record.id} figure count mismatch`);
+  const renderedFigures = html.match(/<figure\b[^>]*data-report-figure="(?:diagram|bars)"[^>]*>[\s\S]*?<\/figure>/g) || [];
+  assert.equal(renderedFigures.length, expectedFigures);
+  renderedFigures.forEach(figure => assert.ok(figure.includes('<svg') && figure.includes('role="img"') && figure.includes('<title') && figure.includes('<desc'), `${record.id} missing accessible SVG`));
+  const elementIDs = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+  assert.equal(new Set(elementIDs).size, elementIDs.length, `${record.id} duplicate element or SVG IDs`);
   figures += expectedFigures;
 }
 console.log(JSON.stringify({ reports, figures, textChecks, api: 'complete', undigested: records.length - reports }));

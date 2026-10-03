@@ -1,24 +1,18 @@
 ---
 import ReportProvenance from './ReportProvenance.astro';
+import { renderNumericalFigure } from '../lib/report-figures.mjs';
 import type { ReportBars, RadarRecord } from '../radar';
 interface Props { chart: ReportBars; sources: RadarRecord['sources']; figureID: string }
 const { chart, sources, figureID } = Astro.props;
-const max = Math.max(...chart.series.map(s => s.segments.reduce((sum, v) => sum + v.value, 0)));
-const width = 800, plotWidth = 560, left = 170, rowHeight = 62, height = chart.series.length * rowHeight + 20;
-const rows = chart.series.map((s, i) => {
-  let start = left;
-  return { label: s.label, y: i * rowHeight + 16, total: s.segments.reduce((sum, v) => sum + v.value, 0), segments: s.segments.map((segment, j) => {
-    const rect = { ...segment, x: start, width: segment.value / max * plotWidth, index: j }; start += rect.width; return rect;
-  }) };
-});
+const desktop = renderNumericalFigure(chart, { id: `${figureID}-desktop` });
+const mobile = renderNumericalFigure(chart, { compact: true, id: `${figureID}-mobile` });
 ---
-<figure class="report-diagram" id={figureID}>
+<figure class="report-diagram" id={figureID} data-report-figure="bars">
   <figcaption><strong>{chart.title}</strong><ReportProvenance {...chart} sources={sources} /><p>{chart.caption}</p></figcaption>
-  <div class="report-graph-scroll" tabindex="0" role="region" aria-label={`${chart.title}，窄屏可横向滚动`}>
-    <svg class="report-graph report-bars" viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-labelledby={`${figureID}-title ${figureID}-desc`}>
-      <title id={`${figureID}-title`}>{chart.title}</title><desc id={`${figureID}-desc`}>{chart.caption}。{rows.map(row => `${row.label}：${row.total} ${chart.unit}`).join('；')}</desc>
-      {rows.map(row => <g><text x="0" y={row.y + 23}>{row.label}</text>{row.segments.map(segment => <><rect x={segment.x} y={row.y} width={segment.width} height="36" class:list={['report-bar', `report-bar--${segment.index % 2}`]} /><text x={segment.x + segment.width / 2} y={row.y + 23} text-anchor="middle">{segment.label} {segment.value}</text></>)}<text x={left + row.total / max * plotWidth + 8} y={row.y + 23}>{row.total} {chart.unit}</text></g>)}
-    </svg>
-  </div>
-  <ul class="report-bars-values">{chart.series.map(s => <li><strong>{s.label}</strong>：{s.segments.map(segment => `${segment.label} ${segment.value} ${chart.unit}`).join(' + ')} = {s.segments.reduce((sum, v) => sum + v.value, 0)} {chart.unit}</li>)}</ul>
+  {chart.layout === 'rank-timeline' && <ul class="report-figure-key" aria-label="时间线图例"><li class="figure-key--compute">计算</li><li class="figure-key--waiting">等待同步</li><li class="figure-key--communication">通信</li></ul>}
+  <div class="report-figure-desktop">{desktop.map(panel => <div class="report-figure-panel" set:html={panel.svg} />)}</div>
+  <div class="report-figure-mobile">{mobile.map(panel => <div class="report-figure-panel" set:html={panel.svg} />)}</div>
+  <details class="report-figure-notes"><summary>展开数值与计算口径</summary>
+    <ul class="report-bars-values">{chart.series.map(s => <li><strong>{s.label}</strong>：{s.segments.map(segment => `${segment.label} ${segment.value} ${chart.unit}`).join(' + ')} = {s.segments.reduce((sum, v) => sum + v.value, 0)} {chart.unit}{s.rankTimes && <p>各 rank 计算时间：{s.rankTimes.join('、')} {chart.unit}。同步等待 = 最慢 rank − 当前 rank。</p>}{s.deliveredTokens && <p>实际提交 {s.deliveredTokens} token；单位成本 = {s.segments[0].value} ÷ {s.deliveredTokens} = {Number((s.segments[0].value / s.deliveredTokens).toPrecision(4))} {chart.unit}/token。</p>}</li>)}</ul>
+  </details>
 </figure>

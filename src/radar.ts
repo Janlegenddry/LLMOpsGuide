@@ -5,8 +5,8 @@ export { sourceName } from './lib/radar-sources.mjs';
 
 export type ReportBasis = 'official' | 'author' | 'inference' | 'pending';
 type Provenance = { basis: ReportBasis; sourceIndices: number[] };
-export type ReportDiagram = Provenance & { type: 'diagram'; title: string; caption: string; nodes: { id: string; label: string; detail: string; column: number; row: number }[]; edges: { from: string; to: string; label: string }[] };
-export type ReportBars = Provenance & { type: 'bars'; title: string; caption: string; unit: string; series: { label: string; segments: { label: string; value: number }[] }[] };
+export type ReportDiagram = Provenance & { type: 'diagram'; title: string; caption: string; presentation?: { kind: string; panels: { title: string; tone: string; nodeIds: string[] }[] }; nodes: { id: string; label: string; detail: string; column: number; row: number; shortLabel?: string; subtitle?: string; tone?: string }[]; edges: { from: string; to: string; label: string; shortLabel?: string }[] };
+export type ReportBars = Provenance & { type: 'bars'; title: string; caption: string; unit: string; layout?: 'rank-timeline' | 'token-cost'; series: { label: string; segments: { label: string; value: number }[]; rankTimes?: number[]; deliveredTokens?: number }[] };
 export type ReportBlock =
   | (Provenance & { type: 'paragraph'; text: string })
   | (Provenance & { type: 'callout'; title: string; text: string })
