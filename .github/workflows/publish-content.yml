@@ -1,0 +1,59 @@
+name: Validate and publish public knowledge
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: 'Public knowledge JSON record, array, or records envelope (schemaVersion 1)'
+        required: true
+        type: string
+  repository_dispatch:
+    types: [public-knowledge]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Import public records (event file, no shell interpolation)
+        run: node scripts/import-radar-event.mjs
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Commit only content changes
+        id: commit
+        run: |
+          if git diff --quiet -- src/content/radar.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/content/radar.json
+          git commit -m 'content: persist verified public knowledge'
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      # GITHUB_TOKEN pushes do not start another workflow; publish the validated build here.
+      - name: Publish gh-pages
+        if: steps.commit.outputs.changed == 'true'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist

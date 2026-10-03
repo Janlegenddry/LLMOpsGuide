@@ -1,8 +1,9 @@
 ---
 import { entries } from "../data";
 import { withBase } from "../paths";
+import { radar, radarHref, kindNames } from '../radar';
 
-const searchEntries = entries.map((entry) => ({ ...entry, href: withBase(entry.href) }));
+const searchEntries = [...radar.map(record => ({ title: record.title, description: record.summary, href: radarHref(record.id), section: `${kindNames[record.kind]} / ${record.topics.join(' / ')}` })), ...entries].map((entry) => ({ ...entry, href: withBase(entry.href) }));
 ---
 
 <dialog class="search-dialog" id="search-dialog" aria-labelledby="search-title">
@@ -29,7 +30,7 @@ const searchEntries = entries.map((entry) => ({ ...entry, href: withBase(entry.h
   </div>
 </dialog>
 
-<script is:inline type="application/json" id="search-data" set:html={JSON.stringify(searchEntries)}></script>
+<script is:inline type="application/json" id="search-data" set:html={JSON.stringify(searchEntries).replaceAll('<', '\\u003c')}></script>
 
 <script>
   const dialog = document.querySelector<HTMLDialogElement>("#search-dialog");

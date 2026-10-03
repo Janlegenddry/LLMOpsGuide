@@ -1,0 +1,22 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { radar, kindNames, statusNames, type RadarRecord } from '../../radar';
+import { withBase } from '../../paths';
+import '../../styles/radar.css';
+export function getStaticPaths() { return radar.map(record => ({ params: { id: record.id }, props: { record } })); }
+const { record } = Astro.props as { record: RadarRecord };
+---
+<BaseLayout title={`${record.title} · 观志 AI Infra`} description={record.summary}>
+  <article class="radar-article">
+    <nav class="radar-breadcrumb" aria-label="当前位置"><a href={withBase('/radar/')}>动态与解读</a><span aria-hidden="true">/</span><span>{kindNames[record.kind]}</span></nav>
+    <header><p class="radar-eyebrow">{record.topics.join(' / ')}</p><h1>{record.title}</h1><div class="radar-dates"><span>原文 <time datetime={record.publishedAt}>{record.publishedAt}</time></span><span>核对 <time datetime={record.reviewedAt}>{record.reviewedAt}</time></span></div><p class="radar-lead">{record.summary}</p></header>
+    {record.kind === 'reading' && <p class="radar-reading-note">阅读清单：已核对来源和基本内容，完整机制与适用边界仍待继续验证。</p>}
+    {record.diagram && <figure class="radar-diagram"><figcaption>{record.diagram.title}<span>教学示意 · 阶段可重叠，按 trace 判断实际关键路径</span></figcaption><ol>{record.diagram.steps.map(step => <li><strong>{step.label}</strong><span>{step.detail}</span></li>)}</ol></figure>}
+    <section aria-labelledby="claims-title"><h2 id="claims-title">证据与判断</h2><div class="radar-claims">{record.claims.map(claim => <div class:list={['radar-claim', `radar-claim--${claim.status}`]}><h3>{statusNames[claim.status]}</h3><p>{claim.text}</p>{claim.sourceIndices.length > 0 && <div class="radar-evidence">{claim.sourceIndices.map(i => <a href={record.sources[i].url} target="_blank" rel="noopener noreferrer">证据 {i + 1} ↗</a>)}</div>}</div>)}</div></section>
+    {record.example && <aside class="radar-example"><h2>{record.example.title}</h2><p>{record.example.text}</p></aside>}
+    <section aria-labelledby="questions-title"><h2 id="questions-title">带回实践的验证问题</h2><ol class="radar-questions">{record.questions.map(q => <li>{q}</li>)}</ol><p class="radar-small">这些是实验问题，尚未作为本站的实测结论。</p></section>
+    <section aria-labelledby="sources-title"><h2 id="sources-title">原文与日期</h2><ol class="radar-sources">{record.sources.map(source => <li><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a><time datetime={source.publishedAt}>{source.publishedAt}</time></li>)}</ol><p class="radar-small">公开资料的原创摘要与教学解读；原文内容归作者所有。</p></section>
+    {record.related.length > 0 && <section aria-labelledby="related-title"><h2 id="related-title">关联方法与实验</h2><ul class="radar-related">{record.related.map(link => <li><a href={withBase(link.path)}>{link.title} ↗</a></li>)}</ul></section>}
+    <footer class="radar-article-footer"><a href={withBase('/radar/')}>← 返回全部记录</a><a href={`https://github.com/Janlegenddry/LLMOpsGuide/blob/main/src/content/radar.json`} target="_blank" rel="noopener noreferrer">查看内容版本 ↗</a></footer>
+  </article>
+</BaseLayout>

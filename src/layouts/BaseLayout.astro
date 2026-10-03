@@ -19,8 +19,8 @@ interface Props {
 }
 
 const {
-  title = "LLMOpsGuide · 大模型运维系统学习知识库",
-  description = "面向大模型运维的系统学习知识库，覆盖模型生命周期、推理服务、可观测性与生产实践。",
+  title = "观志 · AI Infra 知识站 | LLMOpsGuide",
+  description = "李观志的 AI Infra 公开知识站：SGLang 动态、GPU 通信、KV Cache、PD 分离、投机解码与故障分析。结论先行，证据可追溯。",
 } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 ---
@@ -34,6 +34,7 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
     <link rel="canonical" href={canonicalURL} />
+    <link rel="alternate" type="application/rss+xml" title="观志 AI Infra 动态" href={withBase('/radar/feed.xml')} />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />

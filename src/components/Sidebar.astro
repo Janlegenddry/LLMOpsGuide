@@ -31,7 +31,8 @@ const currentPath = Astro.url.pathname;
   <nav class="rail-nav" aria-label="主要内容">
     <div class="rail-nav__group">
       <p>开始</p>
-      <a href={withBase("/")} aria-current={currentPath === withBase("/") ? "page" : undefined}>知识库首页</a>
+      <a href={withBase("/")} aria-current={currentPath === withBase("/") ? "page" : undefined}>观志 · AI Infra</a>
+      <a href={withBase('/radar/')} aria-current={currentPath.startsWith(withBase('/radar/')) ? 'page' : undefined}>动态与解读</a>
       <a href={withBase("/#path")}>学习路径</a>
     </div>
 

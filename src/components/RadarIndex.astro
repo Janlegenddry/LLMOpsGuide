@@ -1,0 +1,71 @@
+---
+import { radar, topics, kindNames, radarHref } from '../radar';
+import { withBase } from '../paths';
+import '../styles/radar.css';
+---
+
+<section class="radar-index" id="radar" aria-labelledby="radar-heading">
+  <header class="radar-section-heading">
+    <div><p class="radar-eyebrow">公开资料 / 持续校正</p><h2 id="radar-heading">动态与解读</h2></div>
+    <a class="radar-utility" href={withBase('/radar/feed.xml')}>订阅 RSS ↗</a>
+  </header>
+  <form class="radar-controls" role="search" onsubmit="return false">
+    <div class="radar-search"><label for="radar-query">搜索标题与摘要</label><input type="search" id="radar-query" placeholder="SGLang、通信、投机…" autocomplete="off" /></div>
+    <div><label for="radar-kind">内容类型</label><select id="radar-kind"><option value="all">全部类型</option>{Object.entries(kindNames).map(([value, label]) => <option value={value}>{label}</option>)}</select></div>
+    <div><label for="radar-month">原文月份</label><select id="radar-month"><option value="all">全部月份</option>{[...new Set(radar.map(r => r.publishedAt.slice(0,7)))].map(month => <option value={month}>{month}</option>)}</select></div>
+  </form>
+  <div class="radar-topics" aria-label="筛选主题">
+    <button type="button" data-topic="all" aria-pressed="true">全部</button>
+    {topics.map(topic => <button type="button" data-topic={topic} aria-pressed="false">{topic}</button>)}
+  </div>
+  <div class="radar-results-meta"><p id="radar-count" role="status">{radar.length} 条公开记录</p><p>按原文日期排序 · 阅读清单标明待验证</p></div>
+  <div class="radar-records">
+    {radar.map(record => <article class="radar-record" data-radar-record data-kind={record.kind} data-month={record.publishedAt.slice(0,7)} data-topics={record.topics.join('|')} data-search={`${record.title} ${record.summary} ${record.topics.join(' ')} ${kindNames[record.kind]}`}>
+      <div class="radar-record__meta"><span class:list={['radar-kind', `radar-kind--${record.kind}`]}>{kindNames[record.kind]}</span><time datetime={record.publishedAt}>{record.publishedAt}</time><span class="radar-source">{record.sources[0].url.includes('github.com') ? 'SGLang · GitHub' : 'LMSYS · Blog'}</span></div>
+      <h3><a href={withBase(radarHref(record.id))}>{record.title}<span aria-hidden="true"> ↗</span></a></h3>
+      <p>{record.summary}</p>
+      <div class="radar-record__footer"><span>{record.topics.join(' / ')}</span><span>核对 {record.reviewedAt}</span></div>
+    </article>)}
+  </div>
+  <p class="radar-empty" id="radar-empty" hidden>没有匹配的记录。换个关键词或重置筛选。</p>
+  <button class="radar-reset" id="radar-reset" type="button" hidden>重置筛选</button>
+  <noscript><p>未启用 JavaScript：全部记录仍可阅读，筛选需要 JavaScript。</p></noscript>
+</section>
+<script>
+  import { matchesRadar } from '../lib/radar-filter';
+  const query = document.querySelector<HTMLInputElement>('#radar-query');
+  const kind = document.querySelector<HTMLSelectElement>('#radar-kind');
+  const month = document.querySelector<HTMLSelectElement>('#radar-month');
+  const topicButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-topic]')];
+  const records = [...document.querySelectorAll<HTMLElement>('[data-radar-record]')];
+  const count = document.querySelector<HTMLElement>('#radar-count');
+  const empty = document.querySelector<HTMLElement>('#radar-empty');
+  const reset = document.querySelector<HTMLButtonElement>('#radar-reset');
+  let topic = 'all';
+  function render() {
+    const filter = { query: query?.value || '', kind: kind?.value || 'all', month: month?.value || 'all', topic };
+    let visible = 0;
+    for (const record of records) {
+      record.hidden = !matchesRadar({ search: record.dataset.search || '', kind: record.dataset.kind || '', month: record.dataset.month || '', topics: (record.dataset.topics || '').split('|') }, filter);
+      if (!record.hidden) visible++;
+    }
+    if (count) count.textContent = `${visible} 条公开记录`;
+    if (empty) empty.hidden = visible > 0;
+    if (reset) reset.hidden = !(filter.query || filter.kind !== 'all' || filter.month !== 'all' || topic !== 'all');
+    topicButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.topic === topic)));
+    const url = new URL(window.location.href);
+    for (const [key, value] of Object.entries(filter)) value && value !== 'all' ? url.searchParams.set(key, value) : url.searchParams.delete(key);
+    history.replaceState(null, '', url);
+  }
+  const params = new URLSearchParams(location.search);
+  if (query) query.value = params.get('query') || '';
+  if (kind && [...kind.options].some(o => o.value === params.get('kind'))) kind.value = params.get('kind')!;
+  if (month && [...month.options].some(o => o.value === params.get('month'))) month.value = params.get('month')!;
+  if (topicButtons.some(b => b.dataset.topic === params.get('topic'))) topic = params.get('topic')!;
+  query?.addEventListener('input', render);
+  kind?.addEventListener('change', render);
+  month?.addEventListener('change', render);
+  topicButtons.forEach(button => button.addEventListener('click', () => { topic = button.dataset.topic || 'all'; render(); }));
+  reset?.addEventListener('click', () => { if (query) query.value = ''; if (kind) kind.value = 'all'; if (month) month.value = 'all'; topic = 'all'; render(); });
+  render();
+</script>

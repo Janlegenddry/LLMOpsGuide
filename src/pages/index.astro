@@ -2,43 +2,46 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { entries, learningPath, sections } from "../data";
 import { withBase } from "../paths";
+import RadarIndex from '../components/RadarIndex.astro';
+import { radar, radarHref } from '../radar';
 
-const latestEntry = [...entries].sort((a, b) => (b.updated || "").localeCompare(a.updated || ""))[0];
-const latestDate = latestEntry?.updated?.replaceAll("-", ".") || "持续更新";
+const featured = radar.find(record => record.kind === 'analysis');
 ---
 
 <BaseLayout>
   <div class="home-shell">
     <header class="home-brief" aria-labelledby="intro-title">
       <div class="home-brief__intro">
-        <p class="home-brief__edition">LLMOpsGuide / 2026</p>
-        <h1 id="intro-title">从模型到生产现场</h1>
-        <p>按学习顺序理解模型生命周期、推理服务与可观测性；用真实故障现场里的证据链校正判断。</p>
+        <p class="home-brief__edition">李观志 / AI INFRA NOTES</p>
+        <h1 id="intro-title">从推理运维，<br />走向 AI Infra。</h1>
+        <p>追踪 SGLang 与推理系统进展，把每天的公开资料解读接到知识体系。结论先行，证据可追溯，问题带回实践。</p>
         <div class="home-brief__links">
-          <a class="text-link" href="#path">开始学习</a>
-          <a class="text-link text-link--muted" href="#notes">浏览主题</a>
+          <a class="text-link" href="#radar">阅读动态</a>
+          <a class="text-link text-link--muted" href="#path">系统学习</a>
         </div>
       </div>
       <aside class="home-latest" aria-labelledby="latest-title">
         <div class="home-latest__head">
-          <h2 id="latest-title">最近更新</h2>
-          <time>{latestDate}</time>
+          <h2 id="latest-title">本期深读</h2>
+          <span>从 SLO 到系统选择</span>
         </div>
-        {latestEntry && (
-          <a href={withBase(latestEntry.href)}>
-            <span>{latestEntry.section}</span>
-            <strong>{latestEntry.title}</strong>
-            <p>{latestEntry.description}</p>
+        {featured && (
+          <a href={withBase(radarHref(featured.id))}>
+            <span>原文 {featured.publishedAt} · 核对 {featured.reviewedAt}</span>
+            <strong>{featured.title}</strong>
+            <p>排队 → Prefill → KV 传输 → Decode<br />先还原关键路径，再讨论优化收益。</p>
           </a>
         )}
       </aside>
     </header>
 
     <dl class="library-facts" aria-label="知识库概览">
-      <div><dt>主题</dt><dd>{sections.length}</dd></div>
-      <div><dt>笔记</dt><dd>{entries.length}</dd></div>
+      <div><dt>公开记录</dt><dd>{radar.length}</dd></div>
+      <div><dt>知识笔记</dt><dd>{entries.length}</dd></div>
       <div><dt>维护方式</dt><dd>持续校正</dd></div>
     </dl>
+
+    <RadarIndex />
 
     <section class="home-path" id="path" aria-labelledby="path-title">
       <div class="section-heading">

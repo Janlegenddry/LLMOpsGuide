@@ -2,6 +2,12 @@
 
 面向大模型运维的系统学习知识库，覆盖模型生命周期、推理服务、可观测性与生产实践。使用 Astro 构建并发布到 GitHub Pages。
 
+首页现为李观志的 AI Infra 知识站，沿用原有章节与交互实验，增加公开动态、深度解读、阅读清单、主题/类型/月份筛选及标题摘要搜索。
+
+- 动态入口：<https://janlegenddry.github.io/LLMOpsGuide/radar/>
+- 内容导入与持续发布：[docs/radar-publishing.md](./docs/radar-publishing.md)
+- 只读输出：`/LLMOpsGuide/api/radar.json`、`/LLMOpsGuide/radar/feed.xml`
+
 - 在线阅读：<https://janlegenddry.github.io/LLMOpsGuide/>
 - 维护说明：[CONTRIBUTING.md](./CONTRIBUTING.md)
 

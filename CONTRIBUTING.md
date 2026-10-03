@@ -2,6 +2,8 @@
 
 日常更新只需要维护 Markdown 文章和 `src/data.ts`。推送到 `main` 后，GitHub Actions 会自动发布网站。
 
+公开动态与解读使用独立的 `src/content/radar.json`，不需要手动加入 `src/data.ts`，动态索引、详情页和搜索会自动生成。格式、幂等规则和自动发布见 [radar-publishing.md](docs/radar-publishing.md)。既有 Markdown 文章继续遵循下文约定。
+
 ## 1. 拉取最新代码
 
 ```bash
