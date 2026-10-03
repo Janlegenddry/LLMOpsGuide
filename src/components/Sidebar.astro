@@ -77,6 +77,7 @@ const currentPath = Astro.url.pathname;
 </aside>
 
 <script>
+  import { syncThemeOnPageShow } from '../lib/theme-restoration';
   const root = document.documentElement;
   const sidebar = document.querySelector<HTMLElement>("#site-sidebar");
   const openButton = document.querySelector<HTMLButtonElement>("#nav-open");
@@ -117,5 +118,13 @@ const currentPath = Astro.url.pathname;
     localStorage.setItem("theme", next);
     updateThemeButtons();
   }));
-  updateThemeButtons();
+  syncThemeOnPageShow({
+    lifecycle: window,
+    readSavedTheme: () => localStorage.getItem('theme'),
+    prefersDark: () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+    applyTheme: (theme) => {
+      root.dataset.theme = theme;
+      updateThemeButtons();
+    },
+  });
 </script>
