@@ -75,7 +75,7 @@
 
 可选 `layout: "token-cost"`，每个 series 的 segments 恰有一段完整迭代墙钟时间，增加正整数 `deliveredTokens`。单位成本直接计算为墙钟 / 实际提交 token；不能把有重叠的 kernel 时长机械相加。无 layout 的旧条图仍可导入。上述可选字段沿用 report.version 1，未知类型或不一致数字仍整笔拒绝。
 
-来源可以用 `publishedAt` 表示真实原文日期，或用 `accessedAt` 表示在线文档查阅日期，也可同时提供。第一来源必须有真实 `publishedAt` 并与记录原文日期一致。在线文档和 main 分支不得伪装成冻结版本。按[官方 AI Infra 来源表](radar-official-sources.md)接受精确仓库、域名和路径；采集任务须核对重定向最终地址。原有 SGLang / LMSYS / NCCL 来源继续兼容。
+来源可以用 `publishedAt` 表示真实原文日期，或用 `accessedAt` 表示在线文档查阅日期，也可同时提供。第一来源必须有真实 `publishedAt` 并与记录原文日期一致。在线文档和 main 分支不得伪装成冻结版本。[官方 AI Infra 来源表](radar-official-sources.md)继续精确识别；其他公开论文、博客、社区、论坛和新闻按[显式引用 review 字段](radar-public-citations.md)登记类别、发布者和核对范围，论文另注明同行评审状态。官方事实仅引用官方注册来源；非官方 attributed 来源可引用为 author，unverified 不能用 author。检索任务须核对原文与最终公开地址，元数据不会证明结果为真。原有 SGLang / LMSYS / NCCL 来源继续兼容。
 
 ## 不丢正文的更新规则
 

@@ -1,6 +1,6 @@
 # 每日 AI Infra 解读的官方来源范围
 
-来源按 2026-10-03 核验清单扩展，代码在 `src/lib/radar-sources.mjs`。不接受任意 GitHub 仓库或相似域名。可校验的 URL / 来源名称 / 主题示例见 [radar-official-sources.json](../examples/radar-official-sources.json)；它是来源目录，不是新闻 payload，不应导入成为新记录。
+来源按 2026-10-03 核验清单扩展，代码在 `src/lib/radar-sources.mjs`。本表限定默认官方识别，不把任意 GitHub 仓库或相似域名当作官方。未注册的公开论文、博客、新闻和社区可走[显式引用 review 路径](radar-public-citations.md)，不必逐域名改代码；注册仓库中的 issue、discussion 和社区评论也须按 community 核验。可校验的官方 URL / 来源名称 / 主题示例见 [radar-official-sources.json](../examples/radar-official-sources.json)；它是来源目录，不是新闻 payload，不应导入成为新记录。
 
 ## 精确 GitHub 仓库
 

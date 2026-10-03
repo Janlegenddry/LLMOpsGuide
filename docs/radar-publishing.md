@@ -19,7 +19,7 @@ payload 可以是单条记录、记录数组或 `{ "records": [...] }`。没有�
 
 ## 内容边界
 
-只提交公开资料的原创摘要、机制教学和实验设计，不完整转载。每条记录明确 `visibility: public` 与 `containsPrivateData: false`，事实段落必须关联已核对的原文。来源按[已核验官方 AI Infra 来源表](radar-official-sources.md)接受精确仓库、域名和路径；重定向必须核对最终地址，不放行任意 GitHub 仓库或相似域名。不得把公司资料、现场日志、客户标识、访问凭证或私人笔记放进 payload。校验器不替代任务对公开范围和资料正确性的判断。
+只提交公开资料的原创摘要、机制教学和实验设计，不完整转载。每条记录明确 `visibility: public` 与 `containsPrivateData: false`，事实段落必须关联已核对的原文。[官方注册表](radar-official-sources.md)继续精确匹配仓库、域名和路径；其他公开论文、博客、社区、论坛和新闻使用[显式引用 review 字段](radar-public-citations.md)。核对原文陈述不等于独立验证结果，社区资料不默认标为官方。检索任务必须核验最终公开地址和资料正确性，不得把公司资料、现场日志、客户标识、访问凭证或私人笔记放进 payload；静态校验器不替代阅读、公开范围和 DNS/重定向核验。
 
 所有条目区分原文日期 `publishedAt` 与本次核对日期 `reviewedAt`。不得把老文的核对日期伪装成新发布。未读完的资料标为 `reading`，不要自动写成深度解读。
 

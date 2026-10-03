@@ -1,7 +1,7 @@
 import data from './content/radar.json';
 import { mergeRecords, kindNames, topics } from './lib/radar-store.mjs';
 export { basisNames } from './lib/radar-report.mjs';
-export { sourceName } from './lib/radar-sources.mjs';
+export { sourceName, sourceReviewLabel } from './lib/radar-sources.mjs';
 
 export type ReportBasis = 'official' | 'author' | 'inference' | 'pending';
 type Provenance = { basis: ReportBasis; sourceIndices: number[] };
@@ -20,7 +20,7 @@ export type RadarRecord = {
   schemaVersion: number; id: string; kind: 'release' | 'analysis' | 'reading';
   title: string; summary: string; publishedAt: string; reviewedAt: string; topics: string[];
   visibility: string; containsPrivateData: boolean;
-  sources: { title: string; url: string; publishedAt?: string; accessedAt?: string }[];
+  sources: { title: string; url: string; publishedAt?: string; accessedAt?: string; review?: { category: 'paper' | 'community' | 'blog' | 'news'; publisher: string; status: 'attributed' | 'unverified'; note: string; peerReview?: 'preprint' | 'peer-reviewed' | 'unknown' } }[];
   claims: { status: 'confirmed' | 'inference' | 'pending'; text: string; sourceIndices: number[] }[];
   questions: string[]; related: { title: string; path: string }[];
   diagram?: { title: string; steps: { label: string; detail: string }[] };

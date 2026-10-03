@@ -1,7 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import FullReport from '../../components/FullReport.astro';
-import { radar, kindNames, statusNames, type RadarRecord } from '../../radar';
+import { radar, kindNames, statusNames, sourceName, sourceReviewLabel, type RadarRecord } from '../../radar';
 import { withBase } from '../../paths';
 export function getStaticPaths() { return radar.map(record => ({ params: { id: record.id }, props: { record } })); }
 const { record } = Astro.props as { record: RadarRecord };
@@ -21,7 +21,7 @@ const { record } = Astro.props as { record: RadarRecord };
     {record.example && <aside class="radar-example"><h2>{record.example.title}</h2><p>{record.example.text}</p></aside>}
     <section aria-labelledby="questions-title"><h2 id="questions-title">带回实践的验证问题</h2><ol class="radar-questions">{record.questions.map(q => <li>{q}</li>)}</ol><p class="radar-small">这些是实验问题，尚未作为本站的实测结论。</p></section>
     </>}
-    <section aria-labelledby="sources-title"><h2 id="sources-title">资料与日期</h2><ol class="radar-sources">{record.sources.map(source => <li><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a><span>{source.publishedAt && <>原文 <time datetime={source.publishedAt}>{source.publishedAt}</time></>}{source.accessedAt && <>{source.publishedAt ? ' · 查阅 ' : '查阅 '}<time datetime={source.accessedAt}>{source.accessedAt}</time></>}</span></li>)}</ol><p class="radar-small">公开资料的原创摘要、机制教学与实验设计；原文内容归作者所有。在线文档和 main 分支会变化，复现时应对照自己的版本。</p></section>
+    <section aria-labelledby="sources-title"><h2 id="sources-title">资料与日期</h2><ol class="radar-sources">{record.sources.map(source => <li><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a><span>{source.publishedAt && <>原文 <time datetime={source.publishedAt}>{source.publishedAt}</time></>}{source.accessedAt && <>{source.publishedAt ? ' · 查阅 ' : '查阅 '}<time datetime={source.accessedAt}>{source.accessedAt}</time></>}</span>{source.review && <p class="radar-small">{sourceName(source)} · {sourceReviewLabel(source)}。{source.review.note}</p>}</li>)}</ol><p class="radar-small">公开资料的原创摘要、机制教学与实验设计；原文内容归作者所有。在线文档和 main 分支会变化，复现时应对照自己的版本。</p></section>
     {record.related.length > 0 && <section aria-labelledby="related-title"><h2 id="related-title">关联方法与实验</h2><ul class="radar-related">{record.related.map(link => <li><a href={withBase(link.path)}>{link.title} ↗</a></li>)}</ul></section>}
     <footer class="radar-article-footer"><a href={withBase('/radar/')}>← 返回全部记录</a><a href={`https://github.com/Janlegenddry/LLMOpsGuide/blob/main/src/content/radar.json`} target="_blank" rel="noopener noreferrer">查看内容版本 ↗</a></footer>
   </article>

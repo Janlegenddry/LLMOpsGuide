@@ -1,3 +1,5 @@
+import { isOfficialCitation, canAttributeCitation } from './radar-sources.mjs';
+
 export const reportSectionIDs = ['conclusion', 'background', 'mechanism', 'evidence', 'tradeoffs', 'production', 'experiments', 'acceptance', 'pending'];
 export const basisNames = { official: '官方事实', author: '作者报告结果', inference: '推导 / 教学示例', pending: '待验证' };
 export const figureKinds = { 'request-lanes': [2, 2, 5], lifecycle: [4, 4], boundary: [3, 3], 'cache-routing': [2, 2, 1], 'pipeline-loop': [3, 3], 'memory-budget': [1, 4, 1], 'decision-gates': [1, 1, 1, 1], paths: [2, 2] };
@@ -11,6 +13,8 @@ export function validateReport(raw, sources, { keys, str, array, fail }) {
     if (!Object.hasOwn(basisNames, block.basis)) fail(`${name}.basis 必须是 official、author、inference 或 pending`);
     const indices = [...new Set(array(block.sourceIndices, `${name}.sourceIndices`, ['official', 'author'].includes(block.basis) ? 1 : 0, 30))];
     if (indices.some(i => !Number.isInteger(i) || i < 0 || i >= sources.length)) fail(`${name} 引用了不存在的来源`);
+    if (block.basis === 'official' && indices.some(i => !isOfficialCitation(sources[i]))) fail(`${name} 非官方引用不得标为官方事实`);
+    if (block.basis === 'author' && indices.some(i => !canAttributeCitation(sources[i]))) fail(`${name} 待核对引用不得标为作者报告结果`);
     return { basis: block.basis, sourceIndices: indices };
   };
   const sections = array(raw.sections, 'report.sections', 9, 9).map((section, index) => {
