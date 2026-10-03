@@ -1,174 +1,29 @@
-# Design — LLMOpsGuide
+# Design — 观志 AI Infra
 
-LLMOpsGuide 的整站设计系统。所有页面在改动视觉层之前先读取本文件；页面之间共享颜色、字体、间距和交互语言，不按页面重新选择主题。
+## 目标与参考
 
-## Genre
+本轮按用户明确要求重构为默认浅色、内容优先的资讯阅读器。保留 Astro、知识主题、筛选搜索、内容发布接口与动画，不复制 AIHOT 名称、Logo 或图像资产。
 
-Editorial，偏 docs / reference。视觉目标不是产品宣传，而是一本可快速检索、可长时间阅读的工程手册。
+参考证据：AIHOT README 明确链接 https://aihot.news/，浅色截图 https://raw.githubusercontent.com/KKKKhazix/AIHOT/main/docs/assets/shots-light.png 与公开 CSS apps/web/app/app.css。截图呈现窄侧栏、紧凑筛选、关注索引和时间线卡片；CSS 明确暖白背景、白色表面与圆角细边。仅借鉴结构和阅读节奏，本站组件独立实现。
 
-## Audience · use · tone
+## 页面结构
 
-- Audience：模型基础设施、推理服务、可观测性与运维工程师。
-- Use：定位主题、搜索文章、沿学习路线阅读，并在长文中快速跳到目标章节。
-- Tone：克制、技术化、清醒；不用装饰性科技感。
+- 首页与 radar：紧凑 24px 标题、筛选/搜索、重点跟进索引、日期时间线和白色摘要卡。首屏直接出现内容；没有大 hero 或统计条。
+- 桌面导航宽 180px，图标配短而可读的中文名称。原知识章节通过独立入口可达。窄屏保留抽屉。
+- 详情和普通文章：白色阅读卡、适度标题、证据/推测/待验证标签、来源日期与验证问题。长文目录保持辅助角色。
+- 搜索弹层：白色表面、柔和边界、浅青绿选中态，键盘与焦点行为保持。
+- 原推理动画与 3D 实验：保持状态逻辑、控制按钮与文字说明，页面外壳继承阅读器风格。
 
-## Macrostructure family
+## 色彩与字体
 
-- 首页：**Ecosystem Index**。用“开始学习 / 最近更新 / 按主题浏览”三个发现入口组织内容。
-- 首页新增个人 AI Infra 动态索引，保留学习路径与知识主题。动态详情使用相同 Almanac 颜色与字体，按“结论 / 机制图 / 事实与推测 / 验证问题 / 来源”组织；内容数量与日期来自结构化记录，不显示模拟热度。
-- 内容页：**Long Document**。正文是主角，右侧页内目录只承担定位。
-- 搜索与工具界面：**Workbench**。状态、结果和快捷键优先，不加入营销文案。
+实际 token 由 tokens.css 维护：暖米白 #faf9f6、卡片 #ffffff、侧栏 #fdfdfb、正文 #24322c、次要文字 #59665f、细边 #e0e5e1、青绿 #216e68。正文采用 Inter 和中文系统字体，代码采用 JetBrains Mono。卡片 12px 圆角、极弱阴影；正文约 15px / 1.8，卡片标题 17px。
 
-## Theme
+## 主题规则
 
-Almanac。浅色为带少量冷青的纸张色，深色为蓝黑石墨；青绿色只用于定位、当前状态和链接，单屏占比不超过 5%。
+默认浅色。新版 storage key 为 llmops-reader-theme-v1；旧 theme key 与系统深色不影响默认。用户主动切换后保存新版选择；pageshow 重新读取新版选择，保证浏览器 Back 从缓存恢复时同步主题和按钮。存储不可用时回退浅色。
 
-- `--color-paper`：`oklch(98% 0.006 210)`
-- `--color-paper-2`：`oklch(96% 0.009 210)`
-- `--color-paper-3`：`oklch(93% 0.012 210)`
-- `--color-ink`：`oklch(21% 0.020 248)`
-- `--color-ink-2`：`oklch(34% 0.018 248)`
-- `--color-rule`：`oklch(87% 0.014 220)`
-- `--color-accent`：`oklch(47% 0.105 205)`
-- `--color-focus`：`oklch(45% 0.135 205)`
+## 交互与验证
 
-## Typography
+间距沿用 tokens.css；44px 点击目标，明确键盘焦点；不依赖 hover。筛选状态写入 URL，搜索范围明确为标题、摘要与主题。无虚构热度、排名或实时状态。保留原文日期与核对日期，教学示意不作实测。
 
-- Display：Space Grotesk，700，normal。
-- Body：Inter，400 / 600。
-- Mono：JetBrains Mono，400。
-- Display tracking：`-0.035em`。
-- 正文宽度：`68ch`；正文基准字号：`1.0625rem`。
-- 中文标题不使用斜体；英文缩写保留原始大小写。
-
-## Spacing
-
-采用 4px 命名尺度，定义在 `tokens.css`。页面只引用 `var(--space-*)`，不在组件里临时发明间距。
-
-## Motion
-
-- `--ease-out`：`cubic-bezier(0.16, 1, 0.3, 1)`。
-- 只动画 `transform` 与 `opacity`。
-- 页面不做滚动入场动画；侧栏抽屉与搜索弹窗可以淡入、平移。
-- `prefers-reduced-motion` 下压缩为不超过 150ms 的透明度变化。
-
-## Microinteractions stance
-
-- 成功状态静默呈现，不弹庆祝 toast。
-- 搜索打开后直接聚焦输入框；关闭后焦点回到触发按钮。
-- 当前文章、当前章节和当前主题使用同一个 accent 语言。
-- 所有窄屏点击目标不小于 44 × 44px。
-
-## CTA voice
-
-- Primary CTA：无渐变、低圆角、明确动词。
-- Secondary CTA：文本链接加短箭头，不使用大面积描边胶囊。
-
-## Navigation and footer
-
-- Navigation：**N3 Side-rail**。桌面端为固定知识导航，移动端折叠为抽屉。
-- Footer：**Ft1 Mast-headed**。用一句维护承诺收尾，保留 GitHub 与知识索引入口。
-
-## Per-page allowances
-
-- 首页允许使用真实内容数量与更新时间，不虚构指标。
-- 内容页只使用排版、表格、代码块和 callout，不加入装饰图片。
-- 搜索界面只显示真实文章数据。
-
-## What pages MUST share
-
-- LLMOpsGuide 字标与方形 `L` 标记。
-- 青绿 accent 的使用位置。
-- Space Grotesk / Inter / JetBrains Mono 字体角色。
-- 低圆角、细分隔线和紧凑工具控件。
-- 导航当前态、键盘焦点和链接反馈。
-
-## What pages MAY differ on
-
-- 首页可使用两栏索引；文章页保持单一正文流。
-- 长文章出现页内目录，短文章允许目录自动隐藏。
-- 表格可以横向滚动；普通正文不得产生横向滚动。
-
-## Exports
-
-### tokens.css
-
-```css
-:root {
-  --color-paper: oklch(98% 0.006 210);
-  --color-paper-2: oklch(96% 0.009 210);
-  --color-paper-3: oklch(93% 0.012 210);
-  --color-ink: oklch(21% 0.020 248);
-  --color-ink-2: oklch(34% 0.018 248);
-  --color-rule: oklch(87% 0.014 220);
-  --color-accent: oklch(47% 0.105 205);
-  --color-focus: oklch(45% 0.135 205);
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --space-xs: 0.5rem;
-  --space-sm: 0.75rem;
-  --space-md: 1rem;
-  --space-lg: 1.5rem;
-  --space-xl: 2rem;
-  --space-2xl: 3rem;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --radius-card: 0.5rem;
-}
-```
-
-### Tailwind v4 `@theme`
-
-```css
-@theme {
-  --color-paper: oklch(98% 0.006 210);
-  --color-paper-2: oklch(96% 0.009 210);
-  --color-ink: oklch(21% 0.020 248);
-  --color-accent: oklch(47% 0.105 205);
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-}
-```
-
-### DTCG `tokens.json`
-
-```json
-{
-  "$schema": "https://design-tokens.github.io/community-group/format/",
-  "color": {
-    "paper": { "$value": "oklch(98% 0.006 210)", "$type": "color" },
-    "ink": { "$value": "oklch(21% 0.020 248)", "$type": "color" },
-    "accent": { "$value": "oklch(47% 0.105 205)", "$type": "color" }
-  },
-  "font": {
-    "display": { "$value": "Space Grotesk, ui-sans-serif, system-ui, sans-serif", "$type": "fontFamily" },
-    "body": { "$value": "Inter, ui-sans-serif, system-ui, sans-serif", "$type": "fontFamily" },
-    "mono": { "$value": "JetBrains Mono, ui-monospace, monospace", "$type": "fontFamily" }
-  },
-  "space": {
-    "md": { "$value": "1rem", "$type": "dimension" },
-    "lg": { "$value": "1.5rem", "$type": "dimension" }
-  }
-}
-```
-
-### shadcn/ui CSS variables
-
-```css
-:root {
-  --background: 98% 0.006 210;
-  --foreground: 21% 0.020 248;
-  --primary: 47% 0.105 205;
-  --primary-foreground: 98% 0.006 210;
-  --muted: 93% 0.012 210;
-  --muted-foreground: 46% 0.018 248;
-  --border: 87% 0.014 220;
-  --input: 87% 0.014 220;
-  --ring: 45% 0.135 205;
-  --radius: 0.5rem;
-}
-```
+验证桌面与 320/375/414/768px，普通正文无横溢，菜单/搜索/文章可达；保留 reduced-motion 与 WebGL 兜底。构建、状态回归测试与实际线上内容/资源检查是发布证据；浏览器连接受限时明确未验证部分。

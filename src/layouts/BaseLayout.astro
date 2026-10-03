@@ -7,6 +7,8 @@ import "@fontsource/inter/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "../styles/global.css";
 import "../styles/almanac.css";
+import "../styles/radar.css";
+import "../styles/reader.css";
 import Header from "../components/Header.astro";
 import Sidebar from "../components/Sidebar.astro";
 import SearchDialog from "../components/SearchDialog.astro";
@@ -26,7 +28,7 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 ---
 
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light" data-design="reader-v1">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -41,9 +43,10 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:url" content={canonicalURL} />
     <title>{title}</title>
     <script is:inline>
-      const savedTheme = localStorage.getItem("theme");
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light");
+      // The new reader starts light; old/system dark settings do not carry over.
+      let savedTheme = null;
+      try { savedTheme = localStorage.getItem("llmops-reader-theme-v1"); } catch {}
+      document.documentElement.dataset.theme = savedTheme === "dark" ? "dark" : "light";
     </script>
   </head>
   <body>

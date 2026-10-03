@@ -2,7 +2,6 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { radar, kindNames, statusNames, type RadarRecord } from '../../radar';
 import { withBase } from '../../paths';
-import '../../styles/radar.css';
 export function getStaticPaths() { return radar.map(record => ({ params: { id: record.id }, props: { record } })); }
 const { record } = Astro.props as { record: RadarRecord };
 ---

@@ -1,12 +1,15 @@
 ---
 import { radar, topics, kindNames, radarHref } from '../radar';
 import { withBase } from '../paths';
-import '../styles/radar.css';
+interface Props { pageHeading?: boolean }
+const { pageHeading = false } = Astro.props;
+const Heading = pageHeading ? 'h1' : 'h2';
+const lastReviewed = radar.map(record => record.reviewedAt).sort().at(-1);
 ---
 
 <section class="radar-index" id="radar" aria-labelledby="radar-heading">
   <header class="radar-section-heading">
-    <div><p class="radar-eyebrow">公开资料 / 持续校正</p><h2 id="radar-heading">动态与解读</h2></div>
+    <div><Heading id="radar-heading">动态与解读</Heading><p class="reader-deck">把值得读的进展，接到可验证的知识。</p></div>
     <a class="radar-utility" href={withBase('/radar/feed.xml')}>订阅 RSS ↗</a>
   </header>
   <form class="radar-controls" role="search" onsubmit="return false">
@@ -18,13 +21,20 @@ import '../styles/radar.css';
     <button type="button" data-topic="all" aria-pressed="true">全部</button>
     {topics.map(topic => <button type="button" data-topic={topic} aria-pressed="false">{topic}</button>)}
   </div>
+  <aside class="reader-focus" aria-labelledby="focus-heading">
+    <header><h2 id="focus-heading"><span aria-hidden="true"></span>重点跟进</h2><span>核对至 {lastReviewed}</span></header>
+    <ol>{radar.slice(0, 5).map(record => <li><a href={withBase(radarHref(record.id))}>{record.title}</a><span>{kindNames[record.kind]}</span></li>)}</ol>
+  </aside>
   <div class="radar-results-meta"><p id="radar-count" role="status">{radar.length} 条公开记录</p><p>按原文日期排序 · 阅读清单标明待验证</p></div>
   <div class="radar-records">
     {radar.map(record => <article class="radar-record" data-radar-record data-kind={record.kind} data-month={record.publishedAt.slice(0,7)} data-topics={record.topics.join('|')} data-search={`${record.title} ${record.summary} ${record.topics.join(' ')} ${kindNames[record.kind]}`}>
-      <div class="radar-record__meta"><span class:list={['radar-kind', `radar-kind--${record.kind}`]}>{kindNames[record.kind]}</span><time datetime={record.publishedAt}>{record.publishedAt}</time><span class="radar-source">{record.sources[0].url.includes('github.com') ? 'SGLang · GitHub' : 'LMSYS · Blog'}</span></div>
+      <div class="reader-date"><time datetime={record.publishedAt}>{record.publishedAt.slice(5).replace('-', '.')}<span>{record.publishedAt.slice(0,4)}</span></time></div>
+      <div class="reader-card">
+      <div class="radar-record__meta"><span class="radar-source">{record.sources[0].url.includes('github.com') ? 'SGLang · GitHub' : 'LMSYS · Blog'}</span><span class:list={['radar-kind', `radar-kind--${record.kind}`]}>{kindNames[record.kind]}</span></div>
       <h3><a href={withBase(radarHref(record.id))}>{record.title}<span aria-hidden="true"> ↗</span></a></h3>
       <p>{record.summary}</p>
-      <div class="radar-record__footer"><span>{record.topics.join(' / ')}</span><span>核对 {record.reviewedAt}</span></div>
+      <div class="radar-record__footer"><span class="reader-tags">{record.topics.map(topic => <span>{topic}</span>)}</span><span>核对 {record.reviewedAt}</span></div>
+      </div>
     </article>)}
   </div>
   <p class="radar-empty" id="radar-empty" hidden>没有匹配的记录。换个关键词或重置筛选。</p>

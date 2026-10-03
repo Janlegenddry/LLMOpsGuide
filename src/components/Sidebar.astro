@@ -1,16 +1,24 @@
 ---
-import { entries, sections } from "../data";
+import { entries } from "../data";
 import { withBase } from "../paths";
 
 const currentPath = Astro.url.pathname;
+const shortTitles: Record<string, string> = {
+  '/infrastructure/hardware-3d/': '硬件 3D 实验室',
+  '/observability/inference-animation/': '推理过程动画',
+  '/roadmap/llmops-roadmap/': '学习路线',
+  '/fundamentals/model-lifecycle/': '模型生命周期',
+  '/inference/sglang-hang-diagnosis/': 'Hang 现场诊断',
+  '/observability/three-pillars/': '指标与 Trace',
+};
 ---
 
 <button class="site-sidebar__scrim" type="button" data-nav-close aria-label="关闭知识库目录"></button>
 <aside class="site-sidebar" id="site-sidebar" aria-label="知识库导航">
   <div class="site-sidebar__mast">
-    <a class="wordmark" href={withBase("/")} aria-label="LLMOpsGuide 首页">
-      <span class="wordmark__mark" aria-hidden="true">L</span>
-      <span>LLMOpsGuide</span>
+    <a class="wordmark" href={withBase("/")} aria-label="观志 AI Infra 首页">
+      <span class="wordmark__mark" aria-hidden="true">观</span>
+      <span>观志 <small>AI Infra</small></span>
     </a>
     <button class="icon-button site-sidebar__close" type="button" data-nav-close aria-label="关闭知识库目录">
       <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19">
@@ -30,30 +38,14 @@ const currentPath = Astro.url.pathname;
 
   <nav class="rail-nav" aria-label="主要内容">
     <div class="rail-nav__group">
-      <p>开始</p>
-      <a href={withBase("/")} aria-current={currentPath === withBase("/") ? "page" : undefined}>观志 · AI Infra</a>
-      <a href={withBase('/radar/')} aria-current={currentPath.startsWith(withBase('/radar/')) ? 'page' : undefined}>动态与解读</a>
-      <a href={withBase("/#path")}>学习路径</a>
+      <p>阅读</p>
+      <a class="reader-nav-link" href={withBase('/')} aria-current={currentPath === withBase('/') || currentPath.startsWith(withBase('/radar/')) ? 'page' : undefined}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M13 2 4 14h7l-1 8 10-13h-7z" /></svg>动态与解读</a>
+      <a class="reader-nav-link" href={withBase('/radar/?kind=analysis')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h4" /></svg>深度解读</a>
+      <a class="reader-nav-link" href={withBase('/radar/?kind=reading')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M6 3h12v18l-6-4-6 4z" /></svg>阅读清单</a>
+      <a class="reader-nav-link" href={withBase('/#notes')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v6H3zM14 15h7v6h-7z" /></svg>知识索引</a>
     </div>
 
-    {sections.map((section) => {
-      const sectionEntries = entries.filter((entry) => entry.section === section.title);
-      return (
-        <div class="rail-nav__group">
-          <a class="rail-nav__section" href={withBase(`/#section-${section.id}`)}>{section.title}</a>
-          {sectionEntries.map((entry) => (
-            <a
-              class="rail-nav__entry"
-              href={withBase(entry.href)}
-              aria-current={currentPath === withBase(entry.href) ? "page" : undefined}
-              title={entry.title}
-            >
-              {entry.title}
-            </a>
-          ))}
-        </div>
-      );
-    })}
+    <div class="rail-nav__group"><p>知识库</p>{entries.map(entry => <a class="reader-nav-link" href={withBase(entry.href)} aria-current={currentPath === withBase(entry.href) ? 'page' : undefined} title={entry.title}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M4 4h16v16H4zM8 8h8M8 12h6M8 16h4" /></svg>{shortTitles[entry.href] || entry.section}</a>)}</div>
   </nav>
 
   <div class="site-sidebar__tools">
@@ -77,7 +69,7 @@ const currentPath = Astro.url.pathname;
 </aside>
 
 <script>
-  import { syncThemeOnPageShow } from '../lib/theme-restoration';
+  import { syncThemeOnPageShow, THEME_STORAGE_KEY } from '../lib/theme-restoration';
   const root = document.documentElement;
   const sidebar = document.querySelector<HTMLElement>("#site-sidebar");
   const openButton = document.querySelector<HTMLButtonElement>("#nav-open");
@@ -115,13 +107,12 @@ const currentPath = Astro.url.pathname;
   themeToggles.forEach((button) => button.addEventListener("click", () => {
     const next = root.dataset.theme === "dark" ? "light" : "dark";
     root.dataset.theme = next;
-    localStorage.setItem("theme", next);
+    try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch {}
     updateThemeButtons();
   }));
   syncThemeOnPageShow({
     lifecycle: window,
-    readSavedTheme: () => localStorage.getItem('theme'),
-    prefersDark: () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+    readSavedTheme: () => localStorage.getItem(THEME_STORAGE_KEY),
     applyTheme: (theme) => {
       root.dataset.theme = theme;
       updateThemeButtons();
