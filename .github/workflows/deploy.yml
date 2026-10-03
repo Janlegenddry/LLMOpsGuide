@@ -34,6 +34,9 @@ jobs:
       - name: Build site
         run: npm run build
 
+      - name: Verify complete reports
+        run: npm run content:verify
+
       - name: Publish gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:

@@ -3,8 +3,8 @@
     "schemaVersion": 1,
     "id": "sglang-v0-5-21",
     "kind": "release",
-    "title": "SGLang v0.5.21：建立可回溯的版本基线",
-    "summary": "先保存版本和原文，再按自己的模型、拓扑与负载做升级回归。发布说明证明功能被发布，不证明现有服务会自动受益。",
+    "title": "SGLang v0.5.21 运维解读：把 KV 生命周期、通信正确性和性能优化放回同一张图",
+    "summary": "完整报告从 P/D 迟到写入与 PP 待完成归约，讲到 Rust 缓存核心、PP 投机和 MoE 默认变化。用机制图、发布证据与隔离验证矩阵，解释升级为什么安全，以及收益怎样证明。",
     "publishedAt": "2026-10-02",
     "reviewedAt": "2026-10-03",
     "topics": [
@@ -15,9 +15,63 @@
     "containsPrivateData": false,
     "sources": [
       {
-        "title": "SGLang v0.5.21 Release",
+        "title": "SGLang · v0.5.21 正式发布清单",
         "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.21",
-        "publishedAt": "2026-10-02"
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #41023 · 默认启用 D 侧 KV 延迟释放",
+        "url": "https://github.com/sgl-project/sglang/pull/41023",
+        "publishedAt": "2026-09-24",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #41404 · 所有传输失败走延迟释放",
+        "url": "https://github.com/sgl-project/sglang/pull/41404",
+        "publishedAt": "2026-09-27",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #41079 · 历史 PP 边界待归约修复",
+        "url": "https://github.com/sgl-project/sglang/pull/41079",
+        "publishedAt": "2026-09-24",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #41557 · Layer boundary contracts",
+        "url": "https://github.com/sgl-project/sglang/pull/41557",
+        "publishedAt": "2026-09-28",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang · Layer Boundary（在线文档）",
+        "url": "https://docs.sglang.io/docs/developer_guide/layer_boundary",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #39627 · Rust TreeCore 默认缓存核心",
+        "url": "https://github.com/sgl-project/sglang/pull/39627",
+        "publishedAt": "2026-09-15",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #30775 · PP × EAGLE / MTP compatibility",
+        "url": "https://github.com/sgl-project/sglang/pull/30775",
+        "publishedAt": "2026-07-10",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #40105 · FlashInfer MoE fused finalize 默认关闭",
+        "url": "https://github.com/sgl-project/sglang/pull/40105",
+        "publishedAt": "2026-09-18",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #38913 · GLM-5.3-Flash H20 block-FP8 MoE 配置",
+        "url": "https://github.com/sgl-project/sglang/pull/38913",
+        "publishedAt": "2026-09-10",
+        "accessedAt": "2026-10-03"
       }
     ],
     "claims": [
@@ -44,14 +98,939 @@
         "title": "SGLang Hang 诊断方法",
         "path": "/inference/sglang-hang-diagnosis/"
       }
-    ]
+    ],
+    "report": {
+      "version": 1,
+      "scope": "核对于 2026-10-03。以 v0.5.21 正式发布清单确认版本收录；PR 说明用于解释机制，在线文档需对照安装版本。本文是公开资料的原创运维解读与隔离测试设计，尚未在用户 GPU 环境执行回归。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先证明交接安全，再证明优化有效",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对 H20 推理运维，这次升级最重要的并不只是某个吞吐数字：失败请求的迟到 KV 写入可能影响后续请求，PP 边界也可能传递尚未完成的计算语义。与此同时，缓存核心、PP 投机和 MoE 默认路径发生变化。已发布是版本收录的证据，仍不能替代自己的正确性、故障隔离和负载回归。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "本文涉及的 PR 均被 v0.5.21 正式发布页收录。判断“这个版本是否包含”时使用发布清单，而不只凭 PR 已 merged；后者未必能证明某个镜像或安装包的实际代码。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议沿同一条排查顺序读变更：数据属于谁 → 计算是否完成 → 优化究竟省了哪段时间。先回答资源释放和跨卡交接为什么安全，再用自己的请求分布证明性能收益。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：三个结束事件必须分别证明",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "P 处理输入并产生 KV，D 读取 KV 进行生成。P/D 跨实例交接状态，TP 涉及层内计算，PP 将不同层放到不同阶段。异步传输、延迟归约和页面复用让“请求结束”“计算完成”“资源可复用”成为三个必须分别证明的事件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "用户看见一次失败，并不说明所有 rank 已停止写入；GPU 上得到一个张量，并不说明它已经完成归约。质量异常与低利用率高延迟，都可能来自边界语义而不是模型权重或纯粹的网络带宽。这里提供的是公开机制上的原创排查框架，不映射任何公司内部事故。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "五项机制：生命周期、语义与控制回路",
+          "blocks": [
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "#41023 将受支持后端的 D 侧 KV 延迟释放设为默认；#41404 又把保护扩展到 P 故障、传输错误等非 D 主动取消的路径。失败上报时，其他 rank 仍可能处在写入过程中，故障分支需要保留这个事实。",
+              "title": "机制一：P/D 失败必须覆盖在途写入"
+            },
+            {
+              "type": "diagram",
+              "title": "P/D 失败：请求结束，不等于 KV 可立即复用",
+              "caption": "原创历史故障与保护路径示意：上排是风险链，下排是受支持路径的延迟释放思路。关键是确认没有仍可能写入的发送方；异常还存在超时路径，超时本身不是物理写入结束的证明。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-fail",
+                  "label": "旧风险：A 请求失败",
+                  "detail": "失败上报时，其他 rank 的在途写入可能还没有结束。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "old-free",
+                  "label": "KV 页提前归还",
+                  "detail": "请求失败事件不能单独证明页可安全复用。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "old-reuse",
+                  "label": "B 请求复用同页",
+                  "detail": "复用让旧请求写入和新请求状态发生交叉。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "old-write",
+                  "label": "A 迟到写污染 B",
+                  "detail": "表现可能是无关请求质量异常，不一定先报通信错误。",
+                  "column": 3,
+                  "row": 0
+                },
+                {
+                  "id": "new-fail",
+                  "label": "保护：A 请求失败",
+                  "detail": "所有适用的传输失败要进入资源保护分支。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "new-drain",
+                  "label": "通知停写并排空",
+                  "detail": "失败处理和发送方排空需要关联相同 room / 请求身份。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "new-hold",
+                  "label": "暂留页及元数据",
+                  "detail": "等待相关确认，避免还在写的页面被新请求取走。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "new-release",
+                  "label": "确认后释放",
+                  "detail": "恢复资源可复用状态；同时核对超时和异常分支。",
+                  "column": 3,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-fail",
+                  "to": "old-free",
+                  "label": "错误地把失败当作可释放"
+                },
+                {
+                  "from": "old-free",
+                  "to": "old-reuse",
+                  "label": "分配器把同页给 B"
+                },
+                {
+                  "from": "old-reuse",
+                  "to": "old-write",
+                  "label": "A 的在途传输迟到"
+                },
+                {
+                  "from": "new-fail",
+                  "to": "new-drain",
+                  "label": "通知相关发送方终止 / 排空"
+                },
+                {
+                  "from": "new-drain",
+                  "to": "new-hold",
+                  "label": "保留状态直到确认"
+                },
+                {
+                  "from": "new-hold",
+                  "to": "new-release",
+                  "label": "确认路径满足后再释放"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "支持范围包含 Mooncake / NIXL，Mori / fake 没有相同默认行为。#41023 记录默认等待 30 秒，旧式 ACK 混合版本可能等到超时。确认没有写入者才是释放的安全条件，请求失败本身不是。遗漏延迟释放分支，不能靠调大超时解决。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "取消潮可能暂时压低可分配容量。应把故障率、保留页、ACK 等待与排队放在一起分析，不能把占用上升直接作为关闭保护的理由；超时也不是物理写入已经结束的证据。"
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "#41079 修复的历史缺陷是：FFN all-reduce 延至下层融合执行，待归约语义未在 PP 交接中正确保留，接收方可能把 TP 部分和当作完整结果。该 PR 在相关发送前补归约。",
+              "title": "机制二：PP 传递的是计算语义，不只有张量"
+            },
+            {
+              "type": "diagram",
+              "title": "PP 边界：针对历史缺陷的计算语义示意",
+              "caption": "原创教学图，解释 #41079 针对的历史风险，不能把旧 helper 当作 v0.5.21 最终架构。最终应对照 layer_boundary 契约，保证归约责任既不丢失，也不重复。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-partial",
+                  "label": "局部 FFN + 待归约",
+                  "detail": "FFN 的 all-reduce 可能延至后续融合消费者。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "old-send",
+                  "label": "传输时丢失待完成语义",
+                  "detail": "部分和跨 PP 交接，接收方未得到正确归约责任。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "old-consume",
+                  "label": "按完整结果错误消费",
+                  "detail": "通信 API 无报错也可能产生数值错误。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "new-identify",
+                  "label": "识别待完成计算",
+                  "detail": "边界要表达输出所有权、残差与待完成工作。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "new-complete",
+                  "label": "由契约决定谁完成",
+                  "detail": "历史修复在相关发送前补归约；静态契约也可跨阶段传递部分和。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "new-handoff",
+                  "label": "完整语义交接",
+                  "detail": "接收方按契约消费，既不能漏归约，也不能再归约一次。",
+                  "column": 2,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-partial",
+                  "to": "old-send",
+                  "label": "部分结果进入 PP 边界"
+                },
+                {
+                  "from": "old-send",
+                  "to": "old-consume",
+                  "label": "待完成标记未正确保留"
+                },
+                {
+                  "from": "new-identify",
+                  "to": "new-complete",
+                  "label": "确定归约责任"
+                },
+                {
+                  "from": "new-complete",
+                  "to": "new-handoff",
+                  "label": "交接张量与计算语义"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4,
+                5
+              ],
+              "text": "最终版本不能一概手工给 PP 发送加 all-reduce。同版 layer_boundary 重构集中表达残差、输出所有权和待完成工作；官方指南还区分动态待完成状态与可以按静态契约跨阶段传递的部分和。原则是归约责任既不丢失，也不重复，当前文档必须对照安装版本。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "没有 NCCL 错误，也可能存在通信语义错误。若只在特定 PP×TP 组合中出现精度下降，应核对归约和残差责任，再判断权重或数值 kernel；不能只看 collective 是否成功返回。"
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "#39627 将统一树的默认核心转到 Rust，并集中 Python 回退，还涉及淘汰、锁和缓存状态语义。",
+              "title": "机制三：Rust 缓存核心改变控制面"
+            },
+            {
+              "type": "diagram",
+              "title": "Rust 缓存控制面：先确认走了哪个核心",
+              "caption": "原创机制示意：统一接口不意味着所有兼容场景都走 Rust。比较收益前，先核对实际核心、回退原因、淘汰与锁语义。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "operation",
+                  "label": "前缀缓存操作",
+                  "detail": "匹配、插入、淘汰和状态维护会产生 CPU 工作。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "select",
+                  "label": "兼容性选择",
+                  "detail": "受支持条件走默认核心，不支持条件按设计回退。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "rust",
+                  "label": "Rust TreeCore",
+                  "detail": "默认核心变化，应核对状态和行为一致性。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "python",
+                  "label": "Python 回退",
+                  "detail": "回退要能解释，不能把回退样本当 Rust 性能结果。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "state",
+                  "label": "缓存状态 / 复用",
+                  "detail": "正确性包括匹配、淘汰、锁和 KV 生命周期。",
+                  "column": 3,
+                  "row": 0
+                }
+              ],
+              "edges": [
+                {
+                  "from": "operation",
+                  "to": "select",
+                  "label": "通过统一入口操作"
+                },
+                {
+                  "from": "select",
+                  "to": "rust",
+                  "label": "支持场景使用默认核心"
+                },
+                {
+                  "from": "select",
+                  "to": "python",
+                  "label": "需要兼容回退时走 Python"
+                },
+                {
+                  "from": "rust",
+                  "to": "state",
+                  "label": "产生可复用的缓存状态"
+                },
+                {
+                  "from": "python",
+                  "to": "state",
+                  "label": "保持兼容路径语义"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "CPU 缓存维护是瓶颈时，这项变更值得测；GPU 或网络主导的服务未必获得同样整体收益。不要编一个固定加速比例。至少分别测试冷缓存、共享前缀和持续淘汰，记录实际核心、CPU 时间、命中与回收；固定淘汰策略便于归因。"
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "#30775 通过 SGLANG_ENABLE_PP_SPEC=1 显式启用。草稿位于最后阶段，下一轮树与接受信息回传，各阶段参与验证，而不是每个 stage 复制一份草稿。",
+              "title": "机制四：PP 投机新增跨阶段控制回路"
+            },
+            {
+              "type": "diagram",
+              "title": "PP 投机：新增跨阶段控制回路",
+              "caption": "原创教学示意：上排为普通 PP，下排为投机控制回路。草稿位于最后阶段，树和接受信息需要回传；不能画成每个 stage 各复制一份草稿。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "normal-stages",
+                  "label": "普通：各 stage 前向",
+                  "detail": "张量按层阶段经过流水线。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "normal-last",
+                  "label": "末阶段采样",
+                  "detail": "产生下一步 token。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "normal-back",
+                  "label": "回传 token",
+                  "detail": "前部阶段获得下一轮输入。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "spec-stages",
+                  "label": "投机：各 stage 验证",
+                  "detail": "所有阶段参与候选验证。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "spec-last",
+                  "label": "末阶段下一轮草稿",
+                  "detail": "草稿执行时间与末阶段资源需纳入成本。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "spec-back",
+                  "label": "回传树 / 接受信息",
+                  "detail": "新增控制与通信工作，可能造成流水空泡。",
+                  "column": 2,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "normal-stages",
+                  "to": "normal-last",
+                  "label": "前向到末阶段"
+                },
+                {
+                  "from": "normal-last",
+                  "to": "normal-back",
+                  "label": "采样下一 token"
+                },
+                {
+                  "from": "normal-back",
+                  "to": "normal-stages",
+                  "label": "开始下一轮"
+                },
+                {
+                  "from": "spec-stages",
+                  "to": "spec-last",
+                  "label": "验证后准备下一轮草稿"
+                },
+                {
+                  "from": "spec-last",
+                  "to": "spec-back",
+                  "label": "交换候选树和接受状态"
+                },
+                {
+                  "from": "spec-back",
+                  "to": "spec-stages",
+                  "label": "各 stage 开始下一轮验证"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                7
+              ],
+              "text": "该 PR 的测试使用 PCIe、无 NVLink 的 RTX PRO 6000 Blackwell，并指出关闭 overlap 调度的限制；不能把结果直接套到 H20。TTFT、ITL、吞吐和接受长度要分别测。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如果质量正常但收益消失，先核对接受长度与回传，再从时间线拆草稿、验证、通信和流水空泡。接受率高不等于端到端快，新增控制回路可能消耗原本期待省下的时间。"
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                8
+              ],
+              "text": "#40105 将受开关控制的 FlashInfer MoE fused finalize 默认关闭，可用 SGLANG_FLASHINFER_MOE_FUSED_FINALIZE=1 启用；它不覆盖所有 MoE，PR 也没有新增 GPU 精度实测。",
+              "title": "机制五：MoE finalize 默认是一项数值取舍"
+            },
+            {
+              "type": "diagram",
+              "title": "MoE finalize：默认数值路径的取舍",
+              "caption": "原创路径示意，只覆盖对应 FlashInfer MoE 开关控制的路径，不代表所有 MoE。启用融合是一次独立的质量与性能选择。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-result",
+                  "label": "旧：专家结果",
+                  "detail": "受开关影响的 FlashInfer MoE 路径。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "old-fused",
+                  "label": "Fused finalize",
+                  "detail": "历史默认融合路径。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "new-result",
+                  "label": "新：专家结果",
+                  "detail": "新版默认先保障对应路径的数值准确性。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "new-unfused",
+                  "label": "Unfused finalize",
+                  "detail": "默认关闭融合；可显式启用，但需独立回归。",
+                  "column": 1,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-result",
+                  "to": "old-fused",
+                  "label": "旧默认的受控融合路径"
+                },
+                {
+                  "from": "new-result",
+                  "to": "new-unfused",
+                  "label": "新版默认对应的非融合路径"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "升级后的速度变化，可能来自默认数值路径改变。应把 finalize 开关作为单独实验，比较任务分数、数值差和延迟，不能凭几个回答“看起来相同”就恢复旧设置。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "发布证据与 H20 结果边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                9
+              ],
+              "text": "#38913 为 GLM-5.3-Flash 提供 H20 block-FP8 Triton MoE 配置。作者报告在 8×H20、TP8 / EP8、1024 输入和 1024 输出、并发 16 下，输出吞吐增加 23.8%。每个变体为 64 请求，仅一组成对运行；微基准不包含 EP 通信。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这说明该组合值得复测，不证明所有模型、上下文和网络都有相同收益。4 卡与 8 卡若处于不同节点或条件，不能当成受控扩卡曲线。"
+            },
+            {
+              "type": "table",
+              "caption": "正式发布与机制证据表",
+              "columns": [
+                "来源",
+                "收录或支持的变化",
+                "不能跨越的结论边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "v0.5.21 发布页",
+                    "正式清单收录本文所列 PR。",
+                    "镜像、依赖和部署配置仍需追到实际版本。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "#41023 / #41404",
+                    "默认及更多故障分支的 D 侧 KV 延迟释放。",
+                    "受支持后端和 ACK / 超时路径必须独立核对。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "#41079",
+                    "历史发送边界补全待完成 FFN 归约。",
+                    "不能把该旧 helper 当作最终架构。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "#41557 / layer_boundary",
+                    "集中表达层边界契约及计算责任。",
+                    "当前在线文档不等于冻结安装版本。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "#39627",
+                    "Rust TreeCore 成为默认，保留 Python 兼容回退。",
+                    "实际核心与语义一致性先于性能结论。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "#30775",
+                    "PP × EAGLE / MTP 的显式启用与控制回路。",
+                    "作者硬件和调度条件不能直接外推到 H20。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "#40105",
+                    "对应 FlashInfer fused finalize 默认关闭。",
+                    "不代表全部 MoE，也不代表用户精度已验证。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    8
+                  ]
+                },
+                {
+                  "cells": [
+                    "#38913",
+                    "上述特定 GLM-5.3-Flash H20 配置的作者结果。",
+                    "一组成对运行、64 请求 / 变体；微基准不含 EP 通信。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    9
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：默认更安全，也可能改变资源曲线",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "延迟释放会在故障期间暂留资源，换来跨请求隔离；归约契约会改变结果的生产与消费位置，换来更清晰的正确性责任；缓存核心改变 CPU 维护路径，但不能抹去 GPU 和网络瓶颈。每一项都需要把代价与收益放回同一张请求时间线。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "PP 投机增加树和接受信息的跨阶段控制，MoE finalize 的默认变化体现数值与执行路径的取舍。升级时同时改变所有开关，即使得到更快或更慢的结果，也很难解释原因。先比较新版默认，再逐项选择可选优化。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对用户负载尚未证明的收益，应写成合理预期或待验证。尤其不能把作者的一次 H20 成绩外推成业务稳定收益，或把发布清单里的修复当作混合版本滚动升级的完整承诺。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "故障关联：从症状回到边界责任",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设，不代表真实生产事故",
+              "columns": [
+                "症状",
+                "机制假设",
+                "优先证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "取消 / 传输失败后，无关请求质量异常",
+                    "迟到写入与页复用交叉，或故障分支漏过延迟释放。",
+                    "请求 / room / 页身份、每 rank 写入、ACK 及释放顺序。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消潮后 KV 占用升高、排队变长",
+                    "保护期间页暂留，或确认迟迟未到。",
+                    "故障率、保留页、ACK 等待、可分配容量和旧版本互通。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "特定 PP×TP 组合精度下降但无 NCCL 报错",
+                    "归约 / 残差责任在边界丢失或重复。",
+                    "边界状态、归约次数、logits 差与任务分数。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级缓存核心后 CPU 或尾延迟变化",
+                    "实际核心、回退、淘汰与命中行为不同。",
+                    "冷暖缓存分组、核心身份、回退原因、CPU 与 KV 状态。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "PP 投机质量正常但加速消失",
+                    "草稿、验证、回传或流水空泡抵消收益。",
+                    "接受长度、迭代时间线、通信与 KV 占用。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "MoE 升级后速度变化",
+                    "受控 finalize 默认数值路径变化。",
+                    "开关、任务分数、数值差与相同负载延迟。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "优先保留配置与时间线，确认异常在哪个边界发生。性能告警和正确性告警应分别处理，尤其不要为了快速恢复吞吐而在未理解页所有权前关闭保护。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "隔离验证矩阵：一组实验回答一个问题",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "所有实验固定权重、量化、驱动、库、拓扑和请求集，冷暖缓存分开，重复成对运行。确定性场景比较 token；非确定性场景比较误差分布与任务分数。数值容差、质量门槛和故障预算在实验前定义，不编通用可接受下降百分比。此矩阵不是官方已覆盖用户环境的测试结果。"
+            },
+            {
+              "type": "table",
+              "caption": "原创隔离验证矩阵",
+              "columns": [
+                "实验组",
+                "对照与唯一变量",
+                "主要观测",
+                "验收条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "PD 故障",
+                    "同配置分别测取消、发送方故障、传输失败和正常对照。",
+                    "无关输出、页所有权、ACK / 释放时序、恢复。",
+                    "无跨请求污染或提前复用；恢复满足既定故障预算。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "PP 正确性",
+                    "固定模型输入，在可比 PP / TP 组合核对归约。",
+                    "logits 差、任务分数、归约次数及挂起。",
+                    "质量和数值容差达标，无漏归约或重复归约。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "缓存核心",
+                    "同版本、同淘汰策略，只切受支持核心。",
+                    "CPU、命中、KV、尾延迟及回退原因。",
+                    "语义正确，回退可解释，收益超过重复实验噪声。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "PP 投机",
+                    "固定草稿参数，对照开关和代表性并发。",
+                    "接受长度、TTFT、ITL、吞吐、KV。",
+                    "无死锁或状态错配，目标负载 SLO 达标且质量无不可接受退化。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "MoE",
+                    "同版本一次只切 finalize 或 tuning。",
+                    "数值、任务分数、TTFT、TPOT、吞吐。",
+                    "质量先过门槛，再按业务延迟预算选择。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "上线顺序与指标验收",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议采用“旧基线 → 新版默认 → 单项可选优化 → 小流量灰度”的顺序。质量异常先保存配置和时间线再回滚。灰度不是代替隔离测试，而是验证业务请求分布下是否仍满足已定义的门槛。"
+            },
+            {
+              "type": "table",
+              "caption": "验收记录：同时覆盖正确性、隔离与收益",
+              "columns": [
+                "维度",
+                "应保留的记录",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "版本归属",
+                    "SGLang commit / 镜像 digest、依赖锁、模型与草稿 revision、启动参数。",
+                    "可以从运行实例追到发布清单和实际实现。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "状态正确性",
+                    "请求、页、room、rank 的生命周期与确认时间线。",
+                    "故障期间无跨请求污染，无提前复用。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "计算正确性",
+                    "边界责任、归约次数、数值误差分布与任务分数。",
+                    "按预定义容差通过；不能漏算或重复计算。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务 SLO",
+                    "逐请求 TTFT / TPOT / ITL、错误率、负载分布与样本数。",
+                    "代表性负载及长尾满足事先约定的预算。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源与收益",
+                    "总 GPU、CPU、KV 保留量、吞吐及重复成对结果。",
+                    "质量稳定后收益仍超过噪声，且回退路径可解释。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "结论分级与待验证清单",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "已确认：本文所列变更被正式发布清单收录，并有对应 PR 或指南证据。合理预期：故障隔离、边界语义和可诊断性，比单个速度数字更能帮助建立可交付服务。尚未验证：实际 H20 收益、混合版本恢复、业务精度和长上下文长尾容量。"
+            },
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "PD 取消请求或传输失败后，KV 是否正确释放，滚动升级期间是否出现额外占用或请求错误？",
+                "Mooncake / NIXL 的 ACK、超时及不同版本互通是否满足自己定义的恢复预算？Mori / fake 路径不得假定相同默认行为。",
+                "实际部署的 layer_boundary 契约是否让归约责任既不丢失也不重复？不要机械给所有 PP 发送添加 all-reduce。",
+                "业务的冷缓存、共享前缀与淘汰负载是否真正受益于 Rust 核心？回退是否可观测？",
+                "PP 投机与 finalize 选择是否在自己的 H20、网络、采样和负载下通过质量与长尾门槛？"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "核心能力不是记住哪条 PR 变快，而是解释资源释放和跨卡交接为什么安全，然后证明优化帮助了自己的负载。"
+            }
+          ]
+        }
+      ]
+    }
   },
   {
     "schemaVersion": 1,
     "id": "h20-serving-slo",
     "kind": "analysis",
-    "title": "读 H20 优化：先找关键路径，再选并行策略",
-    "summary": "从运维走向 AI Infra，关键是把负载与 SLO 翻译成系统选择：延迟、吞吐、容量是不同约束，先拆请求路径，再解释瓶颈。",
+    "title": "从 271 tok/s 到可交付服务：H20 推理优化的工程读法",
+    "summary": "把业务负载和 SLO 接到瓶颈、并行拓扑、执行优化与验证结果。完整报告拆解请求链、最慢 rank、KV 容量和投机成本，附故障诊断表与隔离 A/B 矩阵。",
     "publishedAt": "2026-08-19",
     "reviewedAt": "2026-10-03",
     "topics": [
@@ -66,7 +1045,51 @@
       {
         "title": "LMSYS · Pushing the Limits of Serving DeepSeek-V4-Pro",
         "url": "https://www.lmsys.org/blog/2026-08-19-deepseek-v4-pro-engine-optimization-h20",
-        "publishedAt": "2026-08-19"
+        "publishedAt": "2026-08-19",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang · PD Disaggregation（在线文档）",
+        "url": "https://docs.sglang.io/docs/advanced_features/pd_disaggregation",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang · Expert Parallelism（在线文档）",
+        "url": "https://docs.sglang.io/docs/advanced_features/expert_parallelism",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "NVIDIA · NCCL Collective Communication Functions（在线文档）",
+        "url": "https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #23754 · Humming quantization kernel",
+        "url": "https://github.com/sgl-project/sglang/pull/23754",
+        "publishedAt": "2026-04-26",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #30261 · DSpark confidence-scheduled speculative decoding",
+        "url": "https://github.com/sgl-project/sglang/pull/30261",
+        "publishedAt": "2026-07-06",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang · metrics_collector.py（main，非冻结版本）",
+        "url": "https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/observability/metrics_collector.py",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang · Bench Serving Guide（在线文档）",
+        "url": "https://docs.sglang.io/docs/developer_guide/bench_serving",
+        "accessedAt": "2026-10-03"
+      },
+      {
+        "title": "SGLang #32281 · PP + DSpark（核对时仍 Open）",
+        "url": "https://github.com/sgl-project/sglang/pull/32281",
+        "publishedAt": "2026-07-24",
+        "accessedAt": "2026-10-03"
       }
     ],
     "claims": [
@@ -138,6 +1161,836 @@
     "example": {
       "title": "教学例子 · 非实测",
       "text": "同一个“首 token 变慢”现象可能有不同原因：如果计算 span 不变但队列增长，优先验证准入和负载；如果队列稳定而某个 rank 的 prefill 延长，优先验证路由偏斜。先写可证伪假设，再用同一请求的 trace 和 rank 指标逐个排除。这个例子不代表任何真实线上故障。"
+    },
+    "report": {
+      "version": 1,
+      "scope": "核对于 2026-10-03。本文是公开资料的原创机制教学与实验设计，博客成绩归原作者；所有算例均为教学推导，隔离 A/B、故障注入及 H20 性能验证尚未在用户环境执行。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：把优化文章读成因果链",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "读优化文章最重要的，是建立“业务负载和 SLO → 瓶颈 → 并行拓扑 → 执行优化 → 验证结果”的因果链。单请求生成快、单位 GPU 产出高、长上下文装得下，是三种不同目标；在一种考试里拿到最佳成绩，并不自动通过另外两种验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "原文的 271 tok/s 是一个明确配置和统计口径下的作者结果，不能直接承诺客户端端到端吞吐或 p99。采购和部署选择应固定请求分布、质量门槛、总 GPU 数及整条服务链成本，再比较可交付能力。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "从运维走向 AI Infra，要先解释请求在哪里等待、状态放在哪里、最慢路径为何变长，再决定调缓存、并行拓扑还是投机预算。证明优化帮到了自己的负载，比复述一个速度数字更有用。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "先确认成绩属于哪场考试",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "271 tok/s 来自 8×H20-141GB、单节点 TP8、batch=1、256K 输入的参考配置。作者从服务端 TP0 的 Decode batch 日志剔除最高和最低各 20% 样本后取平均。它不是客户端端到端吞吐，也不是客户端 p99。文中不同最佳成绩对应不同服务配置；B300 是外部参考，不能作为严格同条件对照。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "先在实验记录里写清“谁计时、从哪里开始、在哪里结束、失败样本如何处理”。否则服务端 decode 步时、客户端流式间隔、整条服务链吞吐会被放进同一张比较表，结论就失去可解释性。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "延迟：代表性请求能否在预定时间内交付？吞吐：所有 P/D/草稿资源投入后，每秒有多少合格请求完成？容量：在实际 KV 布局与安全余量下，能否准入足够长的上下文和并发？不要用其中一个指标替代另外两个。",
+              "title": "三个目标，三套验收"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "请求、通信、KV 与投机的因果链",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "SGLang 的 P/D 分离把输入计算和逐 token 生成放在不同实例，减少 prefill 对 decode 的干扰，并以 KV 传输衔接两侧。拆实例能隔开执行阶段，也会增加交接、分配及失败恢复的边界。"
+            },
+            {
+              "type": "diagram",
+              "title": "请求关键路径与投机控制回路",
+              "caption": "原创教学示意：连线表示逻辑依赖，不表示各阶段必须串行。实际可流水重叠，首 token 的发送位置需按部署实现核对。每个边界要关联请求 ID、时间戳和失败原因。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "gateway",
+                  "label": "请求 / 网关准入",
+                  "detail": "从请求进入服务开始计时，记录准入拒绝与路由选择。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "queue",
+                  "label": "排队",
+                  "detail": "到达率超过可交付能力时，队列可能先于 GPU 计算变长。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "prefill",
+                  "label": "Prefill",
+                  "detail": "处理输入上下文，按层产生后续生成需要的 KV 状态。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "handoff",
+                  "label": "KV 交接",
+                  "detail": "P/D 握手、D 侧分配与数据传输是不同等待。",
+                  "column": 3,
+                  "row": 0
+                },
+                {
+                  "id": "response",
+                  "label": "流式响应",
+                  "detail": "客户端观察到的 token 间隔还会受发送批次和缓冲影响。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "decode",
+                  "label": "Decode 循环",
+                  "detail": "沿注意力、MoE、通信与调度的关键路径提交输出。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "commit",
+                  "label": "提交有效 token",
+                  "detail": "只计算真正提交且满足质量规则的 token，避免把候选计为产出。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "verify",
+                  "label": "目标验证",
+                  "detail": "目标模型验证草稿；较长验证不必然带来更低输出成本。",
+                  "column": 3,
+                  "row": 1
+                },
+                {
+                  "id": "draft",
+                  "label": "草稿生成",
+                  "detail": "草稿会占用执行时间与状态；不能仅凭接受率决定开启。",
+                  "column": 3,
+                  "row": 2
+                }
+              ],
+              "edges": [
+                {
+                  "from": "gateway",
+                  "to": "queue",
+                  "label": "准入后进入队列"
+                },
+                {
+                  "from": "queue",
+                  "to": "prefill",
+                  "label": "获得输入计算资源"
+                },
+                {
+                  "from": "prefill",
+                  "to": "handoff",
+                  "label": "交接请求所属 KV"
+                },
+                {
+                  "from": "handoff",
+                  "to": "decode",
+                  "label": "接收端状态就绪后生成"
+                },
+                {
+                  "from": "decode",
+                  "to": "response",
+                  "label": "输出已提交 token"
+                },
+                {
+                  "from": "decode",
+                  "to": "draft",
+                  "label": "启用投机时产生候选"
+                },
+                {
+                  "from": "draft",
+                  "to": "verify",
+                  "label": "候选交给目标模型"
+                },
+                {
+                  "from": "verify",
+                  "to": "commit",
+                  "label": "验证并提交可接受前缀及相应输出"
+                },
+                {
+                  "from": "commit",
+                  "to": "decode",
+                  "label": "进入下一轮生成"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "TP 拆张量，PP 拆层，CP 拆上下文，EP 拆专家；Attention-DP 分配请求的注意力工作，不等于复制所有专家。拓扑决定状态放置和跨卡、跨机的数据流。看 TTFT 超标时，要区分排队、输入计算和 KV 交接；看生成卡顿时，要区分 attention、MoE、通信和调度空隙；请求进不去时，要区分内存不足、准入约束和计算饱和。"
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "MoE 的执行涉及 token 分发、布局变换、专家计算和结果回收。EPLB 根据激活统计调整专家的放置或复制；这种调整针对负载分布，不能只凭传输总字节判断效果。",
+              "title": "MoE：传得少，为何仍然慢？"
+            },
+            {
+              "type": "bars",
+              "title": "传输更少，关键路径却可能更长",
+              "caption": "原创教学算例，非实测；忽略计算与通信重叠。A 的四个 rank 计算时间为 2/2/2/10 ms，B 为 4/4/4/4 ms。同步路径由最慢 rank 决定，不能拿 rank 均值加通信代替。",
+              "unit": "ms",
+              "basis": "inference",
+              "sourceIndices": [],
+              "series": [
+                {
+                  "label": "划分 A · 最慢 rank",
+                  "segments": [
+                    {
+                      "label": "计算",
+                      "value": 10
+                    },
+                    {
+                      "label": "通信",
+                      "value": 2
+                    }
+                  ]
+                },
+                {
+                  "label": "划分 B · 最慢 rank",
+                  "segments": [
+                    {
+                      "label": "计算",
+                      "value": 4
+                    },
+                    {
+                      "label": "通信",
+                      "value": 4
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "在上面的非实测算例中，A 的同步关键路径约为 max(2,2,2,10)+2=12 ms，而不是 rank 平均计算时间加通信。B 虽然通信更贵，总路径约为 max(4,4,4,4)+4=8 ms。说明更少通信量可能被更严重的计算偏斜抵消；实际有重叠时，仍应以时间线找关键路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "AllGather 汇集各 rank 的数据，ReduceScatter 先归约再分片，AllReduce 使各 rank 得到完整归约结果。collective 等待长，也可能是其他 rank 的计算尚未完成，不能直接归因网络。"
+            },
+            {
+              "type": "diagram",
+              "title": "HBM 预算：KV 是扣除其他状态后的余量",
+              "caption": "原创预算示意，不画未测比例。各项以真实 rank 的分配器与峰值测量为准；多卡显存不能直接相加当作统一池。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "device",
+                  "label": "单 rank 设备内存",
+                  "detail": "预算从当前 rank 的可用设备内存起算。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "weights",
+                  "label": "模型权重",
+                  "detail": "量化会影响权重空间，但空间收益不等于执行收益。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "runtime",
+                  "label": "运行时 / 通信缓冲",
+                  "detail": "包括执行中间量、通信工作区和图捕获相关状态。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "draft-state",
+                  "label": "草稿及辅助状态",
+                  "detail": "投机、压缩注意力与层结构可能改变额外状态成本。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "reserve",
+                  "label": "安全余量",
+                  "detail": "应覆盖峰值、分页取整和故障期间暂留资源。",
+                  "column": 3,
+                  "row": 1
+                },
+                {
+                  "id": "kv-pool",
+                  "label": "KV 可用池",
+                  "detail": "设备内存扣除权重、运行时、通信/图/草稿状态及安全余量。",
+                  "column": 1,
+                  "row": 2
+                }
+              ],
+              "edges": [
+                {
+                  "from": "device",
+                  "to": "weights",
+                  "label": "扣除权重占用"
+                },
+                {
+                  "from": "device",
+                  "to": "runtime",
+                  "label": "扣除运行时与通信状态"
+                },
+                {
+                  "from": "device",
+                  "to": "draft-state",
+                  "label": "扣除草稿及辅助状态"
+                },
+                {
+                  "from": "device",
+                  "to": "reserve",
+                  "label": "保留安全余量"
+                },
+                {
+                  "from": "runtime",
+                  "to": "kv-pool",
+                  "label": "其余预算共同决定最终 KV 池"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "KV 可用空间 = 设备内存 − 权重 − 运行时缓冲 − 通信 / 图捕获 / 草稿状态 − 安全余量。假设某个 rank 剩 96 GiB，真实布局每 token 消耗 512 KiB，理论池为 196608 token。每请求预算 48K 输入加 8K 输出（这里 K=1024），只能容纳 3 个完整请求，且尚未计分页取整。这不是 DeepSeek-V4 的 KV 估算。压缩注意力、层结构、分片与辅助状态会改变每 token 成本，应以真实分配器核算。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "每个有效输出 token 的成本，应以完整迭代墙钟时间除以实际提交 token 数。有执行重叠时取关键路径，不机械相加 kernel 时长。原创例子：普通解码 12 ms/token；A 每轮 18 ms 交付 3 token，成本为 6 ms/token；B 每轮交付 4 token，但耗时 28 ms，成本为 7 ms/token。B 接受更多，单位输出却更贵；以上不是实测。",
+              "title": "投机：算实际提交 token 的完整成本"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "DSpark 使用分块草稿与置信度驱动的可变验证调度。是否真的减少成本，还要看验证执行路径、草稿、同步和状态开销；不能为提高接受率擅自改变采样或接受规则。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "指标源码中的 spec_accept_length 包含接受草稿和 bonus，而 spec_accept_rate 是接受草稿数除以提出草稿数，两者分母不同。比较时还应同时看完整迭代墙钟、KV 占用和质量，避免只用一个接受率解释收益。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "关键证据与复现范围",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "资料支持什么，不能据此推断什么",
+              "columns": [
+                "来源 / 项目",
+                "支持的事实或作者结果",
+                "适用边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "原博客 · 271 tok/s",
+                    "8×H20-141GB，单节点 TP8，batch=1，256K 输入；服务端 TP0 decode 日志截尾均值。",
+                    "不代表客户端端到端吞吐或 p99；B300 外部参考不能作受控对照。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "PD 官方文档",
+                    "P/D 分离及 KV 交接机制，含 bootstrap timeout 对故障清理的影响。",
+                    "在线文档需对照实际安装版本。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "Expert Parallelism",
+                    "专家分发、计算、回收与 EPLB 的机制。",
+                    "最慢 rank 的实际负载和收益需要本地验证。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "NVIDIA NCCL 文档",
+                    "AllGather / ReduceScatter / AllReduce 的通信语义。",
+                    "collective 耗时不等于纯网络耗时。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "Humming #23754",
+                    "集成包含 Hopper W4A8；核对时已合并。",
+                    "空间或 kernel 能力不自动等于业务延迟改善。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "DSpark #30261",
+                    "置信度调度的投机机制；核对时已合并。",
+                    "基础 DSpark 合并不代表全部 PP 路径稳定发布。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "metrics_collector.py",
+                    "接受长度、接受率及 P/D 分阶段指标口径。",
+                    "链接指向 main；复现时固定 commit 并核对字段。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "Bench Serving Guide",
+                    "客户端 TTFT、ITL 与 TPOT 的测量口径。",
+                    "输入、输出、请求数与失败处理必须同时报告。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "PP + DSpark #32281",
+                    "截至 2026-10-03 仍 Open。",
+                    "不能写成安装最新版就能复现博客全部配置。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    8
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：容量、延迟与吞吐不能互相代替",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "Humming 集成包含 Hopper W4A8。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "低比特释放权重空间，并不自动证明执行更快。它可能首先允许更多并发，而更高并发又会增加访存、通信与等待。最终应比较 SLO 达标后的吞吐；权重占用下降只是容量链上的一个环节。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "P/D 分离减少输入计算对生成的干扰，却引入 KV 交接；更宽 EP 可能减轻单 rank 专家负载，也改变通信与偏斜；投机可能减少目标模型轮数，也增加草稿与验证状态。这些方案应按同一请求分布评估，不能把不同 A/B 的收益百分比相加。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "某方案只改善平均延迟却恶化长尾时，可以限定到特定低并发或短输入负载，不应直接成为全量默认。质量、稳定性和状态正确性始终先于资源效率。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产故障关联：拆开握手、分配与搬运",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                6
+              ],
+              "text": "指标源码区分 bootstrap 时间、KV 分配等待、传输延迟与失败计数。PD 文档提醒，提高 bootstrap timeout 会延后 D 失联时 P 侧相关内存清理。延长超时可能只是让故障更晚暴露。"
+            },
+            {
+              "type": "table",
+              "caption": "原创诊断表：现象先变成可证伪假设",
+              "columns": [
+                "现象",
+                "优先关联的证据",
+                "验证问题"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "TTFT 上升",
+                    "同一请求的排队、prefill、KV 交接时间线。",
+                    "计算 span 不变而队列增长？还是某个执行阶段变慢？"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Bootstrap 慢",
+                    "请求 / room ID、端点发现、进程连接状态。",
+                    "是否卡在发现、建连或匹配，而不是数据搬运？"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Allocation wait 长",
+                    "D 侧可分配 KV 余量、准入、取消及延迟释放。",
+                    "等待来自真实容量不足，还是取消后资源尚未回收？"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Transfer 慢",
+                    "传输体积、有效带宽、链路错误及接收端等待。",
+                    "是数据多、链路慢，还是接收端状态未就绪？"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Collective 等待长",
+                    "按层 / rank 的 token 数、专家 GEMM 和通信起止。",
+                    "最慢 rank 尚在计算吗？不可只看等待就归因网络。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "扩容抖动",
+                    "rank / 设备 / NIC 映射，跨节点通信比例。",
+                    "配置改变是否让关键路径经过更慢的链路？"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本节是公开机制上的故障假设，不代表用户真实线上事件。故障诊断要同时回答“为什么延迟变高”和“资源是否安全回收”，避免为了恢复吞吐绕开状态保护。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "隔离环境的 A/B 验证矩阵",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "先固定模型版本、采样规则、缓存状态和请求集，并关闭待测优化形成基线。覆盖短、中、长输入，低到饱和的到达率，以及代表性的 expert 路由分布。单变量验证后再做组合，重复成对实验并保存逐请求结果；这里没有宣称这些实验已运行。"
+            },
+            {
+              "type": "table",
+              "caption": "实验矩阵：先控制变量，再解释收益",
+              "columns": [
+                "实验组",
+                "唯一变量 / 对照",
+                "记录的观测",
+                "判断方式"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "基线",
+                    "固定拓扑与配置，待测优化关闭。",
+                    "客户端逐请求延迟、质量、错误、全部 GPU 资源。",
+                    "形成可比参照，不从不同负载拼接最佳成绩。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "容量",
+                    "固定拓扑，比较权重 / KV 方案。",
+                    "准入量、峰值内存、分页余量与质量。",
+                    "容量增加仍须在业务 SLO 下交付。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "执行",
+                    "一次只变 spec、专家平衡或 overlap。",
+                    "迭代关键路径、有效 token 成本、长尾。",
+                    "收益应超过重复实验噪声。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "拓扑",
+                    "比较 TP / PP / EP 配置。",
+                    "总资源、单位资源、跨节点比例和最慢 rank。",
+                    "总 GPU 数与完整服务链成本同时报告。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障",
+                    "仅隔离环境测试取消、节点退出、传输失败。",
+                    "错误返回、无关请求正确性及资源回收。",
+                    "按事先约定的故障预算验收恢复与隔离。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "diagram",
+              "title": "从基线实验到配置选择",
+              "caption": "原创决策示意：先通过质量与稳定性门槛，再验证 SLO，最后在同口径总资源下比较 goodput 和成本。只改善均值而恶化长尾的方案应限定负载。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "quality",
+                  "label": "质量 / 稳定性过线",
+                  "detail": "质量、错误恢复或隔离性不达标时，先定位问题。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "slo",
+                  "label": "预先约定 SLO 过线",
+                  "detail": "分别检查 TTFT、生成间隔和长尾，不用均值代替分位数。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "cost",
+                  "label": "Goodput / 成本比较",
+                  "detail": "按包括 P、D、独立草稿在内的总 GPU 资源归一。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "select",
+                  "label": "按负载选择配置",
+                  "detail": "为短、中、长输入和不同到达率明确适用范围。",
+                  "column": 3,
+                  "row": 0
+                }
+              ],
+              "edges": [
+                {
+                  "from": "quality",
+                  "to": "slo",
+                  "label": "质量稳定后进入延迟验收"
+                },
+                {
+                  "from": "slo",
+                  "to": "cost",
+                  "label": "服务承诺满足后比较资源效率"
+                },
+                {
+                  "from": "cost",
+                  "to": "select",
+                  "label": "选择可复现且有边界的方案"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "指标与验收：统一客户端和服务端口径",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "TTFT 是到首 token 的延迟，ITL 是客户端观察到的 token 间隔；逐请求 TPOT =（总延迟 − TTFT）/（输出 token 数 − 1）。不足两个输出 token 的请求应单独处理。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "保留客户端 TTFT、TPOT、ITL 的分布和样本数。一次流式发送可能包含多个 token，客户端 ITL 会受缓冲影响；p99 需要足量请求与持续负载，不能从均值推断。成功输出 tokens/s 应注明失败和重试如何计入。"
+            },
+            {
+              "type": "table",
+              "caption": "验收表：门槛在实验前约定",
+              "columns": [
+                "维度",
+                "统一口径",
+                "验收要求"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "质量 / 正确性",
+                    "同模型、采样和请求集；记录任务分数或数值误差。",
+                    "先通过预定质量门槛，不能为速度改掉比较条件。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "延迟",
+                    "客户端 TTFT / TPOT / ITL 分布、样本数与负载持续时间。",
+                    "分别满足预先约定的 SLO；不足两 token 的 TPOT 单列。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务吞吐",
+                    "成功完成且同时满足 SLO / 质量的请求数每秒。",
+                    "这一定义的 goodput 用于比较可交付能力。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源效率",
+                    "P、D、独立草稿等全部 GPU 与完整服务链成本。",
+                    "同口径比较每 GPU 产出，不能只算 decode 卡。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳定性",
+                    "失败、重试、取消后回收、故障恢复边界。",
+                    "质量和隔离稳定后再选择成本最优配置。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：锁版本，再谈复现",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4,
+                5,
+                8
+              ],
+              "text": "截至 2026-10-03，Humming #23754 和 DSpark #30261 已合并，而 PP + DSpark #32281 仍 Open。基础 DSpark 合并不等于全部 PP 路径稳定发布，发布或复现时必须重新核对状态。"
+            },
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "锁定模型和 drafter revision、SGLang commit、kernel / 通信库、CUDA 与驱动、GPU 和网络拓扑。",
+                "当前在线文档与 main 分支不必等于博客实验版本，需记录实际代码与配置。",
+                "按层 / rank 补齐 token 数、专家 GEMM 与通信起止，验证偏斜和重叠假设。",
+                "同时检查草稿开销、验证成本、KV 占用、提交 token 数和质量。",
+                "交付可复现配置、负载、统计口径与失败边界，而不是只有启动命令。"
+              ]
+            }
+          ]
+        }
+      ]
     }
   },
   {

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { validateReport } from './radar-report.mjs';
 
 export const topics = ['SGLang', 'GPU 通信', 'KV Cache', 'PD 分离', '投机解码', '故障分析'];
 export const kindNames = { release: '版本动态', analysis: '深度解读', reading: '阅读清单' };
@@ -25,14 +26,15 @@ export function sourceURL(raw) {
   const url = new URL(str(raw, 'source.url', 500));
   const approved = (['lmsys.org', 'www.lmsys.org'].includes(url.hostname) && url.pathname.startsWith('/blog/')) ||
     (url.hostname === 'github.com' && url.pathname.startsWith('/sgl-project/sglang/')) ||
-    (url.hostname === 'docs.sglang.io');
-  if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || !approved) fail('来源必须是公开的 LMSYS blog 或 SGLang 官方 GitHub/文档 HTTPS 地址，无认证参数');
+    (url.hostname === 'docs.sglang.io') ||
+    (url.hostname === 'docs.nvidia.com' && url.pathname.startsWith('/deeplearning/nccl/user-guide/docs/'));
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || !approved) fail('来源必须是公开的 LMSYS blog、SGLang 官方 GitHub/文档或 NVIDIA NCCL 文档 HTTPS 地址，无认证参数');
   url.hash = '';
   url.pathname = url.pathname.replace(/\/+$/, '');
   return url.href;
 }
 export function validateRecord(raw) {
-  keys(raw, ['schemaVersion', 'id', 'kind', 'title', 'summary', 'publishedAt', 'reviewedAt', 'topics', 'visibility', 'containsPrivateData', 'sources', 'claims', 'questions', 'related', 'diagram', 'example'], 'record');
+  keys(raw, ['schemaVersion', 'id', 'kind', 'title', 'summary', 'publishedAt', 'reviewedAt', 'topics', 'visibility', 'containsPrivateData', 'sources', 'claims', 'questions', 'related', 'diagram', 'example', 'report'], 'record');
   if (raw.schemaVersion !== 1) fail('schemaVersion 必须为 1');
   if (typeof raw.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(raw.id) || raw.id.length > 80) fail('id 必须是稳定的英文 slug');
   if (!Object.hasOwn(kindNames, raw.kind)) fail('kind 必须是 release、analysis 或 reading');
@@ -42,17 +44,21 @@ export function validateRecord(raw) {
   if (reviewedAt < publishedAt) fail('reviewedAt 不得早于原文日期');
   const recordTopics = [...new Set(array(raw.topics, 'topics', 1, 6))];
   if (recordTopics.some(t => !topics.includes(t))) fail('topics 包含未知主题');
-  const sources = array(raw.sources, 'sources', 1, 10).map((s, i) => {
-    keys(s, ['title', 'url', 'publishedAt'], `sources[${i}]`);
-    const sourceDate = date(s.publishedAt, 'source.publishedAt');
-    if (sourceDate > reviewedAt) fail('来源日期不得晚于核对日期');
-    return { title: str(s.title, 'source.title', 200), url: sourceURL(s.url), publishedAt: sourceDate };
+  const sources = array(raw.sources, 'sources', 1, 30).map((s, i) => {
+    keys(s, ['title', 'url', 'publishedAt', 'accessedAt'], `sources[${i}]`);
+    if (s.publishedAt === undefined && s.accessedAt === undefined) fail('来源必须注明原文日期或在线资料查阅日期');
+    const out = { title: str(s.title, 'source.title', 200), url: sourceURL(s.url) };
+    if (s.publishedAt !== undefined) out.publishedAt = date(s.publishedAt, 'source.publishedAt');
+    if (s.accessedAt !== undefined) out.accessedAt = date(s.accessedAt, 'source.accessedAt');
+    if ([out.publishedAt, out.accessedAt].some(d => d && d > reviewedAt)) fail('来源日期不得晚于核对日期');
+    if (out.publishedAt && out.accessedAt && out.accessedAt < out.publishedAt) fail('查阅日期不得早于原文日期');
+    return out;
   });
   if (publishedAt !== sources[0].publishedAt) fail('publishedAt 必须是第一条原文的日期');
   const claims = array(raw.claims, 'claims', 1, 24).map((c, i) => {
     keys(c, ['status', 'text', 'sourceIndices'], `claims[${i}]`);
     if (!['confirmed', 'inference', 'pending'].includes(c.status)) fail('claim.status 必须是 confirmed、inference 或 pending');
-    const indices = [...new Set(array(c.sourceIndices, 'claim.sourceIndices', c.status === 'confirmed' ? 1 : 0, 10))];
+    const indices = [...new Set(array(c.sourceIndices, 'claim.sourceIndices', c.status === 'confirmed' ? 1 : 0, 30))];
     if (indices.some(index => !Number.isInteger(index) || index < 0 || index >= sources.length)) fail('claim 引用了不存在的来源');
     return { status: c.status, text: str(c.text, 'claim.text'), sourceIndices: indices };
   });
@@ -74,6 +80,7 @@ export function validateRecord(raw) {
     keys(raw.example, ['title', 'text'], 'example');
     out.example = { title: str(raw.example.title, 'example.title', 160), text: str(raw.example.text, 'example.text') };
   }
+  if (raw.report !== undefined) out.report = validateReport(raw.report, sources, { keys, str, array, fail });
   return out;
 }
 export function parsePayload(payload) {
@@ -95,13 +102,17 @@ export function mergeRecords(existing, incoming) {
   }
   let added = 0, updated = 0, unchanged = 0;
   const batchIDs = new Set();
-  for (const r of incoming.map(validateRecord)) {
+  for (let r of incoming.map(validateRecord)) {
     if (batchIDs.has(r.id)) fail('同批 payload 含重复 ID');
     batchIDs.add(r.id);
     const prior = ids.get(r.id);
     if (identities.has(identity(r)) && identities.get(identity(r)) !== r.id) fail('同一分类与原文必须沿用既有 ID');
     if (prior && identity(prior) !== identity(r)) fail('更新不能修改既有 ID 的分类或第一条来源');
     if (prior && r.reviewedAt < prior.reviewedAt) fail('拒绝用旧核对日期覆盖新版本');
+    if (prior?.report && !r.report) {
+      if (prior.sources.some((s, i) => r.sources[i]?.url !== s.url)) fail('省略 report 的摘要更新必须保留原来源顺序，避免改写长文证据');
+      r = validateRecord({ ...r, report: prior.report });
+    }
     if (prior && digest(prior) === digest(r)) { unchanged++; continue; }
     prior ? updated++ : added++;
     ids.set(r.id, r); identities.set(identity(r), r.id);

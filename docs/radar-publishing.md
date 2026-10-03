@@ -4,7 +4,7 @@
 
 ## 供两项现有监测任务接入
 
-存储：`src/content/radar.json`，数组，每条记录 `schemaVersion: 1`。接口示例：`examples/radar-record.json`。导入命令：
+存储：`src/content/radar.json`，数组，每条记录 `schemaVersion: 1`。阅读条目示例：`examples/radar-record.json`；完整长文示例：`examples/radar-report-record.json`。导入命令：
 
 ```bash
 npm run content:import -- /absolute/path/payload.json --dry-run
@@ -15,9 +15,11 @@ npm run build
 
 payload 可以是单条记录、记录数组或 `{ "records": [...] }`。没有新内容时传 `[]`，不会生成空日报。`id` 是稳定的小写英文 slug；同一 `kind + 第一条 source URL` 不允许另起 ID。重复 payload 无磁盘改动；同 ID 更新必须保留来源和分类，旧 `reviewedAt` 不覆盖新版本。文件原子替换，导入锁避免并发丢失。正文只支持纯文本结构，页面自动转义，不接收 HTML/脚本。
 
+完整深度解读须提供 `report`，格式与可导入示例见 [完整报告接口](radar-report-format.md)。它持久化九章正文、逐段依据、图表和实验矩阵，不再只用短 claims 代替报告。摘要更新省略 report 会保留已有长文；未知结构或超限正文会整笔失败，不会截断。
+
 ## 内容边界
 
-只提交公开资料的原创摘要，不完整转载。每条记录明确 `visibility: public` 与 `containsPrivateData: false`，事实段落必须关联已核对的原文。初始来源仅允许 LMSYS blog、SGLang 官方 GitHub/文档；不得把公司资料、现场日志、客户标识、访问凭证或私人笔记放进 payload。校验器不替代任务对公开范围的判断。
+只提交公开资料的原创摘要、机制教学和实验设计，不完整转载。每条记录明确 `visibility: public` 与 `containsPrivateData: false`，事实段落必须关联已核对的原文。来源允许 LMSYS blog、SGLang 官方 GitHub/文档及官方 NVIDIA NCCL 文档路径；不得把公司资料、现场日志、客户标识、访问凭证或私人笔记放进 payload。校验器不替代任务对公开范围的判断。
 
 所有条目区分原文日期 `publishedAt` 与本次核对日期 `reviewedAt`。不得把老文的核对日期伪装成新发布。未读完的资料标为 `reading`，不要自动写成深度解读。
 

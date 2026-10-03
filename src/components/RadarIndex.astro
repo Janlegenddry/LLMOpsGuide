@@ -25,7 +25,7 @@ const lastReviewed = radar.map(record => record.reviewedAt).sort().at(-1);
     <header><h2 id="focus-heading"><span aria-hidden="true"></span>重点跟进</h2><span>核对至 {lastReviewed}</span></header>
     <ol>{radar.slice(0, 5).map(record => <li><a href={withBase(radarHref(record.id))}>{record.title}</a><span>{kindNames[record.kind]}</span></li>)}</ol>
   </aside>
-  <div class="radar-results-meta"><p id="radar-count" role="status">{radar.length} 条公开记录</p><p>按原文日期排序 · 阅读清单标明待验证</p></div>
+  <div class="radar-results-meta"><p id="radar-count" role="status">{radar.length} 条公开记录</p><p>按原文日期排序 · 完整报告与尚未解读分开标注</p></div>
   <div class="radar-records">
     {radar.map(record => <article class="radar-record" data-radar-record data-kind={record.kind} data-month={record.publishedAt.slice(0,7)} data-topics={record.topics.join('|')} data-search={`${record.title} ${record.summary} ${record.topics.join(' ')} ${kindNames[record.kind]}`}>
       <div class="reader-date"><time datetime={record.publishedAt}>{record.publishedAt.slice(5).replace('-', '.')}<span>{record.publishedAt.slice(0,4)}</span></time></div>
@@ -34,6 +34,7 @@ const lastReviewed = radar.map(record => record.reviewedAt).sort().at(-1);
       <h3><a href={withBase(radarHref(record.id))}>{record.title}<span aria-hidden="true"> ↗</span></a></h3>
       <p>{record.summary}</p>
       <div class="radar-record__footer"><span class="reader-tags">{record.topics.map(topic => <span>{topic}</span>)}</span><span>核对 {record.reviewedAt}</span></div>
+      {record.report ? <a class="reader-report-link" href={`${withBase(radarHref(record.id))}#full-report`}>阅读完整报告 ↗</a> : <p class="reader-report-state">{record.kind === 'reading' ? '尚未解读 · 来源摘记' : '完整报告待补充 · 动态摘记'}</p>}
       </div>
     </article>)}
   </div>

@@ -4,6 +4,8 @@
 
 公开动态与解读使用独立的 `src/content/radar.json`，不需要手动加入 `src/data.ts`，动态索引、详情页和搜索会自动生成。格式、幂等规则和自动发布见 [radar-publishing.md](docs/radar-publishing.md)。既有 Markdown 文章继续遵循下文约定。
 
+完整深度解读须按 [完整报告格式](docs/radar-report-format.md) 提供 `report`，不要用短 claims 代替正文。构建后运行 `npm run content:verify` 核对长文、图表和公开 JSON 未丢失；两条发布工作流已包含此检查。
+
 ## 1. 拉取最新代码
 
 ```bash

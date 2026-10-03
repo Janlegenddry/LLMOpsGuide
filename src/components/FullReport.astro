@@ -1,0 +1,25 @@
+---
+import ReportProvenance from './ReportProvenance.astro';
+import ReportDiagram from './ReportDiagram.astro';
+import ReportBars from './ReportBars.astro';
+import type { RadarRecord } from '../radar';
+interface Props { record: RadarRecord }
+const { record } = Astro.props;
+const report = record.report!;
+---
+<div class="full-report" id="full-report" data-report-version={report.version}>
+  <header class="report-intro"><h2>完整解读报告</h2><p>{report.scope}</p><p class="radar-small">“官方事实”与“作者报告结果”可追到原文；“推导 / 教学示例”和“待验证”不代表本站 GPU 实测。</p></header>
+  <nav class="report-toc" aria-label="报告目录"><ol>{report.sections.map((section, i) => <li><a href={`#report-${section.id}`}><span>{String(i + 1).padStart(2, '0')}</span>{section.title}</a></li>)}</ol></nav>
+  {report.sections.map(section => <section class="report-section" id={`report-${section.id}`} aria-labelledby={`report-${section.id}-heading`}>
+    <h2 id={`report-${section.id}-heading`}>{section.title}</h2>
+    {section.blocks.map((block, i) => <>
+      {block.type === 'paragraph' && <div class="report-paragraph"><ReportProvenance {...block} sources={record.sources} /><p>{block.text}</p></div>}
+      {block.type === 'list' && <div class="report-list"><ReportProvenance {...block} sources={record.sources} /><ul>{block.items.map(item => <li>{item}</li>)}</ul></div>}
+      {block.type === 'callout' && <aside class="report-callout"><h3>{block.title}</h3><ReportProvenance {...block} sources={record.sources} /><p>{block.text}</p></aside>}
+      {block.type === 'code' && <div class="report-code"><ReportProvenance {...block} sources={record.sources} /><pre><code data-language={block.language}>{block.text}</code></pre></div>}
+      {block.type === 'table' && <div class="report-table-scroll" tabindex="0" role="region" aria-label={block.caption}><table><caption>{block.caption}</caption><thead><tr>{block.columns.map(column => <th scope="col">{column}</th>)}<th scope="col">依据</th></tr></thead><tbody>{block.rows.map(row => <tr>{row.cells.map(cell => <td>{cell}</td>)}<td><ReportProvenance {...row} sources={record.sources} /></td></tr>)}</tbody></table></div>}
+      {block.type === 'diagram' && <ReportDiagram diagram={block} sources={record.sources} figureID={`report-${section.id}-figure-${i + 1}`} />}
+      {block.type === 'bars' && <ReportBars chart={block} sources={record.sources} figureID={`report-${section.id}-chart-${i + 1}`} />}
+    </>)}
+  </section>)}
+</div>

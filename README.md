@@ -6,6 +6,7 @@
 
 - 动态入口：<https://janlegenddry.github.io/LLMOpsGuide/radar/>
 - 内容导入与持续发布：[docs/radar-publishing.md](./docs/radar-publishing.md)
+- 完整报告格式与可导入示例：[docs/radar-report-format.md](./docs/radar-report-format.md)；正文、机制图、证据表及验证矩阵全部持久化。
 - 只读输出：`/LLMOpsGuide/api/radar.json`、`/LLMOpsGuide/radar/feed.xml`
 
 - 在线阅读：<https://janlegenddry.github.io/LLMOpsGuide/>

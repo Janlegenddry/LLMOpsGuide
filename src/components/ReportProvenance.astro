@@ -1,0 +1,6 @@
+---
+import { basisNames, type ReportBasis, type RadarRecord } from '../radar';
+interface Props { basis: ReportBasis; sourceIndices: number[]; sources: RadarRecord['sources'] }
+const { basis, sourceIndices, sources } = Astro.props;
+---
+<span class="report-provenance"><span class:list={['report-basis', `report-basis--${basis}`]}>{basisNames[basis]}</span>{sourceIndices.map(i => <a href={sources[i].url} target="_blank" rel="noopener noreferrer" aria-label={`来源 ${i + 1}：${sources[i].title}`}>[{i + 1}] ↗</a>)}</span>

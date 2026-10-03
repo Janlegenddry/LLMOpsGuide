@@ -1,0 +1,58 @@
+---
+import ReportProvenance from './ReportProvenance.astro';
+import type { ReportDiagram, RadarRecord } from '../radar';
+interface Props { diagram: ReportDiagram; sources: RadarRecord['sources']; figureID: string }
+const { diagram, sources, figureID } = Astro.props;
+const box = { width: 184, height: 92, gapX: 56, gapY: 70, margin: 32 };
+const x = (node: ReportDiagram['nodes'][number]) => box.margin + node.column * (box.width + box.gapX);
+const y = (node: ReportDiagram['nodes'][number]) => box.margin + node.row * (box.height + box.gapY);
+const width = (Math.max(...diagram.nodes.map(n => n.column)) + 1) * (box.width + box.gapX) - box.gapX + box.margin * 2;
+const height = (Math.max(...diagram.nodes.map(n => n.row)) + 1) * (box.height + box.gapY) - box.gapY + box.margin * 2;
+const lines = (label: string) => [...label].reduce<string[]>((out, char, i) => { if (i % 11 === 0) out.push(''); out[out.length - 1] += char; return out; }, []);
+const edges = diagram.edges.map(edge => {
+  const from = diagram.nodes.find(n => n.id === edge.from)!;
+  const to = diagram.nodes.find(n => n.id === edge.to)!;
+  const vertical = from.column === to.column;
+  const forward = vertical ? to.row > from.row : to.column > from.column;
+  const sx = x(from) + (vertical ? box.width / 2 : forward ? box.width : 0);
+  const sy = y(from) + (vertical ? forward ? box.height : 0 : box.height / 2);
+  const tx = x(to) + (vertical ? box.width / 2 : forward ? 0 : box.width);
+  const ty = y(to) + (vertical ? forward ? 0 : box.height : box.height / 2);
+  let path = vertical ? `M ${sx} ${sy} L ${tx} ${ty}` : `M ${sx} ${sy} H ${(sx + tx) / 2} V ${ty} H ${tx}`;
+  let labelX = (sx + tx) / 2, labelY = (sy + ty) / 2 - 9;
+  if (from.row !== to.row) {
+    const down = to.row > from.row;
+    const start = x(from) + box.width / 2, end = x(to) + box.width / 2;
+    const startY = y(from) + (down ? box.height : 0), endY = y(to) + (down ? 0 : box.height);
+    const lane = (startY + endY) / 2;
+    if (Math.abs(from.row - to.row) === 1) {
+      path = `M ${start} ${startY} V ${lane} H ${end} V ${endY}`;
+      labelX = (start + end) / 2; labelY = lane - 8;
+    } else {
+      const firstLane = startY + (down ? 24 : -24), lastLane = endY + (down ? -24 : 24), outer = box.margin / 2;
+      path = `M ${start} ${startY} V ${firstLane} H ${outer} V ${lastLane} H ${end} V ${endY}`;
+      labelX = outer + 10; labelY = (firstLane + lastLane) / 2;
+    }
+  }
+  if (!vertical && from.row === to.row && !forward) {
+    const lane = y(from) + box.height + 24;
+    const start = x(from) + box.width / 2, end = x(to) + box.width / 2;
+    path = `M ${start} ${y(from) + box.height} V ${lane} H ${end} V ${y(to) + box.height}`;
+    labelX = (start + end) / 2; labelY = lane - 8;
+  }
+  return { ...edge, path, labelX, labelY };
+});
+---
+<figure class="report-diagram" id={figureID}>
+  <figcaption><strong>{diagram.title}</strong><ReportProvenance basis={diagram.basis} sourceIndices={diagram.sourceIndices} sources={sources} /><p>{diagram.caption}</p></figcaption>
+  <div class="report-graph-scroll" tabindex="0" role="region" aria-label={`${diagram.title}，窄屏可横向滚动`}>
+    <svg class="report-graph" viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-labelledby={`${figureID}-title ${figureID}-desc`}>
+      <title id={`${figureID}-title`}>{diagram.title}</title><desc id={`${figureID}-desc`}>{diagram.caption}。{diagram.edges.map(e => `${e.from} 到 ${e.to}：${e.label}`).join('；')}</desc>
+      <defs><marker id={`${figureID}-arrow`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 Z" class="report-arrow" /></marker></defs>
+      {edges.map((edge, i) => <g><path d={edge.path} class="report-edge" marker-end={`url(#${figureID}-arrow)`}><title>{edge.label}</title></path><text x={edge.labelX} y={edge.labelY} class="report-edge-number">{i + 1}</text></g>)}
+      {diagram.nodes.map(node => <g><rect x={x(node)} y={y(node)} width={box.width} height={box.height} rx="10" class="report-node" /><text x={x(node) + box.width / 2} y={y(node) + box.height / 2 - (lines(node.label).length - 1) * 10} text-anchor="middle" dominant-baseline="middle" class="report-node-label">{lines(node.label).map((line, i) => <tspan x={x(node) + box.width / 2} dy={i ? 20 : 0}>{line}</tspan>)}</text></g>)}
+    </svg>
+  </div>
+  <ol class="report-edge-legend">{diagram.edges.map(edge => <li>{edge.label}</li>)}</ol>
+  <dl class="report-node-notes">{diagram.nodes.map(node => <div><dt>{node.label}</dt><dd>{node.detail}</dd></div>)}</dl>
+</figure>
