@@ -118,6 +118,134 @@ export function renderTechnicalFigure(diagram, { compact = false, id = 'technica
   const W = compact ? 320 : 760;
   const finish = (c, suffix = '') => ({ svg: c.svg(diagram.title + suffix, diagram.caption), width: W });
 
+  if (kind === 'build-runtime') {
+    if (compact) {
+      const lanes = groups.slice(0, 3).map((g, i) => {
+        const c = canvas(W, 450, `${id}-lane-${i}`); c.panel(12, 12, 296, 426, g.title, g.tone);
+        g.nodes.forEach((n, j) => { const y = 56 + j * 132; c.card(n, 32, y, 256, 82); if (j < 2) c.line([[86, y + 86], [86, y + 128]], j ? '核验来源 / 哈希 / 路径' : '来源 → 产物', g.tone, false, [208, y + 114]); });
+        return finish(c, ` · ${g.title}`);
+      });
+      const c = canvas(W, 204, `${id}-base`); c.panel(12, 12, 296, 180, groups[3].title);
+      c.card(groups[3].nodes[0], 32, 54, 256, 78); c.text(160, 159, '分别约束三条运行路径', 14); c.text(160, 179, '兼容性约束 ≠ 自动重写产物', 13, '#697985');
+      return [...lanes, finish(c, ' · 独立基础层')];
+    }
+    const c = canvas(W, 592, id);
+    ['构建来源', '交付产物', '进程实际使用'].forEach((s, i) => c.text(130 + i * 245, 25, s, 15));
+    groups.slice(0, 3).forEach((g, i) => {
+      const y = 44 + i * 142; c.panel(12, y, 736, 130, g.title, g.tone);
+      g.nodes.forEach((n, j) => c.card(n, 26 + j * 245, y + 44, 208, 74));
+      c.line([[238, y + 82], [267, y + 82]], '', g.tone); c.line([[483, y + 82], [512, y + 82]], '', g.tone);
+      c.text(498, y + 37, '核验点', 12, figurePalette[g.tone][1]);
+    });
+    c.card(groups[3].nodes[0], 22, 510, 280, 66); c.text(496, 529, '分别连接三个运行节点 · 独立兼容性约束', 13);
+    [0, 1, 2].forEach(i => c.line([[306, 543], [314, 543], [314, 584], [752, 584], [752, 126 + i * 142], [728, 126 + i * 142]], '', 'neutral', true));
+    c.text(496, 558, '不会自动重写 wheel、扩展或缓存产物', 13, '#697985'); return [finish(c)];
+  }
+
+  if (kind === 'causal-branches') {
+    if (compact) {
+      const root = canvas(W, 130, `${id}-root`); root.card(groups[0].nodes[0], 20, 12, 280, 92); root.text(160, 124, '分叉：编译产物 / 库调用', 14);
+      const branches = groups.slice(1, 3).map((g, i) => {
+        const c = canvas(W, 406, `${id}-branch-${i}`); c.panel(12, 12, 296, 382, g.title, g.tone);
+        g.nodes.forEach((n, j) => { const y = 54 + j * 110; c.card(n, 32, y, 256, 80); if (j < 2) c.line([[160, y + 84], [160, y + 106]], '', g.tone); });
+        c.text(160, 380, '两条路径均汇入独立参考', 13, '#438779'); return finish(c, ` · ${g.title}`);
+      });
+      const join = canvas(W, 258, `${id}-join`); groups[3].nodes.forEach((n, j) => join.card(n, 32, 12 + j * 142, 256, 86)); join.line([[160, 102], [160, 150]], '归因', 'kv', false, [204, 130]);
+      return [finish(root), ...branches, finish(join, ' · 汇合')];
+    }
+    const c = canvas(W, 686, id); c.card(groups[0].nodes[0], 242, 12, 276, 76);
+    groups.slice(1, 3).forEach((g, i) => {
+      const x = 16 + i * 380; c.panel(x, 140, 348, 370, g.title, g.tone);
+      c.line([[380, 92], [380, 112], [x + 174, 112], [x + 174, 136]], i ? '库调用' : '编译产物', g.tone, false, [x + 174, 106]);
+      g.nodes.forEach((n, j) => { const y = 190 + j * 104; c.card(n, x + 22, y, 304, 80); if (j < 2) c.line([[x + 174, y + 84], [x + 174, y + 100]], '', g.tone); });
+      c.line([[x + 174, 482], [x + 174, 534], [380, 534], [380, 550]], '', 'kv');
+    });
+    groups[3].nodes.forEach((n, j) => c.card(n, 222 + j * 310, 554, j ? 208 : 260, 92));
+    c.line([[486, 600], [528, 600]], '归因', 'kv', false, [507, 581]);
+    c.text(380, 671, '红色仅标待核验环节 · 不代表全部 GPU 已触发', 13, '#697985'); return [finish(c)];
+  }
+
+  if (kind === 'kv-map') {
+    const c = canvas(W, compact ? 710 : 594, id), x = compact ? 20 : 162, cell = compact ? 60 : 106, boundaryX = x + cell * 2 + 8;
+    c.text(W / 2, 25, '逻辑位置 →（原创抽象，不是块数参数）', compact ? 12 : 15);
+    for (let row = 0; row < 3; row++) {
+      const y = 82 + row * (compact ? 134 : 110);
+      c.text(compact ? 20 : 24, compact ? y - 14 : y + 32, groups[row].title, 14, '#293c4a', 'start');
+      for (let col = 0; col < (row === 2 ? 1 : 4); col++) c.rect(x + col * (cell + 6), y, cell, 70, 'neutral', 4, true);
+      if (row === 2) c.text(x + cell + 12, y + 20, '仅索引零保留 R', 13, '#697985', 'start');
+      groups[row].nodes.forEach((n, col) => {
+        const cardX = x + col * (cell + 6); c.rect(cardX, y, cell, 70, row ? 'communication' : 'compute', 4);
+        c.text(cardX + cell / 2, y + 29, n.shortLabel || n.label, 22); c.text(cardX + cell / 2, y + 51, row === 2 ? '索引零' : row === 1 ? '新分配' : '复用', 12);
+      });
+    }
+    c.parts.push(`<line x1="${boundaryX}" y1="48" x2="${boundaryX}" y2="${compact ? 447 : 384}" stroke="#697985" stroke-width="1.5" stroke-dasharray="5 4"/>`);
+    c.text(boundaryX + (compact ? 0 : 68), 56, '逻辑命中边界', 12, '#697985');
+    const y = compact ? 472 : 422, w = compact ? 132 : 292, right = compact ? 168 : 438;
+    c.card(groups[3].nodes[0], 20, y, w, 94); c.card(groups[3].nodes[1], right, y, w, 94);
+    c.line([[20 + w / 2, y - 4], [compact ? 8 : 140, y - 4], [compact ? 8 : 140, compact ? 292 : 272], [x + cell / 2, compact ? 292 : 272], [x + cell / 2, compact ? 290 : 266]], '', 'danger', true);
+    const rail = compact ? 307 : 746;
+    [compact ? 251 : 235, compact ? 385 : 345].forEach(target => c.line([[right + w - 4, y + 40], [rail, y + 40], [rail, target], [x + cell + 4, target]], '', 'kv'));
+    c.text(W / 2, y + 128, '虚线：旧筛选可能遗漏 X', 14, '#ad6250'); c.text(W / 2, y + 151, '实线：按本次分配身份识别 X、R', 14, '#438779');
+    if (compact) { c.text(160, 670, '蓝：本地复用 · 橙：传输目标', 13); c.text(160, 692, '灰：无需保留 · R 只在索引零', 13); }
+    return [finish(c)];
+  }
+
+  if (kind === 'kv-zeroing') {
+    const [allocator, connector, executor, risk] = groups;
+    // Forks show concurrent writers. No arrow connects load X to zero X.
+    const old = canvas(W, compact ? 624 : 378, `${id}-old`);
+    old.text(W / 2, 28, '旧判断：两任务可交叠，箭头不保证先后', compact ? 13 : 16);
+    if (compact) {
+      old.card(allocator.nodes[0], 40, 54, 240, 84); old.text(160, 158, '分配器登记两项任务', 13);
+      old.card(connector.nodes[0], 18, 218, 136, 114); old.card(executor.nodes[0], 166, 218, 136, 114);
+      old.line([[160, 142], [160, 188], [86, 188], [86, 214]], '', 'communication'); old.line([[160, 188], [234, 188], [234, 214]], '', 'danger');
+      old.text(50, 207, '连接器', 13); old.text(270, 207, '执行器', 13);
+      old.line([[86, 336], [86, 378], [160, 414]], '', 'communication'); old.line([[234, 336], [234, 378], [160, 414]], '', 'danger');
+      old.card(risk.nodes[0], 40, 454, 240, 88); old.text(160, 581, '传输完成 ≠ 另一任务不会覆盖', 13, '#ad6250');
+    } else {
+      [allocator, connector, executor].forEach((g, i) => old.panel(12 + i * 250, 48, 236, 208, g.title, g.tone));
+      old.card(allocator.nodes[0], 26, 120, 208, 86); old.card(connector.nodes[0], 276, 120, 208, 86); old.card(executor.nodes[0], 526, 120, 208, 86);
+      old.line([[238, 145], [250, 145], [250, 100], [380, 100], [380, 116]], '', 'communication'); old.line([[238, 181], [250, 181], [250, 86], [630, 86], [630, 116]], '', 'danger');
+      old.line([[380, 210], [380, 266], [380, 284]], '', 'communication'); old.line([[630, 210], [630, 266], [384, 284]], '', 'danger'); old.card(risk.nodes[0], 226, 290, 308, 70);
+    }
+    const crossY = compact ? 416 : 273; old.parts.push(`<path d="M${W / 2 - 9} ${crossY - 9}l18 18m0-18l-18 18" stroke="#ad6250" stroke-width="3" fill="none"/>`);
+    const newer = canvas(W, compact ? 824 : 606, `${id}-new`);
+    newer.text(W / 2, 28, '新判断：声明先于本次分配 · 仅控制新块', compact ? 13 : 16);
+    if (compact) {
+      newer.card(connector.nodes[1], 40, 48, 240, 82); newer.text(184, 154, '连接器 → 分配器：加载组声明', 13); newer.line([[60, 134], [60, 174]], '', 'control');
+      newer.panel(12, 186, 296, 356, '本次加载目标 X', 'kv'); newer.card(allocator.nodes[1], 32, 236, 256, 82); newer.card(connector.nodes[2], 32, 360, 256, 82); newer.line([[86, 322], [86, 356]], '', 'communication'); newer.text(185, 344, '不登记同一步清零', 13, '#438779');
+      newer.card(executor.nodes[1], 32, 474, 256, 54); newer.line([[60, 446], [60, 470]], '', 'kv'); newer.text(184, 464, '满足实际完成条件后读取', 12, '#438779');
+      newer.panel(12, 570, 296, 238, '未加载的新块 Y', 'compute'); newer.card(allocator.nodes[2], 32, 616, 256, 66); newer.card(executor.nodes[2], 32, 732, 256, 58); newer.line([[160, 686], [160, 728]], '仍清零', 'compute', false, [211, 711]);
+      newer.line([[284, 89], [312, 89], [312, 649], [292, 649]], '', 'neutral', true);
+    } else {
+      [allocator, connector, executor].forEach((g, i) => newer.panel(12 + i * 250, 48, 236, 530, g.title, g.tone));
+      newer.card(connector.nodes[1], 276, 100, 208, 82); newer.card(allocator.nodes[1], 26, 228, 208, 82); newer.card(connector.nodes[2], 276, 228, 208, 82); newer.card(executor.nodes[1], 526, 228, 208, 82);
+      newer.line([[272, 141], [130, 141], [130, 224]], '先声明', 'control', false, [168, 130]); newer.line([[238, 269], [272, 269]], '', 'communication'); newer.line([[488, 269], [522, 269]], '', 'kv');
+      newer.text(380, 347, 'X 不登记同一步清零；读取仍需真实完成与依赖', 14, '#438779');
+      newer.card(allocator.nodes[2], 26, 426, 208, 82); newer.card(executor.nodes[2], 526, 426, 208, 82);
+      newer.line([[380, 186], [252, 186], [252, 386], [130, 386], [130, 422]], '未加载组', 'neutral', true, [191, 385]); newer.line([[238, 467], [522, 467]], 'Y 仍保留必要清零', 'compute', false, [380, 453]);
+      newer.text(380, 555, '组声明不是传输完成证明 · 不清除历史任务的顺序要求', 13, '#697985');
+    }
+    return [finish(old, ' · 潜在双写'), finish(newer, ' · 本次清零控制')];
+  }
+
+  if (kind === 'acceptance-gates' || kind === 'release-gates') {
+    const acceptance = kind === 'acceptance-gates', count = groups[0].nodes.length, step = compact ? 120 : 104, bottom = 54 + count * step;
+    const c = canvas(W, compact ? bottom + 286 : bottom + 32, id), x = compact ? 68 : 56, w = compact ? 238 : 396;
+    c.text(W / 2, 28, acceptance ? '前五道门通过，才逐步放量' : '四种证据分别核验，不等同已交付', compact ? 13 : 16);
+    groups[0].nodes.forEach((n, i) => {
+      const y = 52 + i * step; c.card(n, x, y, w, 82); c.text(x - 19, y + 43, String(i + 1), 16);
+      if (i < count - 1) c.line([[x + w / 2, y + 86], [x + w / 2, y + step - 4]], acceptance ? '通过' : '', acceptance ? 'kv' : 'neutral', !acceptance, [x + w / 2 + 45, y + step - 8]);
+      if (acceptance && i < 5) c.line(compact ? [[x - 4, y + 63], [22, y + 63], [22, bottom + 38], [28, bottom + 38]] : [[x - 4, y + 63], [22, y + 63], [22, bottom], [492, bottom], [492, 125], [514, 125]], '', 'danger', true);
+    });
+    const sideX = compact ? 30 : 518, sideY = compact ? bottom + 14 : 84, sideW = compact ? 276 : 216;
+    groups[1].nodes.forEach((n, i) => c.card(n, sideX, sideY + i * 116, sideW, 92));
+    if (acceptance) c.line([[sideX + sideW / 2, sideY + 96], [sideX + sideW / 2, sideY + 112]], '', 'danger');
+    else { c.text(sideX + sideW / 2, sideY - 12, '相邻开放 PR · 未合入', 13, '#697985'); c.text(sideX + sideW / 2, sideY + 242, '不并入已完成能力', 13, '#697985'); }
+    if (!compact && acceptance) c.text(626, 363, '证据不足 / 未通过', 13, '#ad6250');
+    return [finish(c)];
+  }
+
   if (kind === 'memory-budget') {
     const c = canvas(W, compact ? 530 : 420, id), gap = compact ? 14 : 16, cols = compact ? 2 : 4, cardW = compact ? 130 : 160;
     c.panel(12, 12, W - 24, compact ? 506 : 396, groups[0].nodes[0].shortLabel || groups[0].nodes[0].label, 'kv');

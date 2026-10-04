@@ -1,0 +1,1027 @@
+[
+  {
+    "type": "diagram",
+    "title": "每个箭头都要有证据：构建来源与运行来源",
+    "caption": "原创工程示意，非实测、非时间比例图。来源、产物和进程实际使用构成三条独立泳道；升级某一交付物不会自动更新其他路径，GPU 与驱动只作为独立兼容性约束。",
+    "basis": "inference",
+    "sourceIndices": [],
+    "presentation": {
+      "kind": "build-runtime",
+      "panels": [
+        {
+          "title": "框架泳道",
+          "tone": "compute",
+          "nodeIds": [
+            "wheel",
+            "torch-artifact",
+            "loaded-torch"
+          ]
+        },
+        {
+          "title": "扩展泳道",
+          "tone": "control",
+          "nodeIds": [
+            "toolchain",
+            "extension",
+            "loaded-extension"
+          ]
+        },
+        {
+          "title": "运行时编译泳道",
+          "tone": "kv",
+          "nodeIds": [
+            "generator",
+            "kernel",
+            "executed"
+          ]
+        },
+        {
+          "title": "独立兼容性基础层",
+          "tone": "neutral",
+          "nodeIds": [
+            "hardware"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "wheel",
+        "label": "wheel 与依赖锁",
+        "shortLabel": "wheel 与依赖锁",
+        "subtitle": "官方分发来源",
+        "detail": "官方 wheel 与依赖锁定义框架分发来源。",
+        "tone": "compute",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "torch-artifact",
+        "label": "torch 与动态库",
+        "shortLabel": "torch 与动态库",
+        "subtitle": "框架交付产物",
+        "detail": "torch 二进制及 CUDA 动态库可能来自不同分发依赖。",
+        "tone": "compute",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "loaded-torch",
+        "label": "进程实际加载",
+        "shortLabel": "进程实际加载",
+        "subtitle": "分发包 / 库路径",
+        "detail": "核对已安装分发包、已加载 CUDA 库、来源、哈希及实际路径。",
+        "tone": "compute",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "toolchain",
+        "label": "源码与工具链",
+        "shortLabel": "源码与工具链",
+        "subtitle": "CUDA_HOME / nvcc",
+        "detail": "记录扩展源码、CUDA_HOME、实际 nvcc 版本和构建参数。",
+        "tone": "control",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "extension",
+        "label": "扩展设备代码",
+        "shortLabel": "扩展设备代码",
+        "subtitle": "动态库 / fatbinary",
+        "detail": "产物包含扩展动态库及其设备代码。",
+        "tone": "control",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "loaded-extension",
+        "label": "进程加载扩展",
+        "shortLabel": "进程加载扩展",
+        "subtitle": "路径 / 文件哈希",
+        "detail": "核对进程真正加载的扩展路径和哈希，不能仅看构建日志。",
+        "tone": "control",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "generator",
+        "label": "生成器与缓存键",
+        "shortLabel": "生成器与缓存键",
+        "subtitle": "版本 / 编译后端",
+        "detail": "生成器版本、编译后端与缓存键决定这条产物路径。",
+        "tone": "kv",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "kernel",
+        "label": "生成或缓存命中",
+        "shortLabel": "生成或缓存命中",
+        "subtitle": "kernel 产物",
+        "detail": "区分新生成的 kernel 与旧缓存命中的 kernel。",
+        "tone": "kv",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "executed",
+        "label": "实际执行产物",
+        "shortLabel": "实际执行产物",
+        "subtitle": "归属 / 产物身份",
+        "detail": "核对实际执行产物所属生成路径及缓存身份。",
+        "tone": "kv",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "hardware",
+        "label": "GPU 与驱动",
+        "shortLabel": "GPU 与驱动",
+        "subtitle": "兼容性约束",
+        "detail": "GPU 与驱动分别约束三条运行路径；驱动不是这些产物的自动重写器。",
+        "tone": "neutral",
+        "column": 1,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "wheel",
+        "to": "torch-artifact",
+        "label": "核对来源与构建依赖",
+        "shortLabel": "来源"
+      },
+      {
+        "from": "torch-artifact",
+        "to": "loaded-torch",
+        "label": "核对来源、哈希和实际加载路径",
+        "shortLabel": "来源 / 哈希 / 路径"
+      },
+      {
+        "from": "toolchain",
+        "to": "extension",
+        "label": "核对实际构建工具链",
+        "shortLabel": "构建"
+      },
+      {
+        "from": "extension",
+        "to": "loaded-extension",
+        "label": "核对来源、哈希和实际加载路径",
+        "shortLabel": "来源 / 哈希 / 路径"
+      },
+      {
+        "from": "generator",
+        "to": "kernel",
+        "label": "核对生成器和缓存选择",
+        "shortLabel": "生成 / 缓存"
+      },
+      {
+        "from": "kernel",
+        "to": "executed",
+        "label": "核对来源、哈希和实际使用路径",
+        "shortLabel": "来源 / 哈希 / 路径"
+      },
+      {
+        "from": "hardware",
+        "to": "loaded-torch",
+        "label": "兼容性约束，不会自动重写产物",
+        "shortLabel": "兼容性"
+      },
+      {
+        "from": "hardware",
+        "to": "loaded-extension",
+        "label": "兼容性约束，不会自动重写产物",
+        "shortLabel": "兼容性"
+      },
+      {
+        "from": "hardware",
+        "to": "executed",
+        "label": "兼容性约束，不会自动重写产物",
+        "shortLabel": "兼容性"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "title": "两类错误的因果分叉",
+    "caption": "原创机制教学图，非实测。图中红色只标出需要核验的生成工具与库算法环节；两栏区分排查方向，不声称某模型、GPU 或服务已触发缺陷。",
+    "basis": "inference",
+    "sourceIndices": [],
+    "presentation": {
+      "kind": "causal-branches",
+      "panels": [
+        {
+          "title": "共同症状",
+          "tone": "neutral",
+          "nodeIds": [
+            "symptom"
+          ]
+        },
+        {
+          "title": "编译产物",
+          "tone": "compute",
+          "nodeIds": [
+            "code",
+            "compile",
+            "code-result"
+          ]
+        },
+        {
+          "title": "库调用",
+          "tone": "communication",
+          "nodeIds": [
+            "descriptor",
+            "library",
+            "library-result"
+          ]
+        },
+        {
+          "title": "共同参考与归因",
+          "tone": "kv",
+          "nodeIds": [
+            "reference",
+            "attribution"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "symptom",
+        "label": "结果异常但未必报错",
+        "shortLabel": "结果异常但未必报错",
+        "subtitle": "从实际证据出发",
+        "detail": "公共起点表示排查症状，不声称某模型已触发缺陷。",
+        "tone": "neutral",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "code",
+        "label": "源码与编译条件",
+        "shortLabel": "源码与编译条件",
+        "subtitle": "嵌套分歧等触发边界",
+        "detail": "核对目标源码与编译条件，不把任意嵌套 if 视为可复现案例。",
+        "tone": "compute",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "compile",
+        "label": "设备代码生成",
+        "shortLabel": "设备代码生成",
+        "subtitle": "生成工具须核对",
+        "detail": "核验哪个工具生成了这份设备代码。",
+        "tone": "danger",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "code-result",
+        "label": "实际执行结果",
+        "shortLabel": "实际执行结果",
+        "subtitle": "固定输入与产物",
+        "detail": "执行结果需关联设备产物和构建身份。",
+        "tone": "compute",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "descriptor",
+        "label": "数据类型与描述符",
+        "shortLabel": "数据类型与描述符",
+        "subtitle": "NVFP4 / 缩放参数",
+        "detail": "核对数据类型、描述符及非单位缩放参数。",
+        "tone": "communication",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "library",
+        "label": "算法与实际库",
+        "shortLabel": "算法与实际库",
+        "subtitle": "限定路径须核对",
+        "detail": "核验是否进入勘误限定的算法和架构路径。",
+        "tone": "danger",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "library-result",
+        "label": "实际执行结果",
+        "shortLabel": "实际执行结果",
+        "subtitle": "库路径与算法身份",
+        "detail": "关联实际加载库与算法身份，不能只看安装版本。",
+        "tone": "communication",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "reference",
+        "label": "与独立参考比较",
+        "shortLabel": "与独立参考比较",
+        "subtitle": "预先选定参考与容差",
+        "detail": "两条路径均与独立参考比较，不以调用成功替代正确性。",
+        "tone": "kv",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "attribution",
+        "label": "局部归因",
+        "shortLabel": "局部归因",
+        "subtitle": "定位实现层",
+        "detail": "按证据做局部归因，不以红色覆盖全部 GPU。",
+        "tone": "neutral",
+        "column": 0,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "symptom",
+        "to": "code",
+        "label": "选择编译产物排查方向",
+        "shortLabel": "产物"
+      },
+      {
+        "from": "symptom",
+        "to": "descriptor",
+        "label": "选择库调用排查方向",
+        "shortLabel": "库调用"
+      },
+      {
+        "from": "code",
+        "to": "compile",
+        "label": "核对生成工具及触发条件",
+        "shortLabel": "生成"
+      },
+      {
+        "from": "compile",
+        "to": "code-result",
+        "label": "检查固定产物执行结果",
+        "shortLabel": "执行"
+      },
+      {
+        "from": "descriptor",
+        "to": "library",
+        "label": "核对限定算法与实际库",
+        "shortLabel": "选择"
+      },
+      {
+        "from": "library",
+        "to": "library-result",
+        "label": "检查实际库调用结果",
+        "shortLabel": "执行"
+      },
+      {
+        "from": "code-result",
+        "to": "reference",
+        "label": "与独立参考比较",
+        "shortLabel": "比较"
+      },
+      {
+        "from": "library-result",
+        "to": "reference",
+        "label": "与独立参考比较",
+        "shortLabel": "比较"
+      },
+      {
+        "from": "reference",
+        "to": "attribution",
+        "label": "用差异和产物证据做局部归因",
+        "shortLabel": "归因"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "title": "从证据到放量的决策门",
+    "caption": "原创验收建议，未执行。前五个门槛串行通过后才逐步放量；证据不足或未通过进入停止与处置分支，不用吞吐收益抵消正确性缺口，不编造时间轴或成功百分比。",
+    "basis": "inference",
+    "sourceIndices": [],
+    "presentation": {
+      "kind": "acceptance-gates",
+      "panels": [
+        {
+          "title": "串行验收门槛",
+          "tone": "kv",
+          "nodeIds": [
+            "provenance",
+            "coverage",
+            "correctness",
+            "stability",
+            "service",
+            "rollout"
+          ]
+        },
+        {
+          "title": "未满足时的处置",
+          "tone": "danger",
+          "nodeIds": [
+            "stop",
+            "repair"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "provenance",
+        "label": "产物来源可核验",
+        "shortLabel": "产物来源可核验",
+        "subtitle": "镜像 / wheel / 扩展",
+        "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+        "tone": "compute",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "coverage",
+        "label": "目标路径有覆盖",
+        "shortLabel": "目标路径有覆盖",
+        "subtitle": "未覆盖项单列",
+        "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+        "tone": "compute",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "correctness",
+        "label": "正确性与质量通过",
+        "shortLabel": "正确性与质量通过",
+        "subtitle": "独立参考 / 预定容差",
+        "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+        "tone": "compute",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "stability",
+        "label": "稳定性通过",
+        "shortLabel": "稳定性通过",
+        "subtitle": "样本量 / 持续时间",
+        "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+        "tone": "compute",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "service",
+        "label": "延迟与容量通过",
+        "shortLabel": "延迟与容量通过",
+        "subtitle": "冷启动 / 热态 / 尾延迟",
+        "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+        "tone": "compute",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "rollout",
+        "label": "逐步放量",
+        "shortLabel": "逐步放量",
+        "subtitle": "保留灰度与回滚证据",
+        "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+        "tone": "kv",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "stop",
+        "label": "停止推进并定位",
+        "shortLabel": "停止推进并定位",
+        "subtitle": "证据不足或未通过",
+        "detail": "前五道门任意证据不足或未通过，均停止推进。",
+        "tone": "danger",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "repair",
+        "label": "补测 / 修正 / 回滚",
+        "shortLabel": "补测 / 修正 / 回滚",
+        "subtitle": "不把未复现当已修复",
+        "detail": "保留诊断证据，补测、修正或按既有流程回滚；未复现不能直接连到已修复。",
+        "tone": "neutral",
+        "column": 3,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "provenance",
+        "to": "coverage",
+        "label": "当前门槛通过后才能推进",
+        "shortLabel": "通过"
+      },
+      {
+        "from": "coverage",
+        "to": "correctness",
+        "label": "当前门槛通过后才能推进",
+        "shortLabel": "通过"
+      },
+      {
+        "from": "correctness",
+        "to": "stability",
+        "label": "当前门槛通过后才能推进",
+        "shortLabel": "通过"
+      },
+      {
+        "from": "stability",
+        "to": "service",
+        "label": "当前门槛通过后才能推进",
+        "shortLabel": "通过"
+      },
+      {
+        "from": "service",
+        "to": "rollout",
+        "label": "当前门槛通过后才能推进",
+        "shortLabel": "通过"
+      },
+      {
+        "from": "provenance",
+        "to": "stop",
+        "label": "证据不足或未通过时停止推进",
+        "shortLabel": "未满足"
+      },
+      {
+        "from": "coverage",
+        "to": "stop",
+        "label": "证据不足或未通过时停止推进",
+        "shortLabel": "未满足"
+      },
+      {
+        "from": "correctness",
+        "to": "stop",
+        "label": "证据不足或未通过时停止推进",
+        "shortLabel": "未满足"
+      },
+      {
+        "from": "stability",
+        "to": "stop",
+        "label": "证据不足或未通过时停止推进",
+        "shortLabel": "未满足"
+      },
+      {
+        "from": "service",
+        "to": "stop",
+        "label": "证据不足或未通过时停止推进",
+        "shortLabel": "未满足"
+      },
+      {
+        "from": "stop",
+        "to": "repair",
+        "label": "补测、修正或回滚",
+        "shortLabel": "处置"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "title": "请求命中与物理块不是同一张地图",
+    "caption": "原创教学抽象，非上游实测参数，字母和布局不代表具体模型。蓝色为本地复用，橙色为新分配传输目标，灰色为无需保留；X 在命中边界左侧，R 只在索引零。虚线表示旧区间筛选遗漏，实线表示按分配身份识别。",
+    "basis": "inference",
+    "sourceIndices": [],
+    "presentation": {
+      "kind": "kv-map",
+      "panels": [
+        {
+          "title": "全注意力",
+          "tone": "compute",
+          "nodeIds": [
+            "block-a",
+            "block-b"
+          ]
+        },
+        {
+          "title": "非前缀缓存窗口",
+          "tone": "communication",
+          "nodeIds": [
+            "block-x"
+          ]
+        },
+        {
+          "title": "环形缓冲",
+          "tone": "communication",
+          "nodeIds": [
+            "block-r"
+          ]
+        },
+        {
+          "title": "两种识别方式",
+          "tone": "neutral",
+          "nodeIds": [
+            "range",
+            "allocation"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "block-a",
+        "label": "A",
+        "shortLabel": "A",
+        "subtitle": "本地复用",
+        "detail": "A 表示本地复用的全注意力物理块，字母是原创抽象。",
+        "tone": "compute",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "block-b",
+        "label": "B",
+        "shortLabel": "B",
+        "subtitle": "本地复用",
+        "detail": "B 同样表示本地复用的全注意力块。",
+        "tone": "compute",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "block-x",
+        "label": "X",
+        "shortLabel": "X",
+        "subtitle": "新分配传输目标",
+        "detail": "X 位于逻辑命中边界之前，却是本次窗口组新分配的传输目标，旧区间筛选可能遗漏。",
+        "tone": "communication",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "block-r",
+        "label": "R",
+        "shortLabel": "R",
+        "subtitle": "索引零",
+        "detail": "R 表示环形布局保留在块列表索引零的存储，不能用 token 范围代替其物理身份。",
+        "tone": "communication",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "range",
+        "label": "旧区间筛选",
+        "shortLabel": "旧区间筛选",
+        "subtitle": "逻辑 token 区间",
+        "detail": "虚线表示旧区间筛选未覆盖 X；灰色仅表示无需保留的抽象区域。",
+        "tone": "neutral",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "allocation",
+        "label": "本次分配事件",
+        "shortLabel": "本次分配事件",
+        "subtitle": "物理块身份",
+        "detail": "实线按本次分配事件识别 X 和 R，而不是投影请求级命中长度。",
+        "tone": "kv",
+        "column": 1,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "block-a",
+        "to": "block-b",
+        "label": "本地复用只说明全注意力行的已有状态",
+        "shortLabel": "复用"
+      },
+      {
+        "from": "range",
+        "to": "block-x",
+        "label": "旧逻辑区间可能漏掉 X",
+        "shortLabel": "可能遗漏"
+      },
+      {
+        "from": "allocation",
+        "to": "block-x",
+        "label": "按本次分配事件识别传输目标 X",
+        "shortLabel": "物理身份"
+      },
+      {
+        "from": "allocation",
+        "to": "block-r",
+        "label": "环形索引零也按分配身份识别",
+        "shortLabel": "物理身份"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "title": "同一物理块的双写与清零控制",
+    "caption": "原创控制关系示意，非实测、非时间比例图。上半部两任务可交叠，箭头不保证必然先后；下半部仅控制本次外部加载新分配块的清零名单，Y 仍初始化，历史任务顺序与完成条件仍需另证。",
+    "basis": "inference",
+    "sourceIndices": [],
+    "presentation": {
+      "kind": "kv-zeroing",
+      "panels": [
+        {
+          "title": "分配器",
+          "tone": "compute",
+          "nodeIds": [
+            "old-allocate",
+            "new-x",
+            "new-y"
+          ]
+        },
+        {
+          "title": "连接器",
+          "tone": "communication",
+          "nodeIds": [
+            "old-load",
+            "declaration",
+            "new-load"
+          ]
+        },
+        {
+          "title": "执行器",
+          "tone": "neutral",
+          "nodeIds": [
+            "old-zero",
+            "read-x",
+            "zero-y"
+          ]
+        },
+        {
+          "title": "风险焦点",
+          "tone": "danger",
+          "nodeIds": [
+            "conflict"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "old-allocate",
+        "label": "新分配 X",
+        "shortLabel": "新分配 X",
+        "subtitle": "旧判断漏掉目标",
+        "detail": "旧判断中 X 同时进入清零与传输任务，两任务没有图中保证的先后顺序。",
+        "tone": "compute",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "new-x",
+        "label": "本次新块 X",
+        "shortLabel": "本次新块 X",
+        "subtitle": "加载组：跳过本步清零",
+        "detail": "加载组声明先到分配器；只对这次外部加载新分配的 X 控制清零登记。",
+        "tone": "kv",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "new-y",
+        "label": "本次新块 Y",
+        "shortLabel": "本次新块 Y",
+        "subtitle": "未加载：仍需初始化",
+        "detail": "未被连接器加载的新块 Y 仍登记必要清零，不是全局停止初始化。",
+        "tone": "compute",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "old-load",
+        "label": "传输写入 X",
+        "shortLabel": "传输写入 X",
+        "subtitle": "可与清零交叠",
+        "detail": "旧风险：远端传输写入 X 不代表另一任务不会覆盖它。",
+        "tone": "communication",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "declaration",
+        "label": "加载组声明",
+        "shortLabel": "加载组声明",
+        "subtitle": "描述本次恢复范围",
+        "detail": "声明 get_loaded_kv_cache_group_ids(request) 在分配时被使用，不是传输完成证明。",
+        "tone": "control",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "new-load",
+        "label": "加载 X",
+        "shortLabel": "加载 X",
+        "subtitle": "仍需完成与依赖",
+        "detail": "新判断中连接器按本次声明加载 X；真实执行仍需完成通知和依赖顺序。",
+        "tone": "communication",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "old-zero",
+        "label": "清零 X",
+        "shortLabel": "清零 X",
+        "subtitle": "潜在覆盖",
+        "detail": "清零与传输作用同一物理块时可能擦掉有效值或产生时序相关结果。",
+        "tone": "danger",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "read-x",
+        "label": "读取 X",
+        "shortLabel": "读取 X",
+        "subtitle": "等待正确完成条件",
+        "detail": "图示读取条件不替代真实完成通知、依赖和失败恢复验证。",
+        "tone": "kv",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "zero-y",
+        "label": "清零 Y",
+        "shortLabel": "清零 Y",
+        "subtitle": "保留必要初始化",
+        "detail": "未被本次加载覆盖的 Y 仍清零。",
+        "tone": "compute",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "conflict",
+        "label": "同一分配身份 X",
+        "shortLabel": "同一分配身份 X",
+        "subtitle": "潜在双写冲突",
+        "detail": "红色交叉仅标记 X 的潜在覆盖，不表示清零必然晚于传输，也不覆盖全部系统。",
+        "tone": "danger",
+        "column": 1,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "old-allocate",
+        "to": "old-load",
+        "label": "X 进入传输任务；不保证与清零的顺序",
+        "shortLabel": "传输任务"
+      },
+      {
+        "from": "old-allocate",
+        "to": "old-zero",
+        "label": "X 同时进入清零任务",
+        "shortLabel": "清零任务"
+      },
+      {
+        "from": "old-load",
+        "to": "conflict",
+        "label": "传输写与清零可交叠",
+        "shortLabel": "潜在覆盖"
+      },
+      {
+        "from": "old-zero",
+        "to": "conflict",
+        "label": "清零写与传输可交叠",
+        "shortLabel": "潜在覆盖"
+      },
+      {
+        "from": "declaration",
+        "to": "new-x",
+        "label": "先把加载组声明交给分配器",
+        "shortLabel": "组声明"
+      },
+      {
+        "from": "declaration",
+        "to": "new-y",
+        "label": "未覆盖组仍保留初始化",
+        "shortLabel": "未加载组"
+      },
+      {
+        "from": "new-x",
+        "to": "new-load",
+        "label": "本次加载目标不登记同一步清零",
+        "shortLabel": "加载目标"
+      },
+      {
+        "from": "new-load",
+        "to": "read-x",
+        "label": "真实执行仍需正确完成条件",
+        "shortLabel": "完成条件"
+      },
+      {
+        "from": "new-y",
+        "to": "zero-y",
+        "label": "未被加载的新块保留必要清零",
+        "shortLabel": "仍清零"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "title": "从修复到发布的证据关卡",
+    "caption": "原创证据状态图。截至 2026-10-04，#59504 已合入 main；单元回归为上游报告，最终端到端复验仍有缺口，尚未随新正式版本发布。两项相邻开放 PR 没有指向已完成节点的交付箭头。",
+    "basis": "inference",
+    "sourceIndices": [],
+    "presentation": {
+      "kind": "release-gates",
+      "panels": [
+        {
+          "title": "四个不同的证据关卡",
+          "tone": "compute",
+          "nodeIds": [
+            "merged",
+            "unit",
+            "production",
+            "release"
+          ]
+        },
+        {
+          "title": "相邻开放 PR · 不计入交付",
+          "tone": "neutral",
+          "nodeIds": [
+            "replay-pr",
+            "boundary-pr"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "merged",
+        "label": "源代码合入",
+        "shortLabel": "源代码合入",
+        "subtitle": "#59504 · 已合入",
+        "detail": "2026-10-03 合入 main 是源代码交付证据，不是正式版本发布。",
+        "tone": "kv",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "unit",
+        "label": "定向回归",
+        "shortLabel": "定向回归",
+        "subtitle": "上游有报告",
+        "detail": "649 项通过等由上游 PR 报告，不是本站独立验证；最终模型复验仍有缺口。",
+        "tone": "control",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "production",
+        "label": "真实部署验证",
+        "shortLabel": "真实部署验证",
+        "subtitle": "仍待部署复验",
+        "detail": "没有执行用户 GPU 实验，最终接口后的端到端复验与部署契约仍需验证。",
+        "tone": "neutral",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "release",
+        "label": "正式版本",
+        "shortLabel": "正式版本",
+        "subtitle": "尚未随新版本发布",
+        "detail": "截至核验时最新公开版本仍为 2026-09-22 发布的 v0.30.0。",
+        "tone": "neutral",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "replay-pr",
+        "label": "#59197",
+        "shortLabel": "#59197",
+        "subtitle": "开放 · 未合入",
+        "detail": "相邻窗口回放路径仍开放，不能并入 #59504 已完成能力。",
+        "tone": "neutral",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "boundary-pr",
+        "label": "#59330",
+        "shortLabel": "#59330",
+        "subtitle": "开放 · 未合入",
+        "detail": "最后提示词 token 与回退边界路径仍开放，P/D 两端配合及混用风险需另证。",
+        "tone": "neutral",
+        "column": 1,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "merged",
+        "to": "unit",
+        "label": "合入后核验定向回归范围",
+        "shortLabel": "有报告"
+      },
+      {
+        "from": "unit",
+        "to": "production",
+        "label": "定向测试不等于真实部署验证",
+        "shortLabel": "待复验"
+      },
+      {
+        "from": "production",
+        "to": "release",
+        "label": "部署验证与正式发布属于不同证据",
+        "shortLabel": "待发布"
+      }
+    ]
+  }
+]

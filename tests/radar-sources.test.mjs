@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { sourceURL, topics, validateRecord, mergeRecords } from '../src/lib/radar-store.mjs';
-import { sourceName } from '../src/lib/radar-sources.mjs';
+import { sourceName, webSources, isOfficialCitation } from '../src/lib/radar-sources.mjs';
 const examples = JSON.parse(await readFile(new URL('../examples/radar-official-sources.json', import.meta.url), 'utf8'));
 const report = JSON.parse(await readFile(new URL('../examples/radar-report-record.json', import.meta.url), 'utf8'));
 
@@ -68,6 +68,20 @@ test('repository casing, anchors and trailing slashes canonicalize without chang
   r.sources[0].url = 'https://github.com/vllm-project/vllm/releases/tag/example/';
   assert.equal(mergeRecords(first.records, [r]).unchanged, 1);
   assert.deepEqual(first.records[0].report, report.report);
+});
+
+test('individually verified CUDA, extension, wheel and API evidence permits only its exact page', () => {
+  const exact = webSources.filter(s => s.exact);
+  assert.equal(exact.length, 8);
+  for (const s of exact) {
+    const url = `https://${s.hostname}${s.path}`;
+    assert.equal(sourceURL(url), url);
+    assert.equal(sourceURL(`${url}/#public-section`), url);
+    assert.equal(sourceName(url), s.name);
+    assert.ok(isOfficialCitation({url}));
+    for (const suffix of ['/private', '-lookalike', '?token=secret', '?page=1']) assert.throws(() => sourceURL(url + suffix), url + suffix);
+  }
+  for (const url of ['https://api.github.com/repos/private-org/internal', 'https://api.github.com/repos/pytorch/pytorch/releases/tags/v2.14.2', 'https://download.pytorch.org/whl/cu132/torch-unknown.whl', 'https://download-r2.pytorch.org/whl/cu132/private.metadata', 'https://docs.pytorch.org/docs/2.14/private.html', 'https://docs.nvidia.com/cuda/archive/13.2.2/private.html']) assert.throws(() => sourceURL(url), url);
 });
 
 test('new generic topics retain original topics, six-tag limit, private-data refusal and full report checks', () => {

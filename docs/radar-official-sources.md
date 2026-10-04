@@ -24,6 +24,21 @@
 
 路径规则匹配段本身及其子路径，如 `/blog` 与 `/blog/...`，不匹配 `/blogger`；`/Mooncake` 不匹配 `/Mooncake-evil`。所有 URL 必须是 HTTPS、无用户名密码、无非默认端口、无查询参数。锚点去除、尾斜杠规范化，既有合法来源保留。
 
+2026-10-04 为 PyTorch 2.14.1 原始证据逐项核对了以下**精确路径**。这些条目只匹配页面本身（允许一个尾斜杠），不允许子路径或整个域名：
+
+| hostname | 精确 path |
+| --- | --- |
+| docs.nvidia.com | /cuda/archive/13.2.2/cuda-toolkit-release-notes/index.html |
+| docs.nvidia.com | /cuda/cuda-compiler-driver-nvcc/index.html |
+| docs.nvidia.com | /deploy/cuda-compatibility/minor-version-compatibility.html |
+| docs.pytorch.org | /docs/2.14/cpp_extension.html |
+| download.pytorch.org | /whl/cu132/torch |
+| download-r2.pytorch.org | /whl/cu132/torch-2.14.1%2Bcu132-cp310-cp310-manylinux_2_28_x86_64.whl.metadata |
+| api.github.com | /repos/pytorch/pytorch/releases/tags/v2.14.1 |
+| api.github.com | /repos/pytorch/pytorch/pulls/196351 |
+
+wheel 只读取文本元数据，没有下载或执行二进制。API 路径用于原始发布时间与合并状态交叉核对；其他仓库、版本和 API 资源仍不自动识别。精确注册不会放宽凭证、查询、非公开地址、来源分级或全文校验规则。
+
 ## 重定向和内容核验
 
 导入器只校验来源格式和允许范围，不联网抓取。采集任务必须跟随重定向，核对最终 hostname / path 仍在上述范围内、页面确为官方公开资料，再把最终 URL 写入 payload。不能用官方入口包装一个跳转到其他站点的来源。2026-10-03 已核对 `https://blog.vllm.ai/` 根入口跳转到 `https://vllm.ai/blog`，因此仅这个根别名会静态规范化；文章级跳转不猜测映射，仍须核对并存入最终地址。保留原文日期，勿将查阅日期冒充发布时间。正文仍须按事实 / 作者结果 / 推导 / 待验证分级。

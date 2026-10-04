@@ -6,6 +6,7 @@ import { renderTechnicalFigure, renderNumericalFigure, xml } from '../src/lib/re
 const records = JSON.parse(await readFile(new URL('../src/content/radar.json', import.meta.url), 'utf8'));
 const h20 = records.find(r => r.id === 'h20-serving-slo');
 const sglang = records.find(r => r.id === 'sglang-v0-5-21');
+const dailyFigures = JSON.parse(await readFile(new URL('./fixtures/daily-mechanism-figures.json', import.meta.url), 'utf8'));
 const figures = r => r.report.sections.flatMap(s => s.blocks).filter(b => ['diagram', 'bars'].includes(b.type));
 const graph = r => figures(r).find(b => b.type === 'diagram');
 const render = (b, compact, id) => b.type === 'diagram' ? renderTechnicalFigure(b, { compact, id }) : renderNumericalFigure(b, { compact, id });
@@ -99,4 +100,49 @@ test('valid expanded numerical inputs grow vertically instead of clipping the ca
   cost.series = Array.from({length:12}, (_,i) => ({label:`方案 ${i}`,segments:[{label:'完整墙钟',value:18+i}],deliveredTokens:3}));
   validateRecord(r);
   for (const b of [rank,cost]) for (const compact of [false,true]) renderNumericalFigure(b,{compact}).forEach(p => contained(p.svg));
+});
+
+test('daily compiler and cache mechanisms validate, fit both canvases and preserve all semantic notes', () => {
+  const ids = new Set();
+  for (const [i, figure] of dailyFigures.entries()) {
+    const r = structuredClone(sglang);
+    r.report.sections.find(s => s.id === 'mechanism').blocks = [figure];
+    assert.deepEqual(validateRecord(r).report.sections.find(s => s.id === 'mechanism').blocks[0], figure);
+    for (const compact of [false, true]) {
+      const views = renderTechnicalFigure(figure, {compact, id:`daily-${i}-${compact}`});
+      for (const view of views) {
+        contained(view.svg);
+        assert.equal(view.width, compact ? 320 : 760);
+        for (const m of view.svg.matchAll(/\bid="([^"]+)"/g)) {assert.ok(!ids.has(m[1])); ids.add(m[1]);}
+        assert.ok(view.svg.includes(xml(figure.caption)));
+        assert.ok(!view.svg.includes('<script') && !view.svg.includes('foreignObject'));
+      }
+      const text = views.map(v => v.svg.replace(/<[^>]+>/g, '')).join('');
+      for (const n of figure.nodes) assert.ok(text.includes(xml(n.shortLabel || n.label)), `missing node ${n.id}`);
+    }
+    const missing = structuredClone(r); missing.report.sections.find(s => s.id === 'mechanism').blocks[0].presentation.panels[0].nodeIds.pop();
+    assert.throws(() => validateRecord(missing));
+  }
+});
+
+test('daily diagrams retain independent build paths, concurrent writers and incomplete release evidence', () => {
+  const byKind = Object.fromEntries(dailyFigures.map(f => [f.presentation.kind, f]));
+  const build = byKind['build-runtime'];
+  assert.equal(build.edges.filter(e => e.from === 'hardware').length, 3);
+  assert.ok(!build.edges.some(e => e.from === 'torch-artifact' && e.to === 'extension'));
+  const concurrent = byKind['kv-zeroing'];
+  assert.ok(concurrent.edges.some(e => e.from === 'old-allocate' && e.to === 'old-load'));
+  assert.ok(concurrent.edges.some(e => e.from === 'old-allocate' && e.to === 'old-zero'));
+  assert.ok(!concurrent.edges.some(e => e.from === 'old-load' && e.to === 'old-zero'));
+  assert.ok(concurrent.edges.some(e => e.from === 'new-y' && e.to === 'zero-y'));
+  const release = byKind['release-gates'];
+  assert.ok(!release.edges.some(e => ['replay-pr','boundary-pr'].includes(e.from)));
+  for (const compact of [false,true]) {
+    const zeroing = renderTechnicalFigure(concurrent,{compact}).map(v => v.svg).join('');
+    assert.ok(zeroing.includes('两任务可交叠') && zeroing.includes('清零 Y'));
+    const state = renderTechnicalFigure(release,{compact}).map(v => v.svg).join('');
+    for (const label of ['上游有报告','仍待部署复验','尚未随新版本发布','相邻开放 PR']) assert.ok(state.includes(label));
+    const escaped = structuredClone(build); escaped.nodes[0].shortLabel='<证据>'; escaped.nodes[0].subtitle='A & B';
+    const svg = renderTechnicalFigure(escaped,{compact}).map(v=>v.svg).join(''); assert.ok(svg.includes('&lt;证据&gt;') && svg.includes('A &amp; B'));
+  }
 });

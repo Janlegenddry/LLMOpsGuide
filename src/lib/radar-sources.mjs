@@ -27,6 +27,15 @@ export const webSources = [
   { hostname: 'developer.nvidia.com', path: '/blog', name: 'NVIDIA · Blog' },
   { hostname: 'pytorch.org', path: '/blog', name: 'PyTorch · Blog' },
   { hostname: 'triton-lang.org', path: '/', name: 'Triton · Docs' },
+  // Individually verified primary evidence; no domain-wide CUDA, wheel or API allowance.
+  { hostname: 'docs.nvidia.com', path: '/cuda/archive/13.2.2/cuda-toolkit-release-notes/index.html', exact: true, name: 'CUDA 13.2.2 · Release Notes' },
+  { hostname: 'docs.nvidia.com', path: '/cuda/cuda-compiler-driver-nvcc/index.html', exact: true, name: 'CUDA · nvcc Docs' },
+  { hostname: 'docs.nvidia.com', path: '/deploy/cuda-compatibility/minor-version-compatibility.html', exact: true, name: 'CUDA · Compatibility' },
+  { hostname: 'docs.pytorch.org', path: '/docs/2.14/cpp_extension.html', exact: true, name: 'PyTorch 2.14 · Extension Docs' },
+  { hostname: 'download.pytorch.org', path: '/whl/cu132/torch', exact: true, name: 'PyTorch · cu132 Wheel Index' },
+  { hostname: 'download-r2.pytorch.org', path: '/whl/cu132/torch-2.14.1%2Bcu132-cp310-cp310-manylinux_2_28_x86_64.whl.metadata', exact: true, name: 'PyTorch 2.14.1 · Wheel Metadata' },
+  { hostname: 'api.github.com', path: '/repos/pytorch/pytorch/releases/tags/v2.14.1', exact: true, name: 'PyTorch 2.14.1 · Release Metadata' },
+  { hostname: 'api.github.com', path: '/repos/pytorch/pytorch/pulls/196351', exact: true, name: 'PyTorch #196351 · PR Metadata' },
 ];
 
 export const pathWithin = (pathname, prefix) => prefix === '/' || pathname === prefix || pathname.startsWith(`${prefix}/`);
@@ -37,7 +46,7 @@ export function officialSource(url) {
     const source = githubSources.find(s => s.repository.toLowerCase() === `${owner}/${repository}`.toLowerCase());
     return source && { name: `${source.name} · GitHub`, repository: source.repository };
   }
-  return webSources.find(s => s.hostname === url.hostname && pathWithin(url.pathname, s.path));
+  return webSources.find(s => s.hostname === url.hostname && (s.exact ? url.pathname.replace(/\/$/, '') === s.path : pathWithin(url.pathname, s.path)));
 }
 
 export const citationCategories = { paper: '论文', community: '社区', blog: '博客', news: '新闻' };
