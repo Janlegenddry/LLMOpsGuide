@@ -1,4 +1,4 @@
-# Guanzhi的图书馆
+# Guanzhi Library
 
 李观志的个人知识图书馆，收录文章、完整报告、白皮书与阅读资料。当前已有积累集中在 AI Infra，后续按真实内容扩展知识领域。项目保留 LLMOpsGuide 仓库名与基础路径，使用 Astro 构建并发布到 GitHub Pages。
 

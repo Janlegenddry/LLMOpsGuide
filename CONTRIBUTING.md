@@ -2,7 +2,7 @@
 
 日常更新只需要维护 Markdown 文章和 `src/data.ts`。推送到 `main` 后，GitHub Actions 会自动发布网站。
 
-站点名为 Guanzhi的图书馆，领域与内容类型分开。文章可在 `src/data.ts` 中设置 `domain`、`topics`、`keywords`；知识领域在 `src/lib/library-taxonomy.ts` 登记。白皮书使用独立 `src/content/knowledge.json`，接入、授权与文件校验见 [knowledge-navigation.md](docs/knowledge-navigation.md)。未来文件需单独核对可公开范围；尚未提供时保持空数组。
+站点名为 Guanzhi Library，领域与内容类型分开。文章可在 `src/data.ts` 中设置 `domain`、`topics`、`keywords`；知识领域在 `src/lib/library-taxonomy.ts` 登记。白皮书使用独立 `src/content/knowledge.json`，接入、授权与文件校验见 [knowledge-navigation.md](docs/knowledge-navigation.md)。未来文件需单独核对可公开范围；尚未提供时保持空数组。
 
 公开动态与解读使用独立的 `src/content/radar.json`，不需要手动加入 `src/data.ts`，动态索引、详情页和搜索会自动生成。格式、幂等规则和自动发布见 [radar-publishing.md](docs/radar-publishing.md)。既有 Markdown 文章继续遵循下文约定。
 

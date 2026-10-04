@@ -6,7 +6,7 @@ import { withBase } from '../../paths';
 export function getStaticPaths() { return radar.map(record => ({ params: { id: record.id }, props: { record } })); }
 const { record } = Astro.props as { record: RadarRecord };
 ---
-<BaseLayout title={`${record.title} · Guanzhi的图书馆`} description={record.summary}>
+<BaseLayout title={`${record.title} · Guanzhi Library`} description={record.summary}>
   <article class:list={['radar-article', { 'radar-article--report': Boolean(record.report) }]}>
     <nav class="radar-breadcrumb" aria-label="当前位置"><a href={withBase('/radar/')}>动态与解读</a><span aria-hidden="true">/</span><span>{kindNames[record.kind]}</span></nav>
     <header><p class="radar-eyebrow">{record.topics.join(' / ')}</p><h1>{record.title}</h1><div class="radar-dates"><span>原文 <time datetime={record.publishedAt}>{record.publishedAt}</time></span><span>核对 <time datetime={record.reviewedAt}>{record.reviewedAt}</time></span></div><p class="radar-lead">{record.summary}</p></header>

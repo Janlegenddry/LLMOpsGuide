@@ -1,0 +1,13 @@
+---
+import { withBase } from '../paths';
+
+interface Props { mobile?: boolean; }
+const { mobile = false } = Astro.props;
+---
+
+<a class:list={['wordmark', { 'wordmark--mobile': mobile }]} href={withBase('/')} aria-label="Guanzhi Library 首页">
+  <span class="wordmark__mark" aria-hidden="true">
+    <img src={withBase('/brand/guanzhi-library-mark.png')} width="256" height="256" alt="" decoding="async" />
+  </span>
+  <span class="wordmark__name">Guanzhi<small>Library</small></span>
+</a>

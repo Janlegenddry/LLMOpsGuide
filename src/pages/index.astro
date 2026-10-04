@@ -13,7 +13,7 @@ const featured = [
 <BaseLayout>
   <div class="library-shell library-home">
     <header class="library-home-heading">
-      <p class="library-eyebrow">李观志的个人知识库</p><h1>Guanzhi的图书馆</h1>
+      <p class="library-eyebrow">李观志的个人知识库</p><h1>Guanzhi Library</h1>
       <p>把读过的资料、写下的理解与实践中的判断，放在同一处。</p>
       <form class="library-home-search" role="search" action={withBase('/library/')} method="get"><label for="home-query">搜索全部知识</label><input id="home-query" name="query" type="search" placeholder="搜索标题、摘要与关键词" /><button type="submit">搜索 <span aria-hidden="true">↗</span></button></form>
       <div class="library-home-tools"><a href={withBase('/library/')}>浏览全部知识 ↗</a><a href={withBase('/knowledge/')}>白皮书目录</a><button type="button" data-search-open aria-haspopup="dialog" aria-controls="search-dialog">快捷搜索 <kbd>⌘ K</kbd></button></div>

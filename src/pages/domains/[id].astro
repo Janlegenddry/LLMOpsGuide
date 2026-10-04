@@ -6,6 +6,6 @@ import { withBase } from '../../paths';
 export function getStaticPaths() { return libraryDomains.map(domain => ({params:{id:domain.id},props:{domain}})); }
 const { domain } = Astro.props;
 ---
-<BaseLayout title={`${domain.title} · Guanzhi的图书馆`} description={domain.description}>
+<BaseLayout title={`${domain.title} · Guanzhi Library`} description={domain.description}>
   <div class="library-shell"><header class="library-page-heading"><p class="library-eyebrow">知识领域</p><h1>{domain.title}</h1><p>{domain.description}</p>{domain.id === 'ai-infra' && <div class="library-heading-links"><a href={withBase('/roadmap/llmops-roadmap/')}>从学习路线开始 ↗</a><a href={withBase('/radar/')}>阅读动态与解读 ↗</a></div>}</header><LibraryIndex domain={domain.id} /></div>
 </BaseLayout>

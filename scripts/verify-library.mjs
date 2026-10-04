@@ -10,7 +10,7 @@ const catalog = index(directory);
 assert.deepEqual(index(home),catalog); assert.deepEqual(index(papers),catalog);
 assert.equal(new Set(catalog.map(item => item.href)).size,catalog.length,'Search duplicates a catalog item');
 assert.equal((directory.match(/data-library-record(?:\s|>)/g)||[]).length,catalog.length);
-assert.ok(home.includes('Guanzhi的图书馆') && home.includes('id="notes"') && home.includes('id="path"'));
+assert.ok(home.includes('Guanzhi Library') && home.includes('id="notes"') && home.includes('id="path"'));
 assert.ok(home.includes('action="/LLMOpsGuide/library/"'));
 const knowledge = JSON.parse(readFileSync(join(root,'src/content/knowledge.json'),'utf8'));
 assert.equal((papers.match(/data-library-record(?:\s|>)/g)||[]).length,knowledge.length);
@@ -22,7 +22,14 @@ function inspect(folder) {
     if(entry.isDirectory()) inspect(path);
     else if(entry.name.endsWith('.html')) {
       pages++; const html = readFileSync(path,'utf8');
-      assert.ok(/<title>[^<]*Guanzhi的图书馆<\/title>/.test(html),'old brand in page title');
+      assert.ok(/<title>[^<]*Guanzhi Library<\/title>/.test(html),'old brand in page title');
+      const marks = [...html.matchAll(/<img\b[^>]*src="\/LLMOpsGuide\/brand\/guanzhi-library-mark\.png"[^>]*>/g)];
+      assert.equal(marks.length,2,`Missing sidebar or mobile brand: ${path}`);
+      for (const mark of marks) assert.ok(/\balt=""/.test(mark[0]),'Brand image must be decorative alongside accessible text');
+      assert.equal((html.match(/aria-label="Guanzhi Library 首页"/g)||[]).length,2);
+      for (const filename of ['favicon.ico','favicon-32.png','favicon-48.png','apple-touch-icon.png']) {
+        assert.ok(html.includes(`href="/LLMOpsGuide/${filename}"`),`Missing brand icon: ${path}`);
+      }
       const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);assert.equal(new Set(ids).size,ids.length,`duplicate ID: ${path}`);
       for(const match of html.matchAll(/(?:href|src|action)="(\/[^"]*)"/g)) {
         const url=new URL(match[1].replaceAll('&amp;','&'),'https://local.invalid');

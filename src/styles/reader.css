@@ -2,10 +2,16 @@
 .reader-report-link { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--color-accent); font-size: .75rem; font-weight: 600; text-decoration: none; }
 .reader-card .reader-report-state { margin: var(--space-sm) 0 0; font-size: .6875rem; color: var(--color-muted); }
 .site-sidebar, .mobile-header { background: var(--color-sidebar); }
-.wordmark { gap: var(--space-xs); }
-.wordmark__mark { background: var(--color-accent-soft); color: var(--color-accent); border: 1px solid var(--color-rule); width: 1.75rem; height: 1.75rem; font: 600 .9375rem/1 var(--font-body); }
-.wordmark > span:last-of-type { font: 700 1rem/1.25 var(--font-body); letter-spacing: -.02em; }
-.wordmark small { display: block; color: var(--color-muted); font: 400 .625rem/1.4 var(--font-mono); letter-spacing: .02em; }
+.wordmark { gap: var(--space-xs); min-height: 2.75rem; }
+.wordmark__mark { flex: 0 0 2.5rem; width: 2.5rem; height: 2.5rem; padding: .125rem; border: 0; background: transparent; }
+.wordmark__mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.wordmark > .wordmark__name { color: var(--color-ink); font: 400 1.375rem/1.05 Georgia, 'Times New Roman', serif; letter-spacing: -.025em; }
+.wordmark small { display: block; margin-block-start: .125rem; color: var(--color-accent); font: 400 .9375rem/1.1 Georgia, 'Times New Roman', serif; letter-spacing: .015em; }
+/* Preserve the approved raster colors; a light plate keeps them legible in dark mode. */
+[data-theme='dark'] .wordmark__mark { background: #faf9f6; }
+.wordmark--mobile .wordmark__mark { flex-basis: 2.25rem; width: 2.25rem; height: 2.25rem; }
+.wordmark--mobile > .wordmark__name { font-size: 1.25rem; }
+.wordmark--mobile small { font-size: .875rem; }
 .site-sidebar { padding: var(--space-md) var(--space-sm); }
 .site-sidebar__mast { margin-block-end: var(--space-lg); }
 .search-pill--rail { min-height: 2.5rem; margin-block-end: var(--space-lg); border-color: var(--color-rule); font-size: var(--text-xs); background: var(--color-paper-2); }

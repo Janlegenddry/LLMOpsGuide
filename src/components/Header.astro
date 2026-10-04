@@ -1,12 +1,9 @@
 ---
-import { withBase } from "../paths";
+import Brand from './Brand.astro';
 ---
 
 <header class="mobile-header">
-  <a class="wordmark wordmark--mobile" href={withBase("/")} aria-label="Guanzhi的图书馆首页">
-    <span class="wordmark__mark" aria-hidden="true">G</span>
-    <span>Guanzhi<small>的图书馆</small></span>
-  </a>
+  <Brand mobile />
   <div class="mobile-header__actions">
     <button class="icon-button" type="button" data-search-open aria-label="搜索全部知识" aria-haspopup="dialog" aria-controls="search-dialog">
       <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">

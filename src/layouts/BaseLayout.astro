@@ -23,7 +23,7 @@ interface Props {
 }
 
 const {
-  title = "Guanzhi的图书馆",
+  title = "Guanzhi Library",
   description = "李观志的个人知识图书馆：收录文章、完整报告、白皮书与阅读资料，按知识领域与主题导航，保留来源与判断的依据。",
 } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
@@ -36,9 +36,13 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content={description} />
-    <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
+    <link rel="icon" type="image/x-icon" sizes="16x16 32x32 48x48" href={withBase('/favicon.ico')} />
+    <link rel="icon" type="image/png" sizes="32x32" href={withBase('/favicon-32.png')} />
+    <link rel="icon" type="image/png" sizes="48x48" href={withBase('/favicon-48.png')} />
+    <link rel="apple-touch-icon" sizes="180x180" href={withBase('/apple-touch-icon.png')} />
     <link rel="canonical" href={canonicalURL} />
     <link rel="alternate" type="application/rss+xml" title="Guanzhi的图书馆 · AI Infra 动态" href={withBase('/radar/feed.xml')} />
+    <meta property="og:site_name" content="Guanzhi Library" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
