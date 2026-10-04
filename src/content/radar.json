@@ -1257,6 +1257,1266 @@
   },
   {
     "schemaVersion": 1,
+    "id": "pytorch-2-14-1-cuda-correctness",
+    "kind": "analysis",
+    "title": "PyTorch 2.14.1 CUDA 正确性更新与推理服务验证",
+    "summary": "先核验实际 wheel、动态库与设备代码，再做分层回归。区分编译产物和库调用两条静默错误路径；不把特定 NVFP4 条件直接套到 H20，本文没有 GPU 实测。",
+    "publishedAt": "2026-09-30",
+    "reviewedAt": "2026-10-04",
+    "topics": [
+      "故障分析",
+      "推理编译",
+      "服务调度"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "PyTorch v2.14.1 正式发布",
+        "url": "https://github.com/pytorch/pytorch/releases/tag/v2.14.1",
+        "publishedAt": "2026-09-30",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "CUDA 13.2 Update 2 归档发布说明",
+        "url": "https://docs.nvidia.com/cuda/archive/13.2.2/cuda-toolkit-release-notes/index.html",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "v2.14.1 固定标签的构建矩阵",
+        "url": "https://github.com/pytorch/pytorch/blob/v2.14.1/.github/scripts/generate_binary_build_matrix.py",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "v2.14.1 固定标签的 CUDA 安装脚本",
+        "url": "https://github.com/pytorch/pytorch/blob/v2.14.1/.ci/docker/common/install_cuda.sh",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "官方 cu132 torch wheel 索引",
+        "url": "https://download.pytorch.org/whl/cu132/torch",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "PyTorch 2.14 CUDA 扩展文档",
+        "url": "https://docs.pytorch.org/docs/2.14/cpp_extension.html",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "NVIDIA nvcc 编译阶段文档",
+        "url": "https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "CUDA minor-version compatibility",
+        "url": "https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "PyTorch PR 196351",
+        "url": "https://github.com/pytorch/pytorch/pull/196351",
+        "publishedAt": "2026-09-08",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "发布元数据",
+        "url": "https://api.github.com/repos/pytorch/pytorch/releases/tags/v2.14.1",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "已核对 x86_64 CPython 3.10 wheel 元数据",
+        "url": "https://download-r2.pytorch.org/whl/cu132/torch-2.14.1%2Bcu132-cp310-cp310-manylinux_2_28_x86_64.whl.metadata",
+        "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "PR 元数据",
+        "url": "https://api.github.com/repos/pytorch/pytorch/pulls/196351",
+        "accessedAt": "2026-10-04"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "PyTorch v2.14.1 于 2026-09-30 正式发布；Linux CUDA 13.2 构建更新到 13.2.2。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "尚未在用户 GPU 部署执行本文验证；不提供未经测量的性能收益。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际进程使用的实现与产物身份是否与清单一致？",
+      "目标路径和未覆盖路径是否分别有独立验证证据？"
+    ],
+    "related": [
+      {
+        "title": "SGLang 故障定位方法",
+        "path": "/inference/sglang-hang-diagnosis/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "核对日期：2026-10-04 UTC。适用读者：维护 Linux GPU 推理镜像、定制 CUDA 扩展和编译缓存的工程师。本文依据公开发布记录、固定版本代码、wheel 元数据及官方文档；没有在用户 GPU 环境进行复现或性能测试。图示与实验矩阵是原创验证设计，不是实测结果。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "1 结论",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                9
+              ],
+              "text": "PyTorch 2.14.1 已于 2026-09-30 19:14:48 UTC 正式发布。与 CUDA 推理直接相关的变化，是 CUDA 13.2 Linux 二进制构建更新到 13.2.2，以纳入 NVIDIA 的两项静默错误修复。[S1]"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议把本次更新作为一次“产物来源核验与分层回归”：先确认服务真正运行哪一个 wheel、哪个动态库、哪份设备代码，再决定需要替换、重编译或重新生成哪些产物。版本号改变只证明部分交付物改变，不能单独证明整条推理路径已更新。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对 H20 运维，本文最直接的价值是这种核验方法。不能把 Blackwell 等架构上的 NVFP4 条件直接套到 H20；也不能仅凭编译器缺陷的起始版本，就宣布每个使用 CUDA 12.8 及以后版本的 H20 服务都已受影响。具体 kernel 是否符合触发条件，仍须核对与验证。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "2 背景",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一次 Python 调用背后可能同时存在几种不同来源的 GPU 代码：框架自带实现、独立安装的数学库、第三方预编译扩展、本机编译的扩展，以及运行时生成的 kernel。它们未必共享一套构建工具链。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                6
+              ],
+              "text": "CUDA 编译会形成 cubin、PTX 等设备产物并嵌入 fatbinary；运行时再为当前 GPU 选择适当映像。[S7] 因而，升级构建机工具链与替换运行机动态库属于不同动作。对于已经嵌入设备机器码的产物，单纯更换旁边的编译器不会重新生成它。这是本文的工程推论。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                5
+              ],
+              "text": "PyTorch 的 CUDA 扩展文档要求另外准备编译工具链，允许通过 CUDA_HOME 指定位置，并提供独立扩展构建目录。[S6] “pip 中有 CUDA 依赖”因此不能替代“本次扩展究竟调用了哪个 nvcc”的证据。"
+            },
+            {
+              "type": "diagram",
+              "title": "每个箭头都要有证据：构建来源与运行来源",
+              "caption": "原创工程示意，非实测、非时间比例图。来源、产物和进程实际使用构成三条独立泳道；升级某一交付物不会自动更新其他路径，GPU 与驱动只作为独立兼容性约束。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "wheel",
+                  "label": "wheel 与依赖锁",
+                  "detail": "官方 wheel 与依赖锁定义框架分发来源。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "wheel 与依赖锁",
+                  "subtitle": "官方分发来源",
+                  "tone": "compute"
+                },
+                {
+                  "id": "torch-artifact",
+                  "label": "torch 与动态库",
+                  "detail": "torch 二进制及 CUDA 动态库可能来自不同分发依赖。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "torch 与动态库",
+                  "subtitle": "框架交付产物",
+                  "tone": "compute"
+                },
+                {
+                  "id": "loaded-torch",
+                  "label": "进程实际加载",
+                  "detail": "核对已安装分发包、已加载 CUDA 库、来源、哈希及实际路径。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "进程实际加载",
+                  "subtitle": "分发包 / 库路径",
+                  "tone": "compute"
+                },
+                {
+                  "id": "toolchain",
+                  "label": "源码与工具链",
+                  "detail": "记录扩展源码、CUDA_HOME、实际 nvcc 版本和构建参数。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "源码与工具链",
+                  "subtitle": "CUDA_HOME / nvcc",
+                  "tone": "control"
+                },
+                {
+                  "id": "extension",
+                  "label": "扩展设备代码",
+                  "detail": "产物包含扩展动态库及其设备代码。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "扩展设备代码",
+                  "subtitle": "动态库 / fatbinary",
+                  "tone": "control"
+                },
+                {
+                  "id": "loaded-extension",
+                  "label": "进程加载扩展",
+                  "detail": "核对进程真正加载的扩展路径和哈希，不能仅看构建日志。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "进程加载扩展",
+                  "subtitle": "路径 / 文件哈希",
+                  "tone": "control"
+                },
+                {
+                  "id": "generator",
+                  "label": "生成器与缓存键",
+                  "detail": "生成器版本、编译后端与缓存键决定这条产物路径。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "生成器与缓存键",
+                  "subtitle": "版本 / 编译后端",
+                  "tone": "kv"
+                },
+                {
+                  "id": "kernel",
+                  "label": "生成或缓存命中",
+                  "detail": "区分新生成的 kernel 与旧缓存命中的 kernel。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "生成或缓存命中",
+                  "subtitle": "kernel 产物",
+                  "tone": "kv"
+                },
+                {
+                  "id": "executed",
+                  "label": "实际执行产物",
+                  "detail": "核对实际执行产物所属生成路径及缓存身份。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "实际执行产物",
+                  "subtitle": "归属 / 产物身份",
+                  "tone": "kv"
+                },
+                {
+                  "id": "hardware",
+                  "label": "GPU 与驱动",
+                  "detail": "GPU 与驱动分别约束三条运行路径；驱动不是这些产物的自动重写器。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "GPU 与驱动",
+                  "subtitle": "兼容性约束",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "wheel",
+                  "to": "torch-artifact",
+                  "label": "核对来源与构建依赖",
+                  "shortLabel": "来源"
+                },
+                {
+                  "from": "torch-artifact",
+                  "to": "loaded-torch",
+                  "label": "核对来源、哈希和实际加载路径",
+                  "shortLabel": "来源 / 哈希 / 路径"
+                },
+                {
+                  "from": "toolchain",
+                  "to": "extension",
+                  "label": "核对实际构建工具链",
+                  "shortLabel": "构建"
+                },
+                {
+                  "from": "extension",
+                  "to": "loaded-extension",
+                  "label": "核对来源、哈希和实际加载路径",
+                  "shortLabel": "来源 / 哈希 / 路径"
+                },
+                {
+                  "from": "generator",
+                  "to": "kernel",
+                  "label": "核对生成器和缓存选择",
+                  "shortLabel": "生成 / 缓存"
+                },
+                {
+                  "from": "kernel",
+                  "to": "executed",
+                  "label": "核对来源、哈希和实际使用路径",
+                  "shortLabel": "来源 / 哈希 / 路径"
+                },
+                {
+                  "from": "hardware",
+                  "to": "loaded-torch",
+                  "label": "兼容性约束，不会自动重写产物",
+                  "shortLabel": "兼容性"
+                },
+                {
+                  "from": "hardware",
+                  "to": "loaded-extension",
+                  "label": "兼容性约束，不会自动重写产物",
+                  "shortLabel": "兼容性"
+                },
+                {
+                  "from": "hardware",
+                  "to": "executed",
+                  "label": "兼容性约束，不会自动重写产物",
+                  "shortLabel": "兼容性"
+                }
+              ],
+              "presentation": {
+                "kind": "build-runtime",
+                "panels": [
+                  {
+                    "title": "框架泳道",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "wheel",
+                      "torch-artifact",
+                      "loaded-torch"
+                    ]
+                  },
+                  {
+                    "title": "扩展泳道",
+                    "tone": "control",
+                    "nodeIds": [
+                      "toolchain",
+                      "extension",
+                      "loaded-extension"
+                    ]
+                  },
+                  {
+                    "title": "运行时编译泳道",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "generator",
+                      "kernel",
+                      "executed"
+                    ]
+                  },
+                  {
+                    "title": "独立兼容性基础层",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "hardware"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "3 机制",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "官方 CUDA 13.2.2 勘误描述两条不同错误路径：[S2]"
+            },
+            {
+              "type": "list",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "items": [
+                "编译器路径：自 CUDA 12.8 起，特定至少两层嵌套线程分歧中，编译器省略部分汇合指令可能导致汇合失败及寄存器值异常；单层分歧不在该条目范围。",
+                "cuBLAS 路径：CUDA 13.2 Update 1 引入的问题可使 NVFP4 输出的矩阵乘忽略 D_SCALE_POINTER；限定算法 ID 66、计算能力 10.x/11.x。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这两类缺陷都可能让调用正常返回，却产生错误结果。排查时应先区分“生成设备代码时已引入错误”与“调用的库实现处理参数有误”。前者要追溯设备代码的生成者，后者要追溯实际加载的库和选择的算法。把所有质量偏差都归为量化误差，会错过这种区分。"
+            },
+            {
+              "type": "diagram",
+              "title": "两类错误的因果分叉",
+              "caption": "原创机制教学图，非实测。图中红色只标出需要核验的生成工具与库算法环节；两栏区分排查方向，不声称某模型、GPU 或服务已触发缺陷。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "symptom",
+                  "label": "结果异常但未必报错",
+                  "detail": "公共起点表示排查症状，不声称某模型已触发缺陷。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "结果异常但未必报错",
+                  "subtitle": "从实际证据出发",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "code",
+                  "label": "源码与编译条件",
+                  "detail": "核对目标源码与编译条件，不把任意嵌套 if 视为可复现案例。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "源码与编译条件",
+                  "subtitle": "嵌套分歧等触发边界",
+                  "tone": "compute"
+                },
+                {
+                  "id": "compile",
+                  "label": "设备代码生成",
+                  "detail": "核验哪个工具生成了这份设备代码。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "设备代码生成",
+                  "subtitle": "生成工具须核对",
+                  "tone": "danger"
+                },
+                {
+                  "id": "code-result",
+                  "label": "实际执行结果",
+                  "detail": "执行结果需关联设备产物和构建身份。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "实际执行结果",
+                  "subtitle": "固定输入与产物",
+                  "tone": "compute"
+                },
+                {
+                  "id": "descriptor",
+                  "label": "数据类型与描述符",
+                  "detail": "核对数据类型、描述符及非单位缩放参数。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "数据类型与描述符",
+                  "subtitle": "NVFP4 / 缩放参数",
+                  "tone": "communication"
+                },
+                {
+                  "id": "library",
+                  "label": "算法与实际库",
+                  "detail": "核验是否进入勘误限定的算法和架构路径。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "算法与实际库",
+                  "subtitle": "限定路径须核对",
+                  "tone": "danger"
+                },
+                {
+                  "id": "library-result",
+                  "label": "实际执行结果",
+                  "detail": "关联实际加载库与算法身份，不能只看安装版本。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "实际执行结果",
+                  "subtitle": "库路径与算法身份",
+                  "tone": "communication"
+                },
+                {
+                  "id": "reference",
+                  "label": "与独立参考比较",
+                  "detail": "两条路径均与独立参考比较，不以调用成功替代正确性。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "与独立参考比较",
+                  "subtitle": "预先选定参考与容差",
+                  "tone": "kv"
+                },
+                {
+                  "id": "attribution",
+                  "label": "局部归因",
+                  "detail": "按证据做局部归因，不以红色覆盖全部 GPU。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "局部归因",
+                  "subtitle": "定位实现层",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "symptom",
+                  "to": "code",
+                  "label": "选择编译产物排查方向",
+                  "shortLabel": "产物"
+                },
+                {
+                  "from": "symptom",
+                  "to": "descriptor",
+                  "label": "选择库调用排查方向",
+                  "shortLabel": "库调用"
+                },
+                {
+                  "from": "code",
+                  "to": "compile",
+                  "label": "核对生成工具及触发条件",
+                  "shortLabel": "生成"
+                },
+                {
+                  "from": "compile",
+                  "to": "code-result",
+                  "label": "检查固定产物执行结果",
+                  "shortLabel": "执行"
+                },
+                {
+                  "from": "descriptor",
+                  "to": "library",
+                  "label": "核对限定算法与实际库",
+                  "shortLabel": "选择"
+                },
+                {
+                  "from": "library",
+                  "to": "library-result",
+                  "label": "检查实际库调用结果",
+                  "shortLabel": "执行"
+                },
+                {
+                  "from": "code-result",
+                  "to": "reference",
+                  "label": "与独立参考比较",
+                  "shortLabel": "比较"
+                },
+                {
+                  "from": "library-result",
+                  "to": "reference",
+                  "label": "与独立参考比较",
+                  "shortLabel": "比较"
+                },
+                {
+                  "from": "reference",
+                  "to": "attribution",
+                  "label": "用差异和产物证据做局部归因",
+                  "shortLabel": "归因"
+                }
+              ],
+              "presentation": {
+                "kind": "causal-branches",
+                "panels": [
+                  {
+                    "title": "共同症状",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "symptom"
+                    ]
+                  },
+                  {
+                    "title": "编译产物",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "code",
+                      "compile",
+                      "code-result"
+                    ]
+                  },
+                  {
+                    "title": "库调用",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "descriptor",
+                      "library",
+                      "library-result"
+                    ]
+                  },
+                  {
+                    "title": "共同参考与归因",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "reference",
+                      "attribution"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "4 证据",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "发布证据、构建证据与安装证据各解决不同问题。"
+            },
+            {
+              "type": "table",
+              "caption": "证据与适用边界",
+              "columns": [
+                "证据",
+                "已核对事实",
+                "不能单独证明什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "v2.14.1 正式发布页 [S1]",
+                    "稳定发布及 Linux CUDA 13.2 更新范围",
+                    "线上镜像实际安装了该构建"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定标签构建矩阵 [S3]",
+                    "Linux cu132 依赖锁定 cuda-toolkit 13.2.2",
+                    "本机扩展使用同一编译器"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定标签安装脚本 [S4]",
+                    "install_132 选择 13.2.2 Linux 安装包",
+                    "任意第三方 wheel 的构建来源"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "官方 wheel 索引及元数据 [S5]",
+                    "Linux x86_64/aarch64 的 2.14.1+cu132 产物存在，元数据声明上述依赖",
+                    "动态加载路径没有被别的环境覆盖"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4,
+                    10
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "索引中 CPython 3.10 的 aarch64/x86_64 示例上传时间分别为 2026-09-30 20:39:37Z、20:40:03Z。这里用具体可核对产物证明分发存在，不把 GitHub 源码压缩包当作 CUDA wheel。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "时间应分开记录：本次新闻日期是 PyTorch 2.14.1 发布日；CUDA 13.2.2 是它纳入的已有更新，不能把两者都写成 10 月新发布。CUDA 文档、扩展文档与 wheel 索引的本文查阅日期为 2026-10-04，未取得页面精确首发日期的材料不填写臆测日期。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8,
+                11
+              ],
+              "text": "发布页引用的 PR #196351 在 GitHub API 中为 closed、merged=false。[S9] 这不是否定发布事实的依据，也不应被写成“该 PR 已合并”。本文以发布说明、固定标签代码和分发元数据交叉确认收录，避免依赖单个状态标签。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "5 取舍",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "“全部升级到最新”会同时改变太多变量，导致故障消失却无法说明原因；“只改一个 torch 版本号”又可能遗漏扩展和生成代码。较合理的选择是先建立产物清单，再按受影响层构建最小变更组，最后用完整候选镜像做上线验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "保持模型、权重 revision、采样、量化配置和请求集一致，可以减少比较时的噪声，但不意味着逐 token 一致总是适当的数值标准。需要区分算子误差、任务质量与端到端随机性，并在测试前选定参考和容差。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1
+              ],
+              "text": "CUDA 13.2.2 文档仍列有 Hopper 上多次 Grouped GEMM 复用工作区可能挂起或出现启动失败的已知问题。[S2] 因此本文不把这次更新描述为“修复所有 CUDA 正确性问题”，也不把那个独立条目混作本次 NVFP4 修复的触发条件。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "6 生产落点",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "先在隔离副本建立可回滚的候选镜像，保留旧镜像摘要和旧测试结果。以下是本文建议的操作清单，不代表上游替任何部署完成了验证。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [
+                7
+              ],
+              "items": [
+                "登记服务框架 commit、torch 完整分发版本、wheel 来源与哈希、依赖锁、GPU 型号及实际计算能力、驱动版本、模型 revision。",
+                "记录正在运行的进程加载了哪些 CUDA 库与扩展。不要只看登录 shell 的路径或镜像构建日志；运行时挂载和环境变量可能改变选择结果。",
+                "对自编译扩展登记 CUDA_HOME、实际 nvcc 路径和版本、构建日志、目标架构、扩展产物哈希。确需覆盖编译器修复的产物，用确认过的工具链在独立目录重建，再核对进程加载的新文件。",
+                "对运行时生成代码分别登记框架、生成器、后端工具和缓存归属。C++/CUDA 扩展 JIT、NVRTC、Triton 或其他生成路径不能只凭“JIT”这个词认定共享同一修复。仅在隔离副本中使用新的缓存目录做冷启动对照；保留旧缓存用于诊断。",
+                "驱动以硬件和功能兼容性为约束独立核验。官方 minor-version compatibility 对 CUDA 13.x 列出驱动基线，同时警告 PTX 与新功能存在额外限制。[S8] 不把安装包文件名内的驱动号写成所有部署唯一最低要求。",
+                "灰度期间同时观察质量、错误、重启、启动耗时与延迟。若出现回归，回滚成套镜像和依赖，而不是留下新旧库混装的“半回滚”环境。"
+              ]
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创运维覆盖图，格子只能填“直接覆盖 / 需另证 / 不自动覆盖”，不使用勾号暗示通过测试。",
+              "title": "图 3 升级动作的覆盖边界矩阵"
+            },
+            {
+              "type": "table",
+              "caption": "责任边界矩阵",
+              "columns": [
+                "动作",
+                "官方 torch 产物",
+                "CUDA 数学库",
+                "既有扩展机器码",
+                "运行时生成代码",
+                "驱动"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "换 cu132 wheel 并解析其依赖",
+                    "直接覆盖",
+                    "需核实加载",
+                    "不自动覆盖",
+                    "需另证",
+                    "不自动覆盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "换本机 Toolkit",
+                    "不自动覆盖",
+                    "需另证",
+                    "不自动重编译",
+                    "取决于后端",
+                    "不自动覆盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "用确认的工具链重建扩展",
+                    "不自动覆盖",
+                    "需核实链接",
+                    "覆盖被重建项",
+                    "不覆盖其他路径",
+                    "不自动覆盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "用隔离缓存重新生成",
+                    "不自动覆盖",
+                    "需另证",
+                    "不覆盖预编译项",
+                    "覆盖被生成项",
+                    "不自动覆盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "图注：这是一张责任边界图，不是包管理器行为保证；最终以产物与加载证据为准。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "7 隔离实验",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本节是待执行计划，没有虚构通过率、速度提升或错误发生概率。所有试验必须记录是否真正进入目标路径。没有触发目标算法或编译模式的“通过”，只说明该试验没有观察到问题。"
+            },
+            {
+              "type": "table",
+              "caption": "隔离实验矩阵 · 尚未执行",
+              "columns": [
+                "对照组",
+                "固定项",
+                "唯一主要变化",
+                "观察与用途"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "A 基线与候选 wheel",
+                    "模型、输入、驱动、硬件和服务配置",
+                    "wheel 与其声明依赖整组替换",
+                    "先确认完整候选镜像的可用性与差异"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "B 扩展编译对照",
+                    "同源码、目标架构、优化参数和输入",
+                    "经确认的旧/新构建工具链",
+                    "比较产物、参考结果，隔离编译来源"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "C 缓存对照",
+                    "相同候选镜像与生成配置",
+                    "保留缓存副本与全新隔离目录",
+                    "检查旧产物复用、冷启动及首次请求成本"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "D 限定库路径对照",
+                    "合适硬件、数据、描述符与参考实现",
+                    "库版本；记录算法选择",
+                    "仅在勘误目标路径适用时执行"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E 服务负载回归",
+                    "权重、请求集、并发曲线和质量门槛",
+                    "完整旧/新镜像",
+                    "验证线上需要的稳定性与服务能力"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "B 组应包含线程走同一分支、单层分歧、嵌套分歧三类输入，保留可预期结果的控制组；但任意嵌套 if 都不必然触发编译器错误。没有已知可复现案例时，把结果写为“未复现”，不能宣布排除了漏洞。具体生成指令检查只能作为归因辅助，不能替代数值参考。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "D 组应包含非单位缩放值与控制值，并确认目标算法、输入/输出格式和 GPU 条件。运行框架若无法稳定选到指定算法，注明覆盖不足，不把框架默认 GEMM 的通过当作该勘误的复测。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "E 组先进行算子与小模型质量检查，再扩展到固定业务样本、并发、长短输入和重复执行。出现异常时保留请求、rank、产物哈希和库路径，使错误能回到某个实现层，而不只剩一条“新版本变差”的结论。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "8 验收",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上线判定采用串行门槛，不用吞吐提升抵消正确性缺口。下面是原创验收建议，门槛数值应由实际服务团队在实验前确定。"
+            },
+            {
+              "type": "table",
+              "caption": "上线验收门槛 · 待实际服务确定阈值",
+              "columns": [
+                "门槛",
+                "判定与证据要求"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "来源门",
+                    "候选镜像、wheel、依赖、扩展与生成缓存均有可追溯记录；运行时抽样与构建清单一致。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正确性门",
+                    "适用路径有独立参考及预定误差标准；无新非有限值或稳定可复现的异常；未覆盖路径明确列出。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "质量门",
+                    "相同业务集与采样条件下通过既定质量要求。保存样本级差异，不能只保留总体平均。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳定性门",
+                    "在预定持续时间、请求量和负载形态下，无超预算错误、挂起或重启；“零次观察”同时附带样本量。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务门",
+                    "分别验收冷启动、热态 TTFT、TPOT、尾延迟与成功请求吞吐。冷缓存成本不应被热态均值隐藏。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回滚门",
+                    "验证旧镜像和旧依赖可恢复服务，并保存失败时需要的诊断证据。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "diagram",
+              "title": "从证据到放量的决策门",
+              "caption": "原创验收建议，未执行。前五个门槛串行通过后才逐步放量；证据不足或未通过进入停止与处置分支，不用吞吐收益抵消正确性缺口，不编造时间轴或成功百分比。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "provenance",
+                  "label": "产物来源可核验",
+                  "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "产物来源可核验",
+                  "subtitle": "镜像 / wheel / 扩展",
+                  "tone": "compute"
+                },
+                {
+                  "id": "coverage",
+                  "label": "目标路径有覆盖",
+                  "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "目标路径有覆盖",
+                  "subtitle": "未覆盖项单列",
+                  "tone": "compute"
+                },
+                {
+                  "id": "correctness",
+                  "label": "正确性与质量通过",
+                  "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "正确性与质量通过",
+                  "subtitle": "独立参考 / 预定容差",
+                  "tone": "compute"
+                },
+                {
+                  "id": "stability",
+                  "label": "稳定性通过",
+                  "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "稳定性通过",
+                  "subtitle": "样本量 / 持续时间",
+                  "tone": "compute"
+                },
+                {
+                  "id": "service",
+                  "label": "延迟与容量通过",
+                  "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "延迟与容量通过",
+                  "subtitle": "冷启动 / 热态 / 尾延迟",
+                  "tone": "compute"
+                },
+                {
+                  "id": "rollout",
+                  "label": "逐步放量",
+                  "detail": "这是待执行的原创验收门槛，不是已完成的测试结果。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "逐步放量",
+                  "subtitle": "保留灰度与回滚证据",
+                  "tone": "kv"
+                },
+                {
+                  "id": "stop",
+                  "label": "停止推进并定位",
+                  "detail": "前五道门任意证据不足或未通过，均停止推进。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "停止推进并定位",
+                  "subtitle": "证据不足或未通过",
+                  "tone": "danger"
+                },
+                {
+                  "id": "repair",
+                  "label": "补测 / 修正 / 回滚",
+                  "detail": "保留诊断证据，补测、修正或按既有流程回滚；未复现不能直接连到已修复。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "补测 / 修正 / 回滚",
+                  "subtitle": "不把未复现当已修复",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "provenance",
+                  "to": "coverage",
+                  "label": "当前门槛通过后才能推进",
+                  "shortLabel": "通过"
+                },
+                {
+                  "from": "coverage",
+                  "to": "correctness",
+                  "label": "当前门槛通过后才能推进",
+                  "shortLabel": "通过"
+                },
+                {
+                  "from": "correctness",
+                  "to": "stability",
+                  "label": "当前门槛通过后才能推进",
+                  "shortLabel": "通过"
+                },
+                {
+                  "from": "stability",
+                  "to": "service",
+                  "label": "当前门槛通过后才能推进",
+                  "shortLabel": "通过"
+                },
+                {
+                  "from": "service",
+                  "to": "rollout",
+                  "label": "当前门槛通过后才能推进",
+                  "shortLabel": "通过"
+                },
+                {
+                  "from": "provenance",
+                  "to": "stop",
+                  "label": "证据不足或未通过时停止推进",
+                  "shortLabel": "未满足"
+                },
+                {
+                  "from": "coverage",
+                  "to": "stop",
+                  "label": "证据不足或未通过时停止推进",
+                  "shortLabel": "未满足"
+                },
+                {
+                  "from": "correctness",
+                  "to": "stop",
+                  "label": "证据不足或未通过时停止推进",
+                  "shortLabel": "未满足"
+                },
+                {
+                  "from": "stability",
+                  "to": "stop",
+                  "label": "证据不足或未通过时停止推进",
+                  "shortLabel": "未满足"
+                },
+                {
+                  "from": "service",
+                  "to": "stop",
+                  "label": "证据不足或未通过时停止推进",
+                  "shortLabel": "未满足"
+                },
+                {
+                  "from": "stop",
+                  "to": "repair",
+                  "label": "补测、修正或回滚",
+                  "shortLabel": "处置"
+                }
+              ],
+              "presentation": {
+                "kind": "acceptance-gates",
+                "panels": [
+                  {
+                    "title": "串行验收门槛",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "provenance",
+                      "coverage",
+                      "correctness",
+                      "stability",
+                      "service",
+                      "rollout"
+                    ]
+                  },
+                  {
+                    "title": "未满足时的处置",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "stop",
+                      "repair"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "9 待验证事项",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本次核对已确认版本发布、分发产物和公开修复范围。尚未确认任何特定线上模型、GPU 集群或第三方 kernel 受该缺陷影响，也没有执行本文实验。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "需要实际部署补齐的问题是：服务是否使用 cu132 这一路构建；是否有独立 nvcc 或其他编译后端；旧扩展和缓存是否仍被加载；是否存在满足勘误条件的 kernel；适用库算法是否真正被调用；性能和质量门槛能否在完整服务链通过。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "H20 可沿编译产物和实际 workload 做筛查；NVFP4 条目按其公开架构及算法边界处理。未取得 Windows 对应构建链的同等证据前，本文结论不外推为 Windows 更新保证。需要其他 CUDA 构建或更新分支时，应另核对它们的依赖和勘误，而不是把本次 cu132 的证据直接复制过去。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "全部来源查阅于 2026-10-04。无另行说明者未核定精确首发日。下列事实摘要保持有限，本文主要内容为原创运维分析和实验设计。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                9
+              ],
+              "text": "[S1] PyTorch v2.14.1 正式发布，发布于 2026-09-30T19:14:48Z；发布元数据。正式发布，不是仅合并 PR。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "[S2] CUDA 13.2 Update 2 归档发布说明，重点是 2.4.1 编译器勘误、3.1.1 cuBLAS 已解决及已知问题。不能把查阅日期当作首发日期。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "[S3] v2.14.1 固定标签的构建矩阵，Linux cu132 依赖字符串可直接核对。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "[S4] v2.14.1 固定标签的 CUDA 安装脚本，核对 install_132。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4,
+                10
+              ],
+              "text": "[S5] 官方 cu132 torch wheel 索引；已核对 x86_64 CPython 3.10 wheel 元数据。这里只读取索引和元数据，未下载或执行 wheel。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "[S6] PyTorch 2.14 CUDA 扩展文档，核对独立工具链、CUDA_HOME、扩展构建目录。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "[S7] NVIDIA nvcc 编译阶段文档，在线文档版本 13.4；仅用于解释产物层次，不证明该版修复状态。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "[S8] CUDA minor-version compatibility，页面标注最后更新 2026-09-09；核对驱动基线及 PTX/功能限制。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8,
+                11
+              ],
+              "text": "[S9] PyTorch PR 196351 与 PR 元数据。创建说明日期 2026-09-08；API closed_at 为 2026-09-18T11:05:11Z，merged=false。此处仅解释证据使用边界，不将 PR 状态替代发布事实。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "h20-serving-slo",
     "kind": "analysis",
     "title": "从 271 tok/s 到可交付服务：H20 推理优化的工程读法",
@@ -1876,7 +3136,6 @@
               "unit": "ms",
               "basis": "inference",
               "sourceIndices": [],
-              "layout": "token-cost",
               "series": [
                 {
                   "label": "普通 decode",
@@ -1908,7 +3167,8 @@
                   ],
                   "deliveredTokens": 4
                 }
-              ]
+              ],
+              "layout": "token-cost"
             },
             {
               "type": "paragraph",
