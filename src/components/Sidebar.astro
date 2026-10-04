@@ -1,24 +1,16 @@
 ---
-import { entries } from "../data";
+import { libraryDomains } from '../library';
 import { withBase } from "../paths";
 
 const currentPath = Astro.url.pathname;
-const shortTitles: Record<string, string> = {
-  '/infrastructure/hardware-3d/': '硬件 3D 实验室',
-  '/observability/inference-animation/': '推理过程动画',
-  '/roadmap/llmops-roadmap/': '学习路线',
-  '/fundamentals/model-lifecycle/': '模型生命周期',
-  '/inference/sglang-hang-diagnosis/': 'Hang 现场诊断',
-  '/observability/three-pillars/': '指标与 Trace',
-};
 ---
 
 <button class="site-sidebar__scrim" type="button" data-nav-close aria-label="关闭知识库目录"></button>
 <aside class="site-sidebar" id="site-sidebar" aria-label="知识库导航">
   <div class="site-sidebar__mast">
-    <a class="wordmark" href={withBase("/")} aria-label="观志 AI Infra 首页">
-      <span class="wordmark__mark" aria-hidden="true">观</span>
-      <span>观志 <small>AI Infra</small></span>
+    <a class="wordmark" href={withBase("/")} aria-label="Guanzhi的图书馆首页">
+      <span class="wordmark__mark" aria-hidden="true">G</span>
+      <span>Guanzhi<small>的图书馆</small></span>
     </a>
     <button class="icon-button site-sidebar__close" type="button" data-nav-close aria-label="关闭知识库目录">
       <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19">
@@ -27,25 +19,25 @@ const shortTitles: Record<string, string> = {
     </button>
   </div>
 
-  <button class="search-pill search-pill--rail" type="button" data-search-open aria-label="搜索笔记" aria-haspopup="dialog" aria-controls="search-dialog">
+  <button class="search-pill search-pill--rail" type="button" data-search-open aria-label="搜索全部知识" aria-haspopup="dialog" aria-controls="search-dialog">
     <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
       <circle cx="11" cy="11" r="6.5"></circle>
       <path d="m16 16 4 4"></path>
     </svg>
-    <span class="search-pill__label">搜索笔记</span>
+    <span class="search-pill__label">搜索全部知识</span>
     <span class="search-pill__keys" aria-hidden="true"><kbd>⌘</kbd><kbd>K</kbd></span>
   </button>
 
   <nav class="rail-nav" aria-label="主要内容">
     <div class="rail-nav__group">
-      <p>阅读</p>
-      <a class="reader-nav-link" href={withBase('/')} aria-current={currentPath === withBase('/') || currentPath.startsWith(withBase('/radar/')) ? 'page' : undefined}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M13 2 4 14h7l-1 8 10-13h-7z" /></svg>动态与解读</a>
-      <a class="reader-nav-link" href={withBase('/radar/?kind=analysis')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h4" /></svg>深度解读</a>
-      <a class="reader-nav-link" href={withBase('/radar/?kind=reading')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M6 3h12v18l-6-4-6 4z" /></svg>阅读清单</a>
-      <a class="reader-nav-link" href={withBase('/#notes')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v6H3zM14 15h7v6h-7z" /></svg>知识索引</a>
+      <p>图书馆</p>
+      <a class="reader-nav-link" href={withBase('/')} aria-current={currentPath === withBase('/') ? 'page' : undefined}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7" /></svg>首页</a>
+      <a class="reader-nav-link" href={withBase('/library/')} aria-current={currentPath === withBase('/library/') ? 'page' : undefined}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M4 4h7v16H4zM14 4h6v16h-6zM7 8h1M17 8h1" /></svg>知识导航</a>
+      <a class="reader-nav-link" href={withBase('/#notes')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v6H3zM14 15h7v6h-7z" /></svg>专题索引</a>
+      <a class="reader-nav-link" href={withBase('/knowledge/')} aria-current={currentPath === withBase('/knowledge/') ? 'page' : undefined}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7" /></svg>白皮书</a>
     </div>
-
-    <div class="rail-nav__group"><p>知识库</p>{entries.map(entry => <a class="reader-nav-link" href={withBase(entry.href)} aria-current={currentPath === withBase(entry.href) ? 'page' : undefined} title={entry.title}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M4 4h16v16H4zM8 8h8M8 12h6M8 16h4" /></svg>{shortTitles[entry.href] || entry.section}</a>)}</div>
+    <div class="rail-nav__group"><p>知识领域</p>{libraryDomains.map(domain => <a class="reader-nav-link" href={withBase(`/domains/${domain.id}/`)} aria-current={currentPath === withBase(`/domains/${domain.id}/`) ? 'page' : undefined}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M5 5h14v14H5zM9 9h6v6H9zM2 9h3M19 9h3M9 2v3M9 19v3" /></svg>{domain.title}</a>)}</div>
+    <div class="rail-nav__group"><p>持续阅读</p><a class="reader-nav-link" href={withBase('/radar/')} aria-current={currentPath.startsWith(withBase('/radar/')) ? 'page' : undefined}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M13 2 4 14h7l-1 8 10-13h-7z" /></svg>动态与解读</a><a class="reader-nav-link" href={withBase('/roadmap/llmops-roadmap/')} aria-current={currentPath === withBase('/roadmap/llmops-roadmap/') ? 'page' : undefined}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17"><path d="M5 3h14v18H5zM9 7h6M9 12h6M9 17h3" /></svg>学习路线</a></div>
   </nav>
 
   <div class="site-sidebar__tools">

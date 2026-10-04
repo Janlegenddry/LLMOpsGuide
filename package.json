@@ -6,11 +6,13 @@
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
-    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "build": "node scripts/verify-knowledge.mjs && ASTRO_TELEMETRY_DISABLED=1 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "check": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "content:import": "node scripts/import-radar.mjs",
-    "content:verify": "node scripts/verify-reports.mjs"
+    "content:verify": "node scripts/verify-reports.mjs",
+    "knowledge:verify": "node scripts/verify-knowledge.mjs",
+    "library:verify": "node scripts/verify-library.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.3",

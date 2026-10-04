@@ -1,8 +1,11 @@
-# LLMOpsGuide
+# Guanzhi的图书馆
 
-面向大模型运维的系统学习知识库，覆盖模型生命周期、推理服务、可观测性与生产实践。使用 Astro 构建并发布到 GitHub Pages。
+李观志的个人知识图书馆，收录文章、完整报告、白皮书与阅读资料。当前已有积累集中在 AI Infra，后续按真实内容扩展知识领域。项目保留 LLMOpsGuide 仓库名与基础路径，使用 Astro 构建并发布到 GitHub Pages。
 
-首页现为李观志的 AI Infra 知识站，沿用原有章节与交互实验，增加公开动态、深度解读、阅读清单、主题/类型/月份筛选及标题摘要搜索。
+首页提供统一搜索、学习路线与交互实验入口、最近更新、知识领域和专题；知识导航按领域、类型、主题与阅读状态筛选。搜索覆盖标题、摘要、主题、关键词及机构名称。白皮书目前为真实空目录，不包含示例文件。
+
+- 知识导航：`/LLMOpsGuide/library/`；白皮书：`/LLMOpsGuide/knowledge/`；AI Infra：`/LLMOpsGuide/domains/ai-infra/`
+- 图书馆与白皮书接入：[docs/knowledge-navigation.md](./docs/knowledge-navigation.md)
 
 - 动态入口：<https://janlegenddry.github.io/LLMOpsGuide/radar/>
 - 内容导入与持续发布：[docs/radar-publishing.md](./docs/radar-publishing.md)
@@ -17,9 +20,12 @@
 ## 本地开发
 
 ```bash
+nvm use 24
 npm install
 npm run dev
 ```
+
+需要 Node 24；也可使用其他已有 Node 版本管理工具。
 
 打开终端显示的地址。由于线上站点位于项目路径，本地地址通常是 `http://localhost:4321/LLMOpsGuide/`。
 

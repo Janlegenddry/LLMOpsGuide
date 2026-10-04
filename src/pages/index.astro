@@ -1,73 +1,27 @@
 ---
-import BaseLayout from "../layouts/BaseLayout.astro";
-import { entries, learningPath, sections } from "../data";
-import { withBase } from "../paths";
-import RadarIndex from '../components/RadarIndex.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import LibraryCard from '../components/LibraryCard.astro';
+import { library, libraryDomains } from '../library';
+import { entries, sections } from '../data';
+import { withBase } from '../paths';
+const featured = [
+  { title: '建立知识地图', description: '从模型生命周期到生产运维，沿学习路线逐层深入。', href: '/roadmap/llmops-roadmap/', label: '学习路线', icon: 'M4 4h6v6H4zM14 14h6v6h-6zM10 7h7v7' },
+  { title: '看见基础设施', description: '旋转、拆解加速卡，理解 GPU、HBM 与跨机通信。', href: '/infrastructure/hardware-3d/', label: '硬件 3D 实验室', icon: 'M6 6h12v12H6zM9 9h6v6H9zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4' },
+  { title: '跟随一次推理', description: '从 prompt 到 token，在交互中理解推理过程。', href: '/observability/inference-animation/', label: '推理过程动画', icon: 'M5 5h14v14H5zM10 8l6 4-6 4z' },
+];
 ---
-
 <BaseLayout>
-  <div class="home-shell">
-    <p class="reader-owner">李观志的公开知识站 <span>推理运维 → AI Infra</span></p>
-    <RadarIndex pageHeading />
-
-    <section class="home-path" id="path" aria-labelledby="path-title">
-      <div class="section-heading">
-        <h2 id="path-title">按顺序开始</h2>
-        <p>先建立完整地图，再进入具体系统与故障现场。</p>
-      </div>
-      <ol class="learning-path">
-        {learningPath.map((step) => (
-          <li>
-            <a href={withBase(step.href)}>
-              <span class="learning-path__index">{step.index}</span>
-              <span class="learning-path__body"><strong>{step.title}</strong><span>{step.description}</span></span>
-              <span class="learning-path__arrow" aria-hidden="true">↗</span>
-            </a>
-          </li>
-        ))}
-      </ol>
-    </section>
-
-    <section class="library-index" id="notes" aria-labelledby="notes-title">
-      <header class="library-index__head">
-        <h2 id="notes-title">按主题浏览</h2>
-        <p>文章之间互相引用，不追求孤立的知识点。</p>
-      </header>
-      <div class="notes-index">
-        {sections.map((section) => {
-          const sectionEntries = entries.filter((entry) => entry.section === section.title);
-          return (
-            <section class="note-group" id={`section-${section.id}`} aria-labelledby={`section-${section.id}-title`}>
-              <header>
-                <h3 id={`section-${section.id}-title`}>{section.title}</h3>
-                <p>{section.description}</p>
-              </header>
-              <ul>
-                {sectionEntries.map((entry) => (
-                  <li>
-                    <a href={withBase(entry.href)}>
-                      <span><strong>{entry.title}</strong><span>{entry.description}</span></span>
-                      <span class="note-group__meta">{entry.status}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          );
-        })}
-      </div>
-    </section>
-
-    <section class="maintenance-note" aria-labelledby="principles-title">
-      <div class="section-heading">
-        <h2 id="principles-title">维护约束</h2>
-        <p>一份公开知识库，也是一套约束自己的学习方法。</p>
-      </div>
-      <dl class="principles">
-        <div><dt>证据优先</dt><dd>区分日志事实、代码事实与推断，不用结论代替证据。</dd></div>
-        <div><dt>结构优先</dt><dd>先回答它在系统中的位置，再解释局部原理。</dd></div>
-        <div><dt>持续校正</dt><dd>保留更新时间和状态，让过时知识有迹可循。</dd></div>
-      </dl>
-    </section>
+  <div class="library-shell library-home">
+    <header class="library-home-heading">
+      <p class="library-eyebrow">李观志的个人知识库</p><h1>Guanzhi的图书馆</h1>
+      <p>把读过的资料、写下的理解与实践中的判断，放在同一处。</p>
+      <form class="library-home-search" role="search" action={withBase('/library/')} method="get"><label for="home-query">搜索全部知识</label><input id="home-query" name="query" type="search" placeholder="搜索标题、摘要与关键词" /><button type="submit">搜索 <span aria-hidden="true">↗</span></button></form>
+      <div class="library-home-tools"><a href={withBase('/library/')}>浏览全部知识 ↗</a><a href={withBase('/knowledge/')}>白皮书目录</a><button type="button" data-search-open aria-haspopup="dialog" aria-controls="search-dialog">快捷搜索 <kbd>⌘ K</kbd></button></div>
+    </header>
+    <section class="library-section" id="path" aria-labelledby="featured-title"><div class="library-section-heading"><h2 id="featured-title">从这里开始</h2><span>三个真实的阅读入口</span></div><div class="library-featured">{featured.map(item => <a class="library-entry" href={withBase(item.href)}><svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24"><path d={item.icon} /></svg><span class="library-entry__label">{item.label}</span><h3>{item.title}</h3><p>{item.description}</p><span class="library-entry__arrow" aria-hidden="true">↗</span></a>)}</div></section>
+    <section class="library-section" aria-labelledby="recent-title"><div class="library-section-heading"><div><h2 id="recent-title">最近更新</h2><p>文章、完整报告与来源摘记，放在同一个阅读入口。</p></div><a href={withBase('/library/')}>查看全部 ↗</a></div><div class="library-recent">{library.slice(0,6).map(item => <LibraryCard item={item} />)}</div></section>
+    <section class="library-section" aria-labelledby="domains-title"><div class="library-section-heading"><h2 id="domains-title">知识领域</h2><span>从已有积累开始，逐步扩展</span></div><div class="library-domains">{libraryDomains.filter(domain => library.some(item => item.domain === domain.id)).map(domain => <a class="library-domain-card" href={withBase(`/domains/${domain.id}/`)}><div><span class="library-eyebrow">{library.filter(item => item.domain === domain.id).length} 项内容</span><h3>{domain.title}</h3><p>{domain.description}</p></div><span aria-hidden="true">↗</span></a>)}</div></section>
+    <section class="library-section" id="notes" aria-labelledby="notes-title"><div class="library-section-heading"><h2 id="notes-title">专题索引</h2><a href={withBase('/library/?type=article')}>全部文章 ↗</a></div><div class="library-topic-grid">{sections.map(section => <section class="library-topic-card" id={`section-${section.id}`}><h3><a href={withBase(`/library/?topic=${encodeURIComponent(section.title)}`)}>{section.title} ↗</a></h3><p>{section.description}</p><ul>{entries.filter(entry => entry.section === section.title).map(entry => <li><a href={withBase(entry.href)}>{entry.title}</a></li>)}</ul></section>)}</div></section>
+    <aside class="library-principle"><strong>让知识有来处，也有边界。</strong><p>保留来源与日期，区分事实、推测与待验证；随着新的证据，继续修正理解。</p></aside>
   </div>
 </BaseLayout>

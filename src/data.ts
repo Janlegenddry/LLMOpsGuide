@@ -5,6 +5,9 @@ export type NoteEntry = {
   section: string;
   status: "已发布" | "持续更新" | "计划中";
   updated?: string;
+  domain?: string;
+  topics?: string[];
+  keywords?: string[];
 };
 
 export const sections = [

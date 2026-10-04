@@ -10,6 +10,7 @@ import "../styles/almanac.css";
 import "../styles/radar.css";
 import "../styles/reader.css";
 import "../styles/report.css";
+import "../styles/library.css";
 import Header from "../components/Header.astro";
 import Sidebar from "../components/Sidebar.astro";
 import SearchDialog from "../components/SearchDialog.astro";
@@ -22,8 +23,8 @@ interface Props {
 }
 
 const {
-  title = "观志 · AI Infra 知识站 | LLMOpsGuide",
-  description = "李观志的 AI Infra 公开知识站：SGLang 动态、GPU 通信、KV Cache、PD 分离、投机解码与故障分析。结论先行，证据可追溯。",
+  title = "Guanzhi的图书馆",
+  description = "李观志的个人知识图书馆：收录文章、完整报告、白皮书与阅读资料，按知识领域与主题导航，保留来源与判断的依据。",
 } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 ---
@@ -37,7 +38,7 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
     <link rel="canonical" href={canonicalURL} />
-    <link rel="alternate" type="application/rss+xml" title="观志 AI Infra 动态" href={withBase('/radar/feed.xml')} />
+    <link rel="alternate" type="application/rss+xml" title="Guanzhi的图书馆 · AI Infra 动态" href={withBase('/radar/feed.xml')} />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />

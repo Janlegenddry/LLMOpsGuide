@@ -1,0 +1,16 @@
+---
+import type { LibraryItem } from '../library';
+import { libraryDomains, libraryTypes, libraryStates } from '../library';
+import { knowledgeHref } from '../lib/library-taxonomy';
+import { knowledge } from '../knowledge';
+interface Props { item: LibraryItem }
+const { item } = Astro.props;
+const paper = item.type === 'whitepaper' ? knowledge.find(record => `whitepaper:${record.id}` === item.id) : undefined;
+---
+<article class="library-card">
+  <div class="library-card__meta"><span class="library-badge">{libraryTypes[item.type]}</span><span>{libraryDomains.find(d => d.id === item.domain)?.title}</span>{item.state === 'unread' && <span>{libraryStates[item.state]}</span>}</div>
+  <h3><a href={knowledgeHref(item.href, import.meta.env.BASE_URL)}>{item.title}<span aria-hidden="true"> ↗</span></a></h3>
+  <p>{item.description}</p>
+  {paper && <div class="library-paper-details"><span>{paper.institution} · {paper.format}</span><span>{paper.publishedAt ? <>原文 <time datetime={paper.publishedAt}>{paper.publishedAt}</time></> : '原文日期未标注'}</span><a href={paper.source.url}>来源：{paper.source.title} ↗</a>{paper.downloadUrl && <a href={knowledgeHref(paper.downloadUrl, import.meta.env.BASE_URL)} download={paper.downloadUrl.startsWith('/') ? true : undefined}>{paper.downloadUrl.startsWith('/') ? '下载文件' : '来源下载'} ↗</a>}</div>}
+  <footer><span class="library-tags">{item.topics.map(topic => <span>{topic}</span>)}</span><span>{item.updated ? <>{item.dateLabel} <time datetime={item.updated}>{item.updated}</time></> : '原文日期未标注'}</span></footer>
+</article>

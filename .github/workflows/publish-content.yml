@@ -39,6 +39,8 @@ jobs:
         run: npm run build
       - name: Verify complete reports
         run: npm run content:verify
+      - name: Verify library navigation
+        run: npm run library:verify
       - name: Commit only content changes
         id: commit
         run: |

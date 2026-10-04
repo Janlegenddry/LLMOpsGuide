@@ -1,0 +1,34 @@
+---
+import { library, librarySearch, libraryDomains, libraryTypes, libraryStates } from '../library';
+import LibraryCard from './LibraryCard.astro';
+import { withBase } from '../paths';
+interface Props { domain?: string; type?: string }
+const { domain, type } = Astro.props;
+const items = library.filter(item => (!domain || item.domain === domain) && (!type || item.type === type));
+const topics = [...new Set(items.flatMap(item => item.topics))].sort((a,b) => a.localeCompare(b,'zh-CN'));
+---
+<section class="library-index-view" data-library-index aria-label="知识检索" data-fixed-domain={domain} data-fixed-type={type}>
+  <form class="library-filter" role="search">
+    <div class="library-filter__query"><label for="library-query">搜索馆藏</label><input id="library-query" type="search" name="query" placeholder="搜索标题、摘要或关键词…" autocomplete="off" aria-describedby="library-search-scope" /></div>
+    {!domain && <div><label for="library-domain">知识领域</label><select id="library-domain" name="domain"><option value="all">全部领域</option>{libraryDomains.map(d => <option value={d.id}>{d.title}</option>)}</select></div>}
+    {!type && <div><label for="library-type">内容类型</label><select id="library-type" name="type"><option value="all">全部类型</option>{Object.entries(libraryTypes).map(([id,title]) => <option value={id}>{title}</option>)}</select></div>}
+    <div><label for="library-topic">主题</label><select id="library-topic" name="topic"><option value="all">全部主题</option>{topics.map(t => <option value={t}>{t}</option>)}</select></div>
+    <div><label for="library-state">阅读状态</label><select id="library-state" name="state"><option value="all">全部状态</option>{Object.entries(libraryStates).map(([id,title]) => <option value={id}>{title}</option>)}</select></div>
+  </form>
+  <div class="library-result-bar"><p id="library-count" role="status">{items.length} 项内容</p><button id="library-reset" class="library-reset" type="button" hidden>清除筛选</button></div>
+  <p class="library-scope" id="library-search-scope">搜索标题、摘要、主题、关键词与机构名称 · 按更新、核对或收录日期排序</p>
+  <div class="library-results">
+    {items.map(item => <div data-library-record data-domain={item.domain} data-type={item.type} data-topics={JSON.stringify(item.topics)} data-state={item.state} data-search={librarySearch(item)}><LibraryCard item={item} /></div>)}
+  </div>
+  <div class="library-empty" id="library-empty" hidden={items.length > 0}>
+    <svg aria-hidden="true" viewBox="0 0 48 48" width="48" height="48"><path d="M8 10h14l2 4 2-4h14v28H26l-2 4-2-4H8zM24 14v26M13 19h6M13 25h6M29 19h6M29 25h6" /></svg>
+    <h2>{type === 'whitepaper' && items.length === 0 ? '白皮书还未收录' : '没有匹配的内容'}</h2>
+    <p>{type === 'whitepaper' && items.length === 0 ? '这里将收录可公开阅读的白皮书。你可以先浏览已有文章、完整报告与来源摘记。' : '换一个关键词，或清除筛选后查看全部内容。'}</p>
+    {type === 'whitepaper' && items.length === 0 && <a class="library-text-link" href={withBase('/library/')}>浏览全部知识 ↗</a>}
+  </div>
+  <noscript><p class="library-scope">全部目录仍可阅读；实时搜索与筛选需要 JavaScript。</p></noscript>
+</section>
+<script>
+  import { mountLibraryIndex } from '../scripts/library-index';
+  document.querySelectorAll<HTMLElement>('[data-library-index]').forEach(root => mountLibraryIndex(root));
+</script>
