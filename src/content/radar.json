@@ -1,6 +1,1158 @@
 [
   {
     "schemaVersion": 1,
+    "id": "triton-bf16-constant",
+    "kind": "analysis",
+    "title": "Triton BF16 标量常量修复与生产验证",
+    "summary": "旧 BF16 builder 的六位小数文本中间层可能在正常舍入前丢失小常量。main 已修复，稳定标签 3.8.0 和 PyTorch 新 pin 的固定源码仍有旧实现；实际算子命中与发布产物必须独立核查。",
+    "publishedAt": "2026-10-04",
+    "reviewedAt": "2026-10-05",
+    "topics": [
+      "推理编译",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Triton BF16 常量修复提交 11506fc3501ef0d9e39702c7748616fea8b91877",
+        "url": "https://github.com/triton-lang/triton/commit/11506fc3501ef0d9e39702c7748616fea8b91877",
+        "publishedAt": "2026-10-04",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "Triton #12103 修复 PR",
+        "url": "https://github.com/triton-lang/triton/pull/12103",
+        "publishedAt": "2026-10-04",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "完整修复补丁和新增回归测试",
+        "url": "https://github.com/triton-lang/triton/commit/11506fc3501ef0d9e39702c7748616fea8b91877.patch",
+        "publishedAt": "2026-10-04",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "Triton #12102：L40S 上游复现",
+        "url": "https://github.com/triton-lang/triton/issues/12102",
+        "review": {
+          "category": "community",
+          "publisher": "Triton GitHub issue 作者",
+          "status": "attributed",
+          "note": "已读取最小复现、Observed、Environment details 和回补后的作者结果；涉及 L40S sm_89 与 BF16 full / 乘法常量入口。示例数值是作者报告而非本站 GPU 实测；生产覆盖、H20 和性能仍未独立验证。"
+        },
+        "publishedAt": "2026-10-04",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "Triton 官方稳定发布列表",
+        "url": "https://github.com/triton-lang/triton/releases",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "Triton v3.8.0：旧 BF16 builder",
+        "url": "https://github.com/triton-lang/triton/blob/v3.8.0/python/src/ir.cc",
+        "publishedAt": "2026-08-28",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "固定 semantic.py：scalar_constant / make_scalar / full",
+        "url": "https://github.com/triton-lang/triton/blob/11506fc3501ef0d9e39702c7748616fea8b91877/python/triton/language/semantic.py",
+        "publishedAt": "2026-10-04",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "Triton 类型提升语义",
+        "url": "https://triton-lang.org/main/python-api/triton-semantics.html",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "Triton full API",
+        "url": "https://triton-lang.org/main/python-api/generated/triton.language.full.html",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "NVIDIA CUDA Math API 13.4：BF16 类型",
+        "url": "https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/struct____nv__bfloat16.html",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "NVIDIA CUDA Math API 13.4：BF16 常量",
+        "url": "https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "PyTorch 5ba9627d372060b19e599dad77230b60805b767c：Triton pin",
+        "url": "https://github.com/pytorch/pytorch/blob/5ba9627d372060b19e599dad77230b60805b767c/.ci/docker/ci_commit_pins/triton.txt",
+        "publishedAt": "2026-10-05",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "被 pin 的 Triton aad2a60d958f945420c5c40936b37d411fb02e89：仍有旧 builder",
+        "url": "https://github.com/triton-lang/triton/blob/aad2a60d958f945420c5c40936b37d411fb02e89/python/src/ir.cc",
+        "accessedAt": "2026-10-05"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "Triton 11506fc 已进入 main，移除 std::to_string 文本常量构造，并增加 BF16 full 与乘法常量的回归测试。",
+        "sourceIndices": [
+          0,
+          2
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "上游 v3.8.0 固定源码仍有旧 builder；PyTorch 5ba9627 指向的 aad2a60 也仍有旧 builder，标题里的 3.9 不是修复包含证明。",
+        "sourceIndices": [
+          5,
+          11,
+          12
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "Issue 作者在 L40S 报告 1e-8 经旧入口得到零，直接参考约为 1.0012e-8；本站未独立运行 GPU，也未确认 H20 业务路径命中。",
+        "sourceIndices": [
+          3
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "目标 wheel、扩展、缓存与镜像是否包含修复，以及真实算子精度和 SLO 是否达标，尚待隔离实验。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "待测算子是否真的构造 BF16 编译期常量，而不是运行时张量加载？",
+      "实际扩展与缓存来自哪个固定源码或等效回补？",
+      "最小常量语义、真实业务精度与小范围服务验收是否分别通过预定义标准？"
+    ],
+    "related": [
+      {
+        "title": "PyTorch CUDA 正确性与产物验证",
+        "path": "/radar/pytorch-2-14-1-cuda-correctness/"
+      },
+      {
+        "title": "模型生命周期",
+        "path": "/fundamentals/model-lifecycle/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "检索截止：2026 年 10 月 5 日 02:40 UTC。适用读者：推理平台、算子与编译器维护者。本文讨论 Triton 编译器，不是 NVIDIA Triton Inference Server。本文没有执行 GPU 实验；上游复现、源码核查与本文提出的验证方案分别标明。 发布前以官方 API 再核对 main 包含关系；所有诊断、灰度和性能实验均为建议，未在本站 GPU 执行。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论与处置优先级",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "本次新增信号是一处编译期 BF16 常量构造错误。Triton 主分支在 2026 年 10 月 4 日 20:39:39 UTC 纳入修复提交 11506fc3501ef0d9e39702c7748616fea8b91877，对应 PR #12103。修复直接处理浮点值，移除了先把值写成六位小数文本再解析的步骤。（修复提交）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "生产侧应先回答一个问题：正在运行的内核，是否把小常量构造成 BF16？只有版本名称或模型权重 dtype，无法回答它。建议顺序是识别实际编译器来源、定位常量路径、运行最小复现，再决定是否定向回补或等待兼容发行版。本文不建议直接把整个环境升级到主分支。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "截至检索时，官方发布页最新稳定版仍为 2026 年 8 月 28 日发布的 3.8.0。主分支修复不等于已发布稳定包，更不等于某个容器已经包含修复。（官方发布页）"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景与概念边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                9
+              ],
+              "text": "BF16 使用 1 位符号、8 位指数和 7 位显式有效数字。它的低精度主要限制有效数字的细密程度，并不意味着所有小于百万分之一的数都会变成零。1e-8 能表示为一个邻近的非零 BF16 数。因此，本事件中的零值不能用“BF16 本来就不够精确”解释。（NVIDIA BF16 类型定义）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "理解这次问题，需区分三个对象："
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "源程序中的 Python 数值字面量或 tl.constexpr，在编译期间已知。",
+                "前端生成的有类型常量，在这里可能被要求采用 BF16。",
+                "从设备内存读取的运行时张量，其值并不会仅因 dtype 为 BF16，就重新经过文本常量构造。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "Triton 的标量提升规则尤其重要：与张量同属浮点类别的字面量，不必把张量提升成 FP32。所以，看到源程序写着一个 Python 浮点数，并不能断定该常量最终采用 FP32。除法等操作另有规则，不能把乘法路径机械推广到全部算子。（Triton 类型提升语义）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对业务排查而言，这意味着应追踪“这个值如何进入算子”，而不只是搜索“这个模型是否用了 BF16”。同一个数学公式，常量注入位置不同，可能走不同的编译路径。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制与表示转换",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "源码中的旧路径可以简化为：数值进入 BF16 builder，经过 std::to_string，再用文本创建目标浮点常量。3.8.0 的 python/src/ir.cc 仍有这一实现。问题发生在目标格式正常舍入之前；后续 GPU 执行无法恢复已经丢失的信息。（3.8.0 源码）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                3
+              ],
+              "text": "教学例子，数值来自上游复现：将 1e-8 构造成 BF16 时，旧路径先得到文本 0.000000，然后得到零；直接构造目标常量则得到约 1.0012e-8。这是表示链条引入的错误，不是该量级超出 BF16 范围。上游在 L40S 上报告了此现象，本文未在本地重跑。（问题报告 #12102）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                6
+              ],
+              "text": "进一步看前端，scalar_constant 根据 dtype 调用相应 builder；make_scalar 对已有单元素张量则采用 cast 分支，full 再把标量铺成目标形状。由此可推断，排查时必须区分“常量被创建”和“现有张量被转换”两类操作，不能宣称所有 BF16 加载与运算都存在同一问题。（固定提交的 semantic.py）"
+            },
+            {
+              "type": "diagram",
+              "title": "图一：信息在表示转换的哪一步丢失",
+              "caption": "原创表示链图。固定源码解释旧路径与直接构造路径；1e-8、0.000000 与约 1.0012e-8 来自上游 L40S 复现，非本站测试。运行时张量加载单独列出，不自动归入编译期常量缺陷。本图不表达硬件性能。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                3,
+                5,
+                6
+              ],
+              "nodes": [
+                {
+                  "id": "constant-input",
+                  "label": "编译期数值 1e-8",
+                  "detail": "Python 字面量或 constexpr 在编译期间已知；本图只讨论要求创建 BF16 标量常量的入口。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "编译期 1e-8",
+                  "subtitle": "共用输入",
+                  "tone": "control"
+                },
+                {
+                  "id": "old-builder",
+                  "label": "旧 BF16 builder",
+                  "detail": "稳定标签 3.8.0 与被 pin 的 aad2a60 源码均存在该文本构造路径。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "旧 BF16 builder",
+                  "subtitle": "编译期常量入口",
+                  "tone": "compute"
+                },
+                {
+                  "id": "decimal-text",
+                  "label": "std::to_string 先生成六位小数文本 0.000000",
+                  "detail": "1e-8 在进入 BF16 正常舍入前就被六位小数文本变成零；这是中间表示丢失，而非 BF16 数值范围。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "0.000000",
+                  "subtitle": "信息在这里丢失",
+                  "tone": "danger"
+                },
+                {
+                  "id": "bf16-zero",
+                  "label": "再解析目标浮点常量，得到 BF16 零",
+                  "detail": "GPU 执行只接收已构造的常量，不能逆转编译阶段的文本信息丢失。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "BF16 零",
+                  "subtitle": "GPU 无法恢复丢失值",
+                  "tone": "danger"
+                },
+                {
+                  "id": "fixed-builder",
+                  "label": "修复后的 BF16 builder",
+                  "detail": "修复移除 std::to_string，将 float 值直接交给目标类型 FloatAttr 构造。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "修复 BF16 builder",
+                  "subtitle": "11506fc 固定源码",
+                  "tone": "compute"
+                },
+                {
+                  "id": "direct-attribute",
+                  "label": "直接创建目标浮点属性",
+                  "detail": "使用 getFloatAttr(type, v) 构建 arith ConstantOp，没有六位小数文本中间层。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "直接构造",
+                  "subtitle": "目标类型正常舍入",
+                  "tone": "control"
+                },
+                {
+                  "id": "nearby-bf16",
+                  "label": "邻近非零 BF16 约 1.0012e-8",
+                  "detail": "数字来自 issue 作者的 L40S 复现和参考；本站没有运行 GPU 或验证目标 H20 的行为。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "约 1.0012e-8",
+                  "subtitle": "上游复现数字",
+                  "tone": "compute"
+                },
+                {
+                  "id": "runtime-tensor",
+                  "label": "独立的运行时张量加载与 cast 路径",
+                  "detail": "从设备内存读取已有 BF16 张量，不因 dtype 就重新经过同一文本 builder；仍需分析实际算子与前端分支。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "运行时张量加载",
+                  "subtitle": "不能仅凭 dtype 推定覆盖",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "constant-input",
+                  "to": "old-builder",
+                  "label": "编译期输入走旧 builder",
+                  "shortLabel": "旧路径"
+                },
+                {
+                  "from": "constant-input",
+                  "to": "fixed-builder",
+                  "label": "编译期输入走修复 builder",
+                  "shortLabel": "修复路径"
+                },
+                {
+                  "from": "old-builder",
+                  "to": "decimal-text",
+                  "label": "文本构造先截断信息",
+                  "shortLabel": "六位文本"
+                },
+                {
+                  "from": "decimal-text",
+                  "to": "bf16-zero",
+                  "label": "文本解析到目标格式",
+                  "shortLabel": "解析为零"
+                },
+                {
+                  "from": "fixed-builder",
+                  "to": "direct-attribute",
+                  "label": "直接创建目标 FloatAttr",
+                  "shortLabel": "直接构造"
+                },
+                {
+                  "from": "direct-attribute",
+                  "to": "nearby-bf16",
+                  "label": "目标类型正常舍入",
+                  "shortLabel": "正常舍入"
+                }
+              ],
+              "presentation": {
+                "kind": "constant-paths",
+                "panels": [
+                  {
+                    "title": "编译期共用输入",
+                    "tone": "control",
+                    "nodeIds": [
+                      "constant-input"
+                    ]
+                  },
+                  {
+                    "title": "旧文本构造",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-builder",
+                      "decimal-text",
+                      "bf16-zero"
+                    ]
+                  },
+                  {
+                    "title": "修复后直接构造",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "fixed-builder",
+                      "direct-attribute",
+                      "nearby-bf16"
+                    ]
+                  },
+                  {
+                    "title": "独立运行时路径",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "runtime-tensor"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这张图用于回答“信息在哪里丢失”，不展示吞吐量、时延或硬件性能。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据链与版本包含关系",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据链与版本包含关系：逐项证据与边界",
+              "columns": [
+                "证据对象",
+                "核查结果",
+                "可以支持的判断",
+                "不能支持的判断"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "修复提交及完整补丁",
+                    "builder 改为直接创建 FloatAttr",
+                    "主分支有针对性修复",
+                    "任意已安装包都已修复"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "官方稳定版列表",
+                    "最新列为 3.8.0",
+                    "暂无已核实的新稳定发行承载此修复",
+                    "所有第三方包均未回补"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "3.8.0 固定源码",
+                    "存在旧文本转换",
+                    "该上游标签包含问题路径",
+                    "每个用此版本的模型都会触发"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "上游新增回归测试",
+                    "同时覆盖 BF16 full 与乘法常量",
+                    "修复有针对常量注入的回归保护",
+                    "生产模型精度与 SLO 已验收"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "PyTorch 新 Triton pin",
+                    "目标提交仍有旧 builder",
+                    "版本更新标题不足以证明包含修复",
+                    "PyTorch 所有 BF16 运算受影响"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    11,
+                    12
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "新增测试使用七个常量，包括小正数、负值、次正规量级和普通值；对 BF16 full 及张量乘 constexpr 的结果，与 torch.full 做零容差比较。原测试中 16 个输入元素均为 1，两个结果区域分别检查两种入口。这是源码中的实际测试设计，不是本文虚构的实验成绩。（完整修复补丁与测试）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                11
+              ],
+              "text": "还需注意 PyTorch 的依赖包含关系。其主分支提交 5ba9627d372060b19e599dad77230b60805b767c 于 2026 年 10 月 5 日 02:01:17 UTC 更新 Triton pin，标题涉及 3.9；实际 pin 为 aad2a60d958f945420c5c40936b37d411fb02e89。（PyTorch pin 文件）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                12
+              ],
+              "text": "直接核对该 Triton 提交的 ir.cc，仍能看到 std::to_string 的旧实现。因此，这次 pin 更新本身不能作为 BF16 修复已经进入 PyTorch 环境的证据。（被 pin 的 Triton 源码）"
+            },
+            {
+              "type": "diagram",
+              "title": "图二：版本显示、精确源码与实际产物分开核查",
+              "caption": "原创证据引用图；箭头不是时间先后。3.8.0 与 PyTorch pin 的 aad2a60 仍有旧 builder，11506fc 改为直接构造。实际安装产物统一留作待核查，不把“3.9”画为已修复区域，不用发布日期推断提交祖先关系。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                4,
+                5,
+                11,
+                12
+              ],
+              "nodes": [
+                {
+                  "id": "stable-version",
+                  "label": "稳定标签 Triton 3.8.0",
+                  "detail": "官方稳定版列表核对到 3.8.0；标签固定源码不是第三方回补包的包含证明。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "稳定标签 3.8.0",
+                  "subtitle": "2026-08-28 发布",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "stable-builder",
+                  "label": "v3.8.0 固定源码仍有旧 BF16 builder",
+                  "detail": "直接读取 v3.8.0 python/src/ir.cc 的 get_bf16，仍使用 std::to_string。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "仍有旧 builder",
+                  "subtitle": "固定标签源码",
+                  "tone": "danger"
+                },
+                {
+                  "id": "pytorch-pin-change",
+                  "label": "PyTorch 5ba9627 更新 Triton pin",
+                  "detail": "2026-10-05 02:01:17 UTC 的 PyTorch 主分支提交，实际 pin 必须从文件读取。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "PyTorch 5ba9627",
+                  "subtitle": "标题涉及 3.9",
+                  "tone": "control"
+                },
+                {
+                  "id": "triton-pinned-sha",
+                  "label": "实际 pin 指向 Triton aad2a60",
+                  "detail": "精确 commit 为 aad2a60d958f945420c5c40936b37d411fb02e89。这是 PyTorch pin 指向的精确 Triton 提交；比较 API 确认它在 11506fc 修复之前，不能用标题推断修复已纳入。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "Triton aad2a60",
+                  "subtitle": "精确 commit",
+                  "tone": "control"
+                },
+                {
+                  "id": "pinned-builder",
+                  "label": "被 pin 的固定源码仍有旧 BF16 builder",
+                  "detail": "该提交 get_bf16 仍使用 std::to_string 的 APFloat 文本构造，pin 更新不是修复包含证据。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "仍有旧 builder",
+                  "subtitle": "已读取 ir.cc",
+                  "tone": "danger"
+                },
+                {
+                  "id": "fix-commit",
+                  "label": "修复提交 Triton 11506fc",
+                  "detail": "精确修复提交已包含于 Triton main；这仍不是正式稳定版本发布。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "修复 11506fc",
+                  "subtitle": "2026-10-04 主分支",
+                  "tone": "compute"
+                },
+                {
+                  "id": "fix-builder",
+                  "label": "固定修复源码直接构造目标属性",
+                  "detail": "该提交移除文本往返，并增加 BF16 full 与乘法 constexpr 的针对性回归测试。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "直接构造",
+                  "subtitle": "已读取补丁",
+                  "tone": "compute"
+                },
+                {
+                  "id": "installed-pending",
+                  "label": "实际安装的 wheel、扩展与镜像仍待核查",
+                  "detail": "需要关联实际安装产物与固定源码或等效回补，并跑受控最小复现。三条上游引用不能自动为容器声明修复。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "实际产物待核查",
+                  "subtitle": "来源 / 构建 / 行为分别证明",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "stable-version",
+                  "to": "stable-builder",
+                  "label": "标签引用固定旧实现",
+                  "shortLabel": "固定源码"
+                },
+                {
+                  "from": "pytorch-pin-change",
+                  "to": "triton-pinned-sha",
+                  "label": "pin 文件引用精确 Triton 提交",
+                  "shortLabel": "文件指向"
+                },
+                {
+                  "from": "triton-pinned-sha",
+                  "to": "pinned-builder",
+                  "label": "读取该提交实际 builder",
+                  "shortLabel": "固定源码"
+                },
+                {
+                  "from": "fix-commit",
+                  "to": "fix-builder",
+                  "label": "修复补丁引用新实现",
+                  "shortLabel": "固定源码"
+                },
+                {
+                  "from": "stable-builder",
+                  "to": "installed-pending",
+                  "label": "核对实际产物是否来自该构建",
+                  "shortLabel": "核对来源"
+                },
+                {
+                  "from": "pinned-builder",
+                  "to": "installed-pending",
+                  "label": "核对实际产物是否来自该构建",
+                  "shortLabel": "核对来源"
+                },
+                {
+                  "from": "fix-builder",
+                  "to": "installed-pending",
+                  "label": "核对实际产物是否确实包含修复",
+                  "shortLabel": "核对包含"
+                }
+              ],
+              "presentation": {
+                "kind": "source-containment",
+                "panels": [
+                  {
+                    "title": "稳定标签",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "stable-version",
+                      "stable-builder"
+                    ]
+                  },
+                  {
+                    "title": "PyTorch 依赖 pin",
+                    "tone": "control",
+                    "nodeIds": [
+                      "pytorch-pin-change",
+                      "triton-pinned-sha",
+                      "pinned-builder"
+                    ]
+                  },
+                  {
+                    "title": "修复提交",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "fix-commit",
+                      "fix-builder"
+                    ]
+                  },
+                  {
+                    "title": "待核查产物",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "installed-pending"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "修复选择与工程权衡",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下面是本文的操作建议，而非上游要求。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "定向回补可以缩小代码变化范围，却仍要求重建承载该 builder 的扩展，并核查它是否真正进入发布产物。仅编辑 Python 文件不足以证明 C++ 前端已替换。若团队没有稳定的编译器构建流程，临时接入主分支可能扩大依赖风险。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "在应用内改变常量构造方式，是另一类选择。比如先显式采用 FP32，再在需要处转换为 BF16，可作为待验证候选；这与“所有中间计算一律提升为 FP32”不是同一改动。后者可能改变算子精度、寄存器需求、融合方式以及结果基线。应把常量修复与整段计算精度策略分开验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "保留现有环境也可能合理：若实际执行路径没有受影响的常量入口，先建立回归保护、等待合适发行版，比未经验证地更换基础软件更稳妥。但“没有观察到告警”不等于证明不受影响；非零偏差未必直接表现为 NaN。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不存在本文已证实的通用性能收益。修复目标是数值语义，性能必须用自身负载测量，不得把减少一次文本转换解释为线上吞吐提升。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产排查与 H20 的条件相关性",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对于 H20 服务，关键条件是使用的编译器构建与算子路径，而不是 GPU 型号本身。上游直接复现硬件为 L40S；本文没有 H20 运行结果。前端机制说明 H20 用户值得检查相关路径，但不能据此宣布 H20 上所有 BF16 推理错误。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议准备一份可复核的环境记录：镜像 digest、框架版本、Triton 包来源与构建标识、驱动和 CUDA 信息、实际调用的算子实现、编译缓存来源。若使用定制 wheel，检查构建来源或以受控复现验证行为，不能仅信包名。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "筛查从少量可能敏感的内核开始：含小缩放系数、稳定化常数或阈值的自定义/融合算子。对每个候选追踪常量的实际 dtype，确认它是字面量、constexpr、运行时参数还是从张量读取。只有确认进入问题路径，才把它升级为受影响项。本文没有确认某个特定优化器、归一化实现或大模型已经受影响。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上线决策应由算子正确性结果驱动。若出现可复现差异，保留原始最小输入、输出与编译记录，先在隔离环境比较原构建和候选构建；不要把生产实例当作编译器试验场。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "隔离实验设计",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下全部是建议执行的实验，不代表已完成。实验使用一致输入、随机种子与相同环境，仅切换待测构建或明确指定的常量路径。避免在一次对比中同时改变框架、驱动、模型和量化方案。"
+            },
+            {
+              "type": "table",
+              "caption": "隔离实验设计：待执行设计与预定义条件",
+              "columns": [
+                "实验层",
+                "输入与对照",
+                "应记录什么",
+                "目的"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "常量生成",
+                    "小正数、负值、普通值；BF16 full 对照直接 BF16 参考",
+                    "元素值及位模式",
+                    "分离常量构造和模型误差"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "算术入口",
+                    "相同常量乘全 1 的 BF16 输入",
+                    "两条入口是否一致",
+                    "检查隐式标量类型转换"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "路径对照",
+                    "字面量、constexpr、运行时张量分别注入相同数学值",
+                    "编译 IR、dtype 与结果",
+                    "验证影响边界，防止过度归因"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳定化逻辑",
+                    "零附近和阈值两侧输入",
+                    "零值、有限性、分支结果",
+                    "确认修复没有遗漏实际保护条件"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生产算子",
+                    "真实 shape、布局与代表性数值范围",
+                    "与约定参考的误差分布",
+                    "确认真实路径被覆盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "发布产物",
+                    "候选镜像冷编译及受控缓存场景",
+                    "构建标识、缓存来源、复现结果",
+                    "防止验证与上线产物不一致"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                10
+              ],
+              "text": "第一层可参考上游回归结构，但不得拿它代替完整验收。特别是次正规数，应单独记录后端与运行条件，不将所有极小量的行为都归入本次文本转换错误。NVIDIA 文档明确列出 BF16 次正规最小值的表示；这一格式事实并不自动承诺任何内核组合的运行行为。（BF16 常量定义）"
+            },
+            {
+              "type": "diagram",
+              "title": "图三：测试与上线的四道门",
+              "caption": "原创待执行验收流程，所有门均计划执行，没有绿色通过标志或测量数字。构建记录、逐值对照、真实算子精度与小范围运行观测各自形成证据；失败回隔离环境。性能对比独立，不能抵消数值失败。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "artifact-identity",
+                  "label": "计划执行：先证明产物身份",
+                  "detail": "源码、wheel、C++ 扩展、镜像与缓存的身份可追溯，不能只看包版本名称。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "产物身份",
+                  "subtitle": "输出：构建记录",
+                  "tone": "control"
+                },
+                {
+                  "id": "minimum-semantics",
+                  "label": "计划执行：验证最小常量语义",
+                  "detail": "用规定的 BF16 参考核对相关常量入口与位模式，普通值对照不能出现新增异常。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "最小常量语义",
+                  "subtitle": "输出：逐值对照",
+                  "tone": "control"
+                },
+                {
+                  "id": "business-correctness",
+                  "label": "计划执行：验证真实算子与业务精度",
+                  "detail": "证明候选实现被执行，并按预定义业务容差验证质量，不临时放宽标准。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "真实算子与精度",
+                  "subtitle": "输出：精度报告",
+                  "tone": "control"
+                },
+                {
+                  "id": "limited-deployment",
+                  "label": "计划执行：小范围上线并观察回滚",
+                  "detail": "前三门满足后再灰度；持续观察业务质量、服务指标，并验证完整产物组合可回滚。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "小范围上线",
+                  "subtitle": "输出：观测 / 回滚记录",
+                  "tone": "control"
+                },
+                {
+                  "id": "isolation-return",
+                  "label": "任何门失败：留在或返回隔离环境",
+                  "detail": "任一门失败都保留最小输入、输出、构建与缓存记录；修正后重新证明身份和相关数值语义。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "回到隔离环境",
+                  "subtitle": "保存证据后修正",
+                  "tone": "danger"
+                },
+                {
+                  "id": "performance-independent",
+                  "label": "性能对比独立执行，不能抵消数值失败",
+                  "detail": "性能用自己的负载与预定义 SLO 比较；吞吐或时延变好不能抵消数值语义或业务质量失败。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "性能独立检查",
+                  "subtitle": "没有虚构测量值",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "artifact-identity",
+                  "to": "minimum-semantics",
+                  "label": "满足预设条件才进入下一门",
+                  "shortLabel": "满足才继续"
+                },
+                {
+                  "from": "minimum-semantics",
+                  "to": "business-correctness",
+                  "label": "满足预设条件才进入下一门",
+                  "shortLabel": "满足才继续"
+                },
+                {
+                  "from": "business-correctness",
+                  "to": "limited-deployment",
+                  "label": "满足预设条件才进入下一门",
+                  "shortLabel": "满足才继续"
+                },
+                {
+                  "from": "artifact-identity",
+                  "to": "isolation-return",
+                  "label": "本门未通过则回到隔离环境",
+                  "shortLabel": "失败回隔离"
+                },
+                {
+                  "from": "minimum-semantics",
+                  "to": "isolation-return",
+                  "label": "本门未通过则回到隔离环境",
+                  "shortLabel": "失败回隔离"
+                },
+                {
+                  "from": "business-correctness",
+                  "to": "isolation-return",
+                  "label": "本门未通过则回到隔离环境",
+                  "shortLabel": "失败回隔离"
+                },
+                {
+                  "from": "limited-deployment",
+                  "to": "isolation-return",
+                  "label": "本门未通过则回到隔离环境",
+                  "shortLabel": "失败回隔离"
+                },
+                {
+                  "from": "isolation-return",
+                  "to": "artifact-identity",
+                  "label": "修正之后从产物身份重新证明",
+                  "shortLabel": "修正后重验"
+                }
+              ],
+              "presentation": {
+                "kind": "deployment-gates",
+                "panels": [
+                  {
+                    "title": "计划执行的四道门",
+                    "tone": "control",
+                    "nodeIds": [
+                      "artifact-identity",
+                      "minimum-semantics",
+                      "business-correctness",
+                      "limited-deployment"
+                    ]
+                  },
+                  {
+                    "title": "失败返回",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "isolation-return"
+                    ]
+                  },
+                  {
+                    "title": "独立性能检查",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "performance-independent"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收与回滚条件",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文建议将验收分为精确语义和业务容差两层。常量生成测试的目标可以是与规定的 BF16 参考完全一致；业务算子仍应使用团队事先确定的容差，不能为了让候选版本通过而临时放宽。"
+            },
+            {
+              "type": "table",
+              "caption": "验收与回滚条件：待执行设计与预定义条件",
+              "columns": [
+                "门槛",
+                "建议通过条件",
+                "未通过时的动作"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "来源确认",
+                    "产物可关联到包含修复的源码或等效回补",
+                    "停止把版本名称当作修复证明"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "最小复现",
+                    "相关常量入口与参考一致，普通值对照无新增异常",
+                    "保留样例，检查构建和 dtype 路径"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真实路径",
+                    "被列为受影响的算子确实执行到候选实现",
+                    "修正覆盖范围，补充执行证据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数值回归",
+                    "误差与有限性满足预先约定标准",
+                    "不进入流量灰度"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可运维性",
+                    "编译、缓存和回滚流程可重复",
+                    "先修复发布流程再评估上线"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "小范围运行",
+                    "业务质量与服务指标处于约定边界",
+                    "回到已验证构建，保存故障证据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对于推理业务，既要看 NaN/Inf，也要检查没有异常码的答案或中间结果偏差。若只是修复一个常量入口，回归范围仍需覆盖共享这一内核的调用方。回滚应恢复已验证的完整产物组合，避免只换 Python 包却留下不匹配的扩展或缓存。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待确认事项与来源",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "尚待确认：哪个稳定发行版首次包含修复；第三方打包是否回补；目标 H20 环境能否复现；实际业务内核的命中比例；候选产物的精度、编译行为和端到端服务表现。现有证据不支持给出生产受影响比例，也不支持承诺升级后的时延或吞吐变化。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本报告的新增价值在于把三个判断分开：源码存在错误、目标路径会触发错误、候选产物适合上线。前一个成立，不能代替后两个的验证。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下列来源访问日期均为 2026-10-05。日期为 UTC；未给出发布日的文档按访问时状态引用。",
+              "title": "一手来源索引"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "items": [
+                "（Triton 修复提交 11506fc），2026-10-04 20:39:39，主分支提交；非正式版本发布。",
+                "（PR #12103），2026-10-04，修复说明。网页状态缓存有滞后；纳入主分支以官方 commits API 和精确提交为依据。",
+                "（完整补丁），同一提交，已读取变更及新增测试。",
+                "（Issue #12102），2026-10-04，上游复现与环境描述。",
+                "（Triton releases），3.8.0 发布于 2026-08-28 18:25 UTC。",
+                "（3.8.0 ir.cc），稳定标签固定源码。",
+                "（修复提交的 semantic.py），常量与张量分支。",
+                "（Triton Semantics），类型提升规则。",
+                "（Triton full API），按给定 dtype 创建填充值张量。",
+                "（NVIDIA BF16 类型），CUDA Math API 13.4，格式与转换说明。",
+                "（NVIDIA BF16 常量），格式边界。",
+                "（PyTorch 5ba9627 的 Triton pin），2026-10-05 02:01:17 UTC 的主分支提交。",
+                "（被 pin 的 aad2a60 的 ir.cc），仍含旧常量构造方式，已直接读取。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-v0-5-21",
     "kind": "release",
     "title": "SGLang v0.5.21 运维解读：把 KV 生命周期、通信正确性和性能优化放回同一张图",
