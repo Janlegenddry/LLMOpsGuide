@@ -3728,6 +3728,1548 @@
   },
   {
     "schemaVersion": 1,
+    "id": "sglang-nixl-peer-reload",
+    "kind": "analysis",
+    "title": "SGLang NIXL 对端失效后的恢复机制与验证边界",
+    "summary": "NIXL 对端元数据失效与 SGLang 已有登记分歧可能导致持续失败。10 月 5 日 main 合并恢复逻辑，供后续传输使用；触发请求、旧 KV 安全与 H20 网络故障验收仍需分别证明。",
+    "publishedAt": "2026-09-29",
+    "reviewedAt": "2026-10-05",
+    "topics": [
+      "SGLang",
+      "PD 分离",
+      "GPU 通信",
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang #41691：PR 正文与作者验证报告",
+        "url": "https://github.com/sgl-project/sglang/pull/41691",
+        "review": {
+          "category": "community",
+          "publisher": "SGLang GitHub PR 作者",
+          "status": "attributed",
+          "note": "已读取 Motivation、Changes、Validation 及实验配置；CPU 188 测试 / 50 子测试和单节点 H200 注入结果均为作者报告，未由本站独立运行。固定源码和测试另列；PR 正文可更新，合并状态另以精确提交和 PR API 核对。"
+        },
+        "publishedAt": "2026-09-29",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "SGLang 合并提交 734cf3cf3b9201a5beb104649acd29f05edcd1e5",
+        "url": "https://github.com/sgl-project/sglang/commit/734cf3cf3b9201a5beb104649acd29f05edcd1e5",
+        "publishedAt": "2026-10-05",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "固定连接器：失败结算与对端恢复",
+        "url": "https://github.com/sgl-project/sglang/blob/734cf3cf3b9201a5beb104649acd29f05edcd1e5/python/sglang/srt/disaggregation/nixl/conn.py",
+        "publishedAt": "2026-10-05",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "固定回归：真实 worker 与 fake agent",
+        "url": "https://github.com/sgl-project/sglang/blob/734cf3cf3b9201a5beb104649acd29f05edcd1e5/test/registered/unit/disaggregation/test_nixl_backend_basic.py",
+        "publishedAt": "2026-10-05",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "SGLang v0.5.21 正式版",
+        "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.21",
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "v0.5.21 连接器：没有新增恢复函数",
+        "url": "https://github.com/sgl-project/sglang/blob/v0.5.21/python/sglang/srt/disaggregation/nixl/conn.py",
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "NIXL Python API：载入 / 移除远端元数据（固定快照）",
+        "url": "https://github.com/ai-dynamo/nixl/blob/ee4bddbbccfc80afe5bcea8e86727055fc908667/src/api/python/_api.py",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "NIXL Backend Guide：UCX 错误处理（固定快照）",
+        "url": "https://github.com/ai-dynamo/nixl/blob/ee4bddbbccfc80afe5bcea8e86727055fc908667/docs/BackendGuide.md",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "NIXL 错误参考：NOT_FOUND 的范围",
+        "url": "https://docs.nvidia.com/nixl/resources/troubleshooting",
+        "accessedAt": "2026-10-05"
+      },
+      {
+        "title": "SGLang #41691：官方 PR 合并元数据",
+        "url": "https://api.github.com/repos/sgl-project/sglang/pulls/41691",
+        "accessedAt": "2026-10-05"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#41691 首次公开于 9 月 29 日，10 月 5 日合并；固定提交已在 main。不是 v0.5.21 新正式版发布。",
+        "sourceIndices": [
+          1,
+          9
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "v0.5.21 标签没有新增对端恢复函数；固定实现先保留既有失败处理，再重载失效对端并重建目标准备。",
+        "sourceIndices": [
+          2,
+          5
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "作者报告单节点 H200 注入后 10 个后续请求恢复且 token ID 与对照一致；本站未独立复现，不能外推至 H20 或真实网络超时。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "哪个正式产物包含修复，以及 H20、多节点、真实超时下的恢复、输出与 KV 资源安全，仍需本地隔离验收。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "运行物是否包含精确提交，依赖与已有登记是否匹配？",
+      "后续请求成功时，旧请求的 drain ACK 与 KV 释放条件是否另有证据？",
+      "H20、多节点、准备失败及冷却窗口下的错误放大和资源占用如何？"
+    ],
+    "related": [
+      {
+        "title": "SGLang v0.5.21：KV 生命周期与通信正确性",
+        "path": "/radar/sglang-v0-5-21/"
+      },
+      {
+        "title": "SGLang hang 排查",
+        "path": "/inference/sglang-hang-diagnosis/"
+      },
+      {
+        "title": "异步 KV 加载与清零边界",
+        "path": "/radar/vllm-async-kv-zeroing/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "核对时间：2026 年 10 月 5 日 02:41 UTC。本文基于公开源码、测试和维护者发布记录，提供原创运维分析与待执行实验方案；本站没有运行 GPU 回归。 发布前以官方 API 再核对 main 包含关系；所有诊断、灰度和性能实验均为建议，未在本站 GPU 执行。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                9,
+                2
+              ],
+              "text": "SGLang #41691 已合入 main；PR API 的合并时间是 10 月 5 日 00:49:28 UTC，合并提交时间是 00:49:26 UTC，提交为 734cf3cf3b9201a5beb104649acd29f05edcd1e5。PR 首次公开日期是 9 月 29 日，今天的新进展是合并。它处理 P/D 服务中一种持续故障：NIXL 已清除失效对端的元数据，SGLang 却仍保留注册记录，后续请求因两层状态不一致继续失败。修复尝试恢复后续传输，不自动重放触发故障的请求。（合并提交）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4,
+                5
+              ],
+              "text": "截至核对时，最新正式版仍为 10 月 2 日发布的 v0.5.21；该标签的连接器源码没有新增恢复函数。不能把“main 已合并”写成“升级 v0.5.21 即获得修复”。对 H20 P/D 运维，这是一项值得隔离验证的恢复能力，现有公开硬件证据来自 H200。（版本） · （标签源码）"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "跨进程传输至少包含三种状态：应用认为对端是谁，通信库当前能否访问它，以及已经准备好的传输描述符能否继续使用。连接恢复不能只看端口可达；应用注册表里“存在”，也不意味着通信库内部仍保有相同连接和内存描述。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "NIXL 的编程接口将加载和移除远端元数据分开：加载后才可向该对端发起传输，移除会使这种能力失效。运维因此需要把“网络恢复”和“本地通信状态恢复”作为两个检查点。（NIXL Python API）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文采用的诊断假设是：一次故障留下了状态分歧。若该假设成立，重启进程可能暂时消除症状，却掩盖真正需要恢复的对象。若故障是远端已换地址、换注册内存或永久离线，重载旧注册信息并不足以解决，应转入不同的故障处置路径。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "最终代码在 transfer worker 的异常处理末尾发起恢复，先经过既有失败批次处理，再检查受影响对端。检查依据是本批次捕获的 room_transfer_infos；发送方清除共享 room 表以后，这份局部引用仍可指出需要检查谁。恢复会清除旧的准备状态、载入已有注册元数据、重建目标描述符；重建失败则再次移除对端，保留以后重试的机会。锁和每对端一秒最小间隔限制重复尝试。（固定版本连接器）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "这里的“先处理失败批次”不能简化为“必然排空所有写入”。原有等待可能超时；此时仍不能发出安全释放确认，代码保留失败、poison 和等待超时的保护语义。恢复通信元数据与释放旧请求 KV 页是两项责任。"
+            },
+            {
+              "type": "diagram",
+              "title": "图一：两层状态分歧与准备状态的生命周期",
+              "caption": "原创源码抽象，非实测时间线。三条泳道与四个阶段对应同一对端；红色回路表示两层状态不一致造成的持续失败。恢复后续可用性不自动重放旧请求，也不证明旧 KV 已安全释放。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                6
+              ],
+              "nodes": [
+                {
+                  "id": "state-0-0",
+                  "label": "同一对端仍登记",
+                  "detail": "同一对端仍登记。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "已登记",
+                  "subtitle": "应用注册表",
+                  "tone": "control"
+                },
+                {
+                  "id": "state-0-1",
+                  "label": "同一对端可访问",
+                  "detail": "同一对端可访问。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "有效元数据",
+                  "subtitle": "NIXL 元数据",
+                  "tone": "communication"
+                },
+                {
+                  "id": "state-0-2",
+                  "label": "目标描述符可使用",
+                  "detail": "目标描述符可使用。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "准备有效",
+                  "subtitle": "目标描述符",
+                  "tone": "kv"
+                },
+                {
+                  "id": "state-1-0",
+                  "label": "应用仍保留登记",
+                  "detail": "应用仍保留登记。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "登记未删",
+                  "subtitle": "应用注册表",
+                  "tone": "control"
+                },
+                {
+                  "id": "state-1-1",
+                  "label": "NIXL 元数据失效",
+                  "detail": "NIXL 元数据失效。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "元数据失效",
+                  "subtitle": "NIXL 元数据",
+                  "tone": "danger"
+                },
+                {
+                  "id": "state-1-2",
+                  "label": "旧描述符不可依赖",
+                  "detail": "旧描述符不可依赖。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "旧准备失效",
+                  "subtitle": "目标描述符",
+                  "tone": "danger"
+                },
+                {
+                  "id": "state-2-0",
+                  "label": "已有登记仍可见",
+                  "detail": "已有登记仍可见。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "仍有登记",
+                  "subtitle": "应用注册表",
+                  "tone": "control"
+                },
+                {
+                  "id": "state-2-1",
+                  "label": "后续请求继续失败",
+                  "detail": "后续请求继续失败。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "继续失败",
+                  "subtitle": "NIXL 元数据",
+                  "tone": "danger"
+                },
+                {
+                  "id": "state-2-2",
+                  "label": "准备状态仍不可靠",
+                  "detail": "准备状态仍不可靠。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "准备不可靠",
+                  "subtitle": "目标描述符",
+                  "tone": "danger"
+                },
+                {
+                  "id": "state-3-0",
+                  "label": "读取已有登记",
+                  "detail": "读取已有登记。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "读取登记",
+                  "subtitle": "应用注册表",
+                  "tone": "control"
+                },
+                {
+                  "id": "state-3-1",
+                  "label": "重新载入元数据",
+                  "detail": "重新载入元数据。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "重新加载",
+                  "subtitle": "NIXL 元数据",
+                  "tone": "communication"
+                },
+                {
+                  "id": "state-3-2",
+                  "label": "重新准备目标描述符",
+                  "detail": "重新准备目标描述符。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "重新准备",
+                  "subtitle": "目标描述符",
+                  "tone": "kv"
+                },
+                {
+                  "id": "old-request-failed",
+                  "label": "触发故障的旧请求仍失败，不自动重放",
+                  "detail": "修复供后续传输使用；触发异常的请求已经走失败处理，恢复元数据不把该请求改写为成功。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "旧请求失败终点",
+                  "subtitle": "不连回成功路径",
+                  "tone": "danger"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "state-0-0",
+                  "to": "state-1-0",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-0-1",
+                  "to": "state-1-1",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-0-2",
+                  "to": "state-1-2",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-1-0",
+                  "to": "state-2-0",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-1-1",
+                  "to": "state-2-1",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-1-2",
+                  "to": "state-2-2",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-2-0",
+                  "to": "state-3-0",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-2-1",
+                  "to": "state-3-1",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-2-2",
+                  "to": "state-3-2",
+                  "label": "同一状态层进入下一阶段",
+                  "shortLabel": "下一阶段"
+                },
+                {
+                  "from": "state-2-1",
+                  "to": "state-1-1",
+                  "label": "没有重载时可能持续失败",
+                  "shortLabel": "失败回路"
+                },
+                {
+                  "from": "state-2-1",
+                  "to": "old-request-failed",
+                  "label": "触发请求保留失败结果",
+                  "shortLabel": "旧请求失败"
+                }
+              ],
+              "presentation": {
+                "kind": "state-lanes",
+                "panels": [
+                  {
+                    "title": "健康",
+                    "tone": "control",
+                    "nodeIds": [
+                      "state-0-0",
+                      "state-0-1",
+                      "state-0-2"
+                    ]
+                  },
+                  {
+                    "title": "断连后",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "state-1-0",
+                      "state-1-1",
+                      "state-1-2"
+                    ]
+                  },
+                  {
+                    "title": "后续请求",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "state-2-0",
+                      "state-2-1",
+                      "state-2-2"
+                    ]
+                  },
+                  {
+                    "title": "恢复后",
+                    "tone": "control",
+                    "nodeIds": [
+                      "state-3-0",
+                      "state-3-1",
+                      "state-3-2"
+                    ]
+                  },
+                  {
+                    "title": "旧请求独立终点",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-request-failed"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "diagram",
+              "title": "图二：失败结算与恢复承担不同责任",
+              "caption": "原创控制关系图，非运行时测量。四条泳道分离工作线程、旧句柄、room 清理和恢复。已结束与未确认是分支，不是串行完成事件；超时不产生 ACK，连接恢复不替旧请求 KV 出具释放证明。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3
+              ],
+              "nodes": [
+                {
+                  "id": "worker-exception",
+                  "label": "传输工作线程遇到异常",
+                  "detail": "异常进入既有失败处理；触发请求不会因为稍后的连接恢复而自动成功。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "传输异常",
+                  "subtitle": "失败批次入口",
+                  "tone": "danger"
+                },
+                {
+                  "id": "settlement-call",
+                  "label": "调用旧批次句柄结算处理",
+                  "detail": "先进行原有结算尝试，避免旧句柄后续失败再次按 agent 名使刚恢复的元数据失效。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "结算尝试",
+                  "subtitle": "先处理旧句柄",
+                  "tone": "control"
+                },
+                {
+                  "id": "captured-room",
+                  "label": "沿用本批次已捕获的 room_transfer_infos",
+                  "detail": "worker 在处理批次时已取得局部引用；共享 room 表之后被清理，不会抹去本次恢复所需对端列表。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "局部引用保留",
+                  "subtitle": "故障前已捕获",
+                  "tone": "control"
+                },
+                {
+                  "id": "failed-batch-done",
+                  "label": "既有失败批次处理结束后进入恢复",
+                  "detail": "两个结算分支都保留原有失败、poison 和超时保护语义，再调用恢复；结束处理不等于证实全部写入停止。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "失败处理结束",
+                  "subtitle": "超时语义不被覆盖",
+                  "tone": "control"
+                },
+                {
+                  "id": "old-pending",
+                  "label": "检查旧句柄是否已结算",
+                  "detail": "检查旧句柄状态；这是资源安全分支的依据，不读取后续请求成功来替代它。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "检查旧句柄",
+                  "subtitle": "可能仍在处理",
+                  "tone": "kv"
+                },
+                {
+                  "id": "old-settled",
+                  "label": "旧句柄确认已结束",
+                  "detail": "确认句柄结束仅是既有 drain ACK 判断的一部分，仍须满足 room 的其他 outstanding / abort 条件。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "确认已结束",
+                  "subtitle": "还须满足其他条件",
+                  "tone": "kv"
+                },
+                {
+                  "id": "old-timeout",
+                  "label": "未确认结束或等待超时",
+                  "detail": "超时可能留下未确认停写的请求；此分支没有指向安全释放 ACK 的箭头。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "未确认或超时",
+                  "subtitle": "保留保护状态",
+                  "tone": "danger"
+                },
+                {
+                  "id": "shared-room-clear",
+                  "label": "清理线程可删除共享 room 表",
+                  "detail": "共享表清理与 worker 捕获的局部 room_transfer_infos 是不同对象。图中的虚线表示引用仍保留，并非新建登记。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "共享表清理",
+                  "subtitle": "不删除局部引用",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "conditional-ack",
+                  "label": "按既有完整条件才允许 drain ACK",
+                  "detail": "仅在原有完整安全条件满足时 ACK；未确认或超时不进入此节点。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "有条件 ACK",
+                  "subtitle": "不能只看恢复成功",
+                  "tone": "kv"
+                },
+                {
+                  "id": "recovery-input",
+                  "label": "恢复逻辑读取局部对端信息",
+                  "detail": "失败批次处理后的恢复调用从局部引用识别对端，不依赖此时共享 room 表仍存在。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "读局部元数据",
+                  "subtitle": "后续连接责任",
+                  "tone": "communication"
+                },
+                {
+                  "id": "reload-following",
+                  "label": "恢复元数据与目标准备供后续请求使用",
+                  "detail": "重载和重建作用于后续连接可用性，与旧请求的失败结果和资源释放证明分离。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "恢复后续传输",
+                  "subtitle": "不证明旧 KV 安全",
+                  "tone": "communication"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "worker-exception",
+                  "to": "settlement-call",
+                  "label": "先处理失败批次",
+                  "shortLabel": "先结算"
+                },
+                {
+                  "from": "settlement-call",
+                  "to": "old-pending",
+                  "label": "检查旧句柄",
+                  "shortLabel": "检查"
+                },
+                {
+                  "from": "old-pending",
+                  "to": "old-settled",
+                  "label": "确认已结束分支",
+                  "shortLabel": "已结束"
+                },
+                {
+                  "from": "old-pending",
+                  "to": "old-timeout",
+                  "label": "未确认或超时分支",
+                  "shortLabel": "超时分支"
+                },
+                {
+                  "from": "old-settled",
+                  "to": "conditional-ack",
+                  "label": "满足其他既有条件才 ACK",
+                  "shortLabel": "其他条件"
+                },
+                {
+                  "from": "old-settled",
+                  "to": "failed-batch-done",
+                  "label": "完成既有失败处理",
+                  "shortLabel": "继续处理"
+                },
+                {
+                  "from": "old-timeout",
+                  "to": "failed-batch-done",
+                  "label": "保留失败和 poison，不发安全释放确认",
+                  "shortLabel": "保留保护"
+                },
+                {
+                  "from": "worker-exception",
+                  "to": "captured-room",
+                  "label": "沿用故障前已捕获的本批次引用",
+                  "shortLabel": "沿用引用"
+                },
+                {
+                  "from": "shared-room-clear",
+                  "to": "captured-room",
+                  "label": "删除共享表不抹掉局部引用",
+                  "shortLabel": "引用仍在"
+                },
+                {
+                  "from": "captured-room",
+                  "to": "recovery-input",
+                  "label": "传递局部元数据引用",
+                  "shortLabel": "局部引用"
+                },
+                {
+                  "from": "failed-batch-done",
+                  "to": "recovery-input",
+                  "label": "失败处理之后才恢复",
+                  "shortLabel": "再恢复"
+                },
+                {
+                  "from": "recovery-input",
+                  "to": "reload-following",
+                  "label": "调用重载并重建准备",
+                  "shortLabel": "重载重建"
+                }
+              ],
+              "presentation": {
+                "kind": "failure-settlement",
+                "panels": [
+                  {
+                    "title": "传输工作线程",
+                    "tone": "control",
+                    "nodeIds": [
+                      "worker-exception",
+                      "settlement-call",
+                      "captured-room",
+                      "failed-batch-done"
+                    ]
+                  },
+                  {
+                    "title": "旧句柄",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "old-pending",
+                      "old-settled",
+                      "old-timeout"
+                    ]
+                  },
+                  {
+                    "title": "room 清理线程",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "shared-room-clear",
+                      "conditional-ack"
+                    ]
+                  },
+                  {
+                    "title": "恢复逻辑",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "recovery-input",
+                      "reload-following"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "diagram",
+              "title": "图三：重建失败的回退状态机",
+              "caption": "原创源码控制流示意。分支覆盖登记、锁内复查、每对端冷却、旧准备清理、加载、重建与失败回退；循环只由后续失败触发。一秒为频率限制，不是后台定时器，也不是一秒内恢复承诺。健康旁路不经过重建。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3
+              ],
+              "nodes": [
+                {
+                  "id": "metadata-missing",
+                  "label": "遇到失效的远端元数据",
+                  "detail": "本次失败携带的对端成为检查对象；健康对端不需要重建。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "元数据缺失",
+                  "subtitle": "受影响对端",
+                  "tone": "danger"
+                },
+                {
+                  "id": "registration-check",
+                  "label": "检查是否仍持有对端登记",
+                  "detail": "decode_kv_args_table 中没有登记则跳过；已有登记是否代表新进程和新内存，仍需上层核验。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "登记仍在？",
+                  "subtitle": "无登记则跳过",
+                  "tone": "control"
+                },
+                {
+                  "id": "locked-recheck",
+                  "label": "进入锁后再次检查远端元数据",
+                  "detail": "锁内复查避免另一个尝试已经恢复后仍重复清理准备状态。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "锁内复查",
+                  "subtitle": "已恢复则旁路",
+                  "tone": "control"
+                },
+                {
+                  "id": "cooldown-check",
+                  "label": "检查每对端距离上次尝试的间隔",
+                  "detail": "使用 monotonic 时间和每对端一秒最小间隔；这里只跳过本次，不创建后台定时器或恢复 SLA。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "允许尝试？",
+                  "subtitle": "不足一秒跳过",
+                  "tone": "control"
+                },
+                {
+                  "id": "clear-prepared",
+                  "label": "清除旧准备缓存与分段记录",
+                  "detail": "清除 prep_handles、目标 slice 准备和 kv_xfer_segments，再加载登记与准备目标。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "清旧准备",
+                  "subtitle": "准备缓存 / 分段",
+                  "tone": "kv"
+                },
+                {
+                  "id": "load-saved",
+                  "label": "加载已有注册元数据",
+                  "detail": "add_remote_agent 使用已有登记的 agent_metadata；不能解决登记已过期的新进程或新注册内存。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "加载登记",
+                  "subtitle": "不是重新发现对端",
+                  "tone": "communication"
+                },
+                {
+                  "id": "prepare-target",
+                  "label": "重建目标描述符",
+                  "detail": "重新执行目标准备；此过程失败时不得保留半成品为已恢复状态。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "准备目标",
+                  "subtitle": "可能抛出异常",
+                  "tone": "communication"
+                },
+                {
+                  "id": "skip-attempt",
+                  "label": "本次跳过：无登记或处于冷却期",
+                  "detail": "本次函数跳过对应对端；未来有新失败才可能再进入，不宣称一秒内必然恢复。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "本次跳过",
+                  "subtitle": "无定时器重试",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "ready-next",
+                  "label": "恢复成功，供后续请求使用",
+                  "detail": "描述符准备完成后的可用性供后续传输使用；触发请求仍失败，旧 KV 仍须原安全证明。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "后续可用",
+                  "subtitle": "旧请求不重放",
+                  "tone": "communication"
+                },
+                {
+                  "id": "remove-again",
+                  "label": "准备失败后再次移除对端元数据",
+                  "detail": "准备失败时 remove_remote_agent，使后续失败仍可看到元数据缺失并重试，而非使用半成品。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "再次移除",
+                  "subtitle": "留给后续失败再试",
+                  "tone": "danger"
+                },
+                {
+                  "id": "healthy-bypass",
+                  "label": "健康或锁内已恢复的对端旁路",
+                  "detail": "没有失效或已被其他尝试恢复的对端直接跳过重建，其准备句柄保持不变。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "健康旁路",
+                  "subtitle": "不参加重建",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "metadata-missing",
+                  "to": "registration-check",
+                  "label": "从已有登记识别对端",
+                  "shortLabel": "查登记"
+                },
+                {
+                  "from": "registration-check",
+                  "to": "skip-attempt",
+                  "label": "登记不存在则跳过",
+                  "shortLabel": "无登记"
+                },
+                {
+                  "from": "registration-check",
+                  "to": "locked-recheck",
+                  "label": "持有登记且元数据缺失",
+                  "shortLabel": "有登记"
+                },
+                {
+                  "from": "registration-check",
+                  "to": "healthy-bypass",
+                  "label": "元数据仍健康时旁路",
+                  "shortLabel": "仍健康"
+                },
+                {
+                  "from": "locked-recheck",
+                  "to": "healthy-bypass",
+                  "label": "锁内已恢复时旁路",
+                  "shortLabel": "已恢复"
+                },
+                {
+                  "from": "locked-recheck",
+                  "to": "cooldown-check",
+                  "label": "仍缺失才检查间隔",
+                  "shortLabel": "仍缺失"
+                },
+                {
+                  "from": "cooldown-check",
+                  "to": "skip-attempt",
+                  "label": "最近一次尝试不足一秒",
+                  "shortLabel": "未满一秒"
+                },
+                {
+                  "from": "cooldown-check",
+                  "to": "clear-prepared",
+                  "label": "允许尝试才清旧准备",
+                  "shortLabel": "允许尝试"
+                },
+                {
+                  "from": "clear-prepared",
+                  "to": "load-saved",
+                  "label": "清旧准备后载入登记",
+                  "shortLabel": "加载"
+                },
+                {
+                  "from": "load-saved",
+                  "to": "prepare-target",
+                  "label": "重新准备目标",
+                  "shortLabel": "准备"
+                },
+                {
+                  "from": "prepare-target",
+                  "to": "ready-next",
+                  "label": "准备成功供后续使用",
+                  "shortLabel": "成功"
+                },
+                {
+                  "from": "prepare-target",
+                  "to": "remove-again",
+                  "label": "准备失败再次失效",
+                  "shortLabel": "失败"
+                },
+                {
+                  "from": "remove-again",
+                  "to": "metadata-missing",
+                  "label": "后续失败触发新的尝试，不是定时器",
+                  "shortLabel": "后续失败"
+                }
+              ],
+              "presentation": {
+                "kind": "peer-reload",
+                "panels": [
+                  {
+                    "title": "检查与限制",
+                    "tone": "control",
+                    "nodeIds": [
+                      "metadata-missing",
+                      "registration-check",
+                      "locked-recheck",
+                      "cooldown-check"
+                    ]
+                  },
+                  {
+                    "title": "重建动作",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "clear-prepared",
+                      "load-saved",
+                      "prepare-target"
+                    ]
+                  },
+                  {
+                    "title": "本次结果",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "skip-attempt",
+                      "ready-next",
+                      "remove-again"
+                    ]
+                  },
+                  {
+                    "title": "健康旁路",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "healthy-bypass"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这些图用于解释控制关系，不代表已经测得的时延。特别是一秒是尝试频率限制，不能标成“一秒内恢复”的服务承诺。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "PR 作者报告：CPU 检查通过 188 个相关测试和 50 个子测试。单节点 H200、Qwen3-0.6B 指定 revision、BF16、P 和 D 各 TP2、NIXL 1.4.1/UCX；关闭 CUDA graphs 与路由重试。两次在 P rank 0 移除原生远端元数据；基线的 12 个故障后请求全部失败，修复后仅两个触发请求失败，其余 10 个与健康对照的 token ID 一致。两组健康对照各通过 14 个冻结请求。真实网络超时和多节点不在该实验内。（原始 PR）"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "独立阅读最终测试可见，两条回归覆盖真实工作线程与重建入口：旧句柄失败使新一代登记失效的模拟、room 表被清理、健康对端准备句柄不变，以及准备失败后隔着冷却间隔再次恢复。测试使用 fake agent 模拟 NIXL 1.3.0 的行为，不能写成该版本的真实网络验收。（固定版本测试）"
+            },
+            {
+              "type": "table",
+              "caption": "证据：逐项证据与边界",
+              "columns": [
+                "证据层",
+                "已支持的判断",
+                "尚不支持的判断"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合并记录和固定提交",
+                    "main 已包含这次实现",
+                    "任意 wheel 或镜像已包含"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "CPU 回归",
+                    "关键清理与重建顺序可被检查",
+                    "真实 UCX 超时一定同样恢复"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者 H200 注入实验",
+                    "指定配置下后续请求恢复且输出一致",
+                    "H20、多节点、任意模型已验证"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "本站源码分析",
+                    "给出可执行的验证思路",
+                    "本站已经复现实验"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "恢复需要额外的元数据加载和描述符准备。它发生在失败分支，因此不能据此宣称正常路径吞吐提升，也不能从小规模注入实验推导故障期间的尾延迟。若大量请求同时撞向坏对端，失败、清理、重建尝试与排队会交织，冷却只是限制尝试频率的一部分。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对旧句柄先做处理，是为了避免刚恢复的登记又被旧失败状态破坏；重建失败后退回失效状态，则避免“元数据看似存在、准备状态却不完整”。这是保持可重试性的设计，仍需区分可恢复的瞬断与必须重新注册的新进程。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "不要为了绕过故障而轻率关闭 UCX 对端错误处理。NIXL 官方后端指南说明，ucx_error_handling_mode=none 会影响传输通道选择，同时失去其依赖的对端失败通知保证；这可能把明确报错变成未完成操作。（后端指南）"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产排查",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下是原创排查顺序，适用于自有隔离或获准的生产诊断，不是要求立即部署 main。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [
+                8
+              ],
+              "items": [
+                "固定运行镜像 digest、SGLang commit、NIXL/UCX 版本、P/D 拓扑与路由重试配置。先证明运行物包含目标代码，再分析恢复结果。",
+                "按 P rank、D agent 和请求关联日志，观察断连之后是否连续出现资源未找到；不要仅凭 NIXL_ERR_NOT_FOUND 单个错误就归因于本缺陷。官方定义中它也可能表示其他请求资源缺失。（错误参考）",
+                "核对受影响对端的登记是否仍有效，远端进程及其内存注册是否发生变化。记录恢复尝试、准备失败和后续请求成功的先后关系。",
+                "分别观察错误率恢复、请求输出正确性、KV 保留量回落。任何一个恢复，都不能替另外两个出具证明。",
+                "持续故障时保留明确的摘流、重新注册或重启处置步骤；在没有证据时，不把重复请求当作无限恢复机制。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "隔离实验",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议基线与候选只差目标提交，先关闭路由重试以暴露底层行为，再单独验证带重试的用户体验。冻结模型 revision、提示 token、采样参数与所有依赖。H20 实验必须单列结果，不借用 H200 结论。"
+            },
+            {
+              "type": "table",
+              "caption": "隔离实验：待执行设计与预定义条件",
+              "columns": [
+                "场景",
+                "受控变化",
+                "必须保存的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "健康对照",
+                    "不注入故障",
+                    "token ID、错误率、TTFT、完成时间"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "元数据失效",
+                    "已知对端删除一次",
+                    "触发请求及后续请求序列"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "旧句柄尚在处理",
+                    "故障时机移到批次中途",
+                    "结算、ACK、重载事件顺序"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "room 先清理",
+                    "放大并发清理窗口",
+                    "恢复仍指向正确 agent"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "重建暂时失败",
+                    "准备阶段受控失败后恢复",
+                    "无半成品状态、后续可重试"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "高频重复失效",
+                    "跨越及落入冷却间隔",
+                    "尝试次数、排队、资源占用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "多个对端",
+                    "只破坏一个",
+                    "健康对端无额外错误"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "对端真正重启",
+                    "新进程和新注册信息",
+                    "与原登记恢复路径的区别"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "网络故障注入应使用获准的测试集群，先约定影响面、恢复方法和停止条件。每组至少记录时间轴与原始响应，不能只看最终 HTTP 成功数。"
+            },
+            {
+              "type": "diagram",
+              "title": "图四：验收证据的三轨时间轴",
+              "caption": "原创待执行实验示意，无实测时刻或数值。共同观察注入、触发失败、恢复尝试和首次后续成功；通信、请求、KV 三轨按事件对齐。首次后续成功没有指向 KV 释放的箭头。性能采样按健康、恢复中、恢复后分窗，不平均掩盖故障窗口。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "observe-0-0",
+                  "label": "通信登记有效",
+                  "detail": "通信登记有效。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "登记有效",
+                  "subtitle": "通信状态",
+                  "tone": "communication"
+                },
+                {
+                  "id": "observe-0-1",
+                  "label": "健康请求输出对照",
+                  "detail": "健康请求输出对照。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "健康对照",
+                  "subtitle": "请求结果",
+                  "tone": "compute"
+                },
+                {
+                  "id": "observe-0-2",
+                  "label": "正常保留与释放",
+                  "detail": "正常保留与释放。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "正常生命周期",
+                  "subtitle": "KV / 释放",
+                  "tone": "kv"
+                },
+                {
+                  "id": "observe-1-0",
+                  "label": "元数据被移除",
+                  "detail": "元数据被移除。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "元数据失效",
+                  "subtitle": "通信状态",
+                  "tone": "danger"
+                },
+                {
+                  "id": "observe-1-1",
+                  "label": "触发请求失败",
+                  "detail": "触发请求失败。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "触发请求失败",
+                  "subtitle": "请求结果",
+                  "tone": "danger"
+                },
+                {
+                  "id": "observe-1-2",
+                  "label": "旧请求停写未确认",
+                  "detail": "旧请求停写未确认。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "停写未确认",
+                  "subtitle": "KV / 释放",
+                  "tone": "danger"
+                },
+                {
+                  "id": "observe-2-0",
+                  "label": "加载与准备尝试",
+                  "detail": "加载与准备尝试。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "恢复尝试",
+                  "subtitle": "通信状态",
+                  "tone": "communication"
+                },
+                {
+                  "id": "observe-2-1",
+                  "label": "后续请求仍需逐个核对",
+                  "detail": "后续请求仍需逐个核对。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "逐请求核对",
+                  "subtitle": "请求结果",
+                  "tone": "compute"
+                },
+                {
+                  "id": "observe-2-2",
+                  "label": "观察 ACK / poison",
+                  "detail": "观察 ACK / poison。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "检查释放条件",
+                  "subtitle": "KV / 释放",
+                  "tone": "kv"
+                },
+                {
+                  "id": "observe-3-0",
+                  "label": "后续通信可用",
+                  "detail": "后续通信可用。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "后续可用",
+                  "subtitle": "通信状态",
+                  "tone": "communication"
+                },
+                {
+                  "id": "observe-3-1",
+                  "label": "首次后续请求成功",
+                  "detail": "首次后续请求成功。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "首次后续成功",
+                  "subtitle": "请求结果",
+                  "tone": "compute"
+                },
+                {
+                  "id": "observe-3-2",
+                  "label": "仅有安全证据才释放",
+                  "detail": "仅有安全证据才释放。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "有条件释放",
+                  "subtitle": "KV / 释放",
+                  "tone": "kv"
+                },
+                {
+                  "id": "no-success-release",
+                  "label": "首次后续成功不是旧 KV 释放凭证",
+                  "detail": "时间轴对齐三轨，仅比较先后。性能分别采样健康、恢复中和恢复后；不把错误率、输出正确性和 KV 资源安全混成一个成功数。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "成功不替代 ACK",
+                  "subtitle": "健康 / 恢复中 / 恢复后分窗",
+                  "tone": "danger"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "observe-0-0",
+                  "to": "observe-1-0",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                },
+                {
+                  "from": "observe-0-1",
+                  "to": "observe-1-1",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                },
+                {
+                  "from": "observe-0-2",
+                  "to": "observe-1-2",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                },
+                {
+                  "from": "observe-1-0",
+                  "to": "observe-2-0",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                },
+                {
+                  "from": "observe-1-1",
+                  "to": "observe-2-1",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                },
+                {
+                  "from": "observe-1-2",
+                  "to": "observe-2-2",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                },
+                {
+                  "from": "observe-2-0",
+                  "to": "observe-3-0",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                },
+                {
+                  "from": "observe-2-1",
+                  "to": "observe-3-1",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                },
+                {
+                  "from": "observe-2-2",
+                  "to": "observe-3-2",
+                  "label": "建议记录同一轨道的下一事件",
+                  "shortLabel": "记录下一事件"
+                }
+              ],
+              "presentation": {
+                "kind": "state-lanes",
+                "panels": [
+                  {
+                    "title": "健康窗口",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "observe-0-0",
+                      "observe-0-1",
+                      "observe-0-2"
+                    ]
+                  },
+                  {
+                    "title": "故障注入",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "observe-1-0",
+                      "observe-1-1",
+                      "observe-1-2"
+                    ]
+                  },
+                  {
+                    "title": "恢复尝试",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "observe-2-0",
+                      "observe-2-1",
+                      "observe-2-2"
+                    ]
+                  },
+                  {
+                    "title": "后续首次成功",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "observe-3-0",
+                      "observe-3-1",
+                      "observe-3-2"
+                    ]
+                  },
+                  {
+                    "title": "独立证据边界",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "no-success-release"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下是建议标准，需在实验前结合自己的 SLO 定阈值，本文不虚构统一的恢复时间上限。"
+            },
+            {
+              "type": "table",
+              "caption": "验收：待执行设计与预定义条件",
+              "columns": [
+                "验收面",
+                "通过条件",
+                "失败或停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "版本身份",
+                    "commit 和依赖可追溯",
+                    "只有浮动标签"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复行为",
+                    "后续请求可恢复且无需重启 P",
+                    "持续资源未找到"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "输出正确性",
+                    "健康对照与候选按既定规则一致",
+                    "错误 token、NaN、跨请求污染"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "旧请求处理",
+                    "失败可追踪，重试不隐藏错误",
+                    "擅自把失败算成功"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源安全",
+                    "ACK 与释放满足既有条件",
+                    "未确认停写即复用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障隔离",
+                    "健康对端不受明显连带影响",
+                    "错误扩散或资源持续积累"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "恢复窗口满足预设 SLO",
+                    "冷却被误认为恢复 SLA"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "灰度扩大应以证据逐层推进：受控元数据失效、自己的硬件拓扑、获准的网络故障，再到真实负载。回滚也要记录登记与在途请求状态，不能只换回镜像便宣布收尾。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待确认",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "哪个后续正式版本及具体镜像将包含该提交；当前不把它归入 v0.5.21。",
+                "H20、多节点、真实网络超时、CUDA graphs 和生产模型负载下的恢复行为。",
+                "远端进程重启或注册内存变更时，已有登记是否仍有效，以及上层重新注册流程如何协作。",
+                "持续故障、准备失败和旧句柄超时同时出现时，重试节奏、错误放大与保留 KV 的上界。",
+                "路由重试开启后，是否产生额外成本或掩盖底层恢复失败。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本文最重要的运维结论是：恢复连接状态、处理失败请求、证明 KV 可安全复用，必须各自有证据。此次合并补上了第一项中的一个具体缺口；另外两项仍须沿现有生命周期和本地验收证明。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "h20-serving-slo",
     "kind": "analysis",
     "title": "从 271 tok/s 到可交付服务：H20 推理优化的工程读法",
