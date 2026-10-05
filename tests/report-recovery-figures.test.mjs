@@ -71,3 +71,50 @@ test('BF16 evidence never connects old pin to fixed builder or performance to a 
   }
 });
 
+const numericAttributes=text=>Object.fromEntries([...text.matchAll(/([a-z\d]+)="([\d.-]+)"/g)].map(m=>[m[1],Number(m[2])]));
+const boxesOverlap=(a,b)=>Math.max(a.x,b.x)<Math.min(a.x+a.width,b.x+b.width) && Math.max(a.y,b.y)<Math.min(a.y+a.height,b.y+b.height);
+const lineTouchesBox=(a,b,box)=>a[0]===b[0]
+  ? a[0]>=box.x && a[0]<=box.x+box.width && Math.max(Math.min(a[1],b[1]),box.y)<=Math.min(Math.max(a[1],b[1]),box.y+box.height)
+  : a[1]===b[1] && a[1]>=box.y && a[1]<=box.y+box.height && Math.max(Math.min(a[0],b[0]),box.x)<=Math.min(Math.max(a[0],b[0]),box.x+box.width);
+const arrowGeometry=svg=>({
+  cards:[...svg.matchAll(/<rect\b([^>]*rx="8"[^>]*)\/>/g)].map(m=>numericAttributes(m[1])),
+  arrows:[...svg.matchAll(/<polyline points="([^"]+)"/g)].map(m=>m[1].split(' ').map(p=>p.split(',').map(Number))),
+  labels:[...svg.matchAll(/<rect\b([^>]*rx="3"[^>]*)\/><text\b[^>]*>([^<]*)<\/text>/g)].map(m=>({...numericAttributes(m[1]),text:m[2]})),
+});
+test('settlement branches retain every label and route outside cards with separated recovery labels',()=>{
+  const f=fixtures.find(f=>f.presentation.kind==='failure-settlement');
+  for(const compact of [false,true]){
+    const svg=renderTechnicalFigure(f,{compact,id:'settlement-routing'})[0].svg;
+    const {cards,arrows,labels}=arrowGeometry(svg);
+    assert.equal(cards.length,f.nodes.length);assert.equal(arrows.length,f.edges.length);assert.equal(labels.length,f.edges.length);
+    for(const e of f.edges)assert.equal(labels.filter(l=>l.text===xml(e.shortLabel)).length,1,e.shortLabel);
+    for(const arrow of arrows)for(let i=1;i<arrow.length;i++)for(const card of cards)assert.ok(!lineTouchesBox(arrow[i-1],arrow[i],card),'arrow crosses card');
+    for(let i=0;i<labels.length;i++){
+      for(const card of cards)assert.ok(!boxesOverlap(labels[i],card),labels[i].text+' overlaps a card');
+      for(let j=i+1;j<labels.length;j++)assert.ok(!boxesOverlap(labels[i],labels[j]),labels[i].text+' / '+labels[j].text);
+      for(const arrow of arrows.slice(i+1))for(let j=1;j<arrow.length;j++)assert.ok(!lineTouchesBox(arrow[j-1],arrow[j],labels[i]),'later arrow crosses '+labels[i].text);
+    }
+  }
+});
+test('reload skip labels are distinct and deployment return stays clear of gate labels on both canvases',()=>{
+  for(const compact of [false,true]){
+    const reloadFigure=fixtures.find(f=>f.presentation.kind==='peer-reload');
+    const reload=arrowGeometry(renderTechnicalFigure(reloadFigure,{compact})[0].svg);
+    const selected=['无登记','未满一秒','仍缺失'].map(text=>reload.labels.find(l=>l.text===text));
+    assert.ok(selected.every(Boolean));
+    for(let i=0;i<selected.length;i++){
+      for(const card of reload.cards)assert.ok(!boxesOverlap(selected[i],card),selected[i].text);
+      for(let j=i+1;j<selected.length;j++)assert.ok(!boxesOverlap(selected[i],selected[j]));
+      const edgeIndex=reloadFigure.edges.findIndex(e=>e.shortLabel===selected[i].text);
+      for(const arrow of reload.arrows.slice(edgeIndex+1))for(let j=1;j<arrow.length;j++)assert.ok(!lineTouchesBox(arrow[j-1],arrow[j],selected[i]),'later arrow crosses '+selected[i].text);
+    }
+    const f=fixtures.find(f=>f.presentation.kind==='deployment-gates');
+    const gates=arrowGeometry(renderTechnicalFigure(f,{compact})[0].svg);
+    assert.equal(gates.arrows.length,f.edges.length);
+    const returning=gates.arrows[f.edges.findIndex(e=>e.from==='isolation-return')];
+    for(let i=1;i<returning.length;i++){
+      for(const card of gates.cards)assert.ok(!lineTouchesBox(returning[i-1],returning[i],card));
+      for(const label of gates.labels.filter(l=>l.text==='满足才继续'))assert.ok(!lineTouchesBox(returning[i-1],returning[i],label));
+    }
+  }
+});

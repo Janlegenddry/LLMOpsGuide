@@ -75,7 +75,47 @@ export function renderRecoveryFigure(diagram, { compact, id, canvas, figurePalet
         groups[col].nodes.forEach((n,i)=>put(c,pos,n,20+col*185,ys[i],162,78));
       });
     }
-    edges(c,pos);
+    // Fixed roles have dedicated gutters; long branches never traverse another card.
+    const [worker,settlement,captured,failed]=groups[0].nodes;
+    const [pending,settled,timeout]=groups[1].nodes;
+    const [cleared,ack]=groups[2].nodes;
+    const [input,reloaded]=groups[3].nodes;
+    const routes=new Map();
+    const route=(from,to,points,labelPoint,dashed=false)=>routes.set(from.id+'>'+to.id,{points,labelPoint,dashed});
+    if (compact) {
+      route(worker,settlement,[[160,139],[160,171]],[218,159]);
+      route(settlement,pending,[[160,265],[160,297]],[210,285]);
+      route(pending,settled,[[160,391],[160,423]],[218,411]);
+      route(pending,timeout,[[297,344],[305,344],[305,722],[297,722]],[259,657],true);
+      route(settled,ack,[[160,517],[160,549]],[218,537]);
+      route(settled,failed,[[23,470],[15,470],[15,1100],[23,1100]],[60,1040],true);
+      route(timeout,failed,[[297,722],[305,722],[305,1100],[297,1100]],[259,1040],true);
+      route(worker,captured,[[23,92],[3,92],[3,974],[23,974]],[60,914],true);
+      route(cleared,captured,[[160,895],[160,927]],[218,915],true);
+      route(captured,input,[[297,974],[317,974],[317,1226],[297,1226]],[259,1164],true);
+      route(failed,input,[[160,1147],[160,1179]],[97,1165]);
+      route(input,reloaded,[[160,1273],[160,1305]],[226,1291]);
+    } else {
+      route(worker,settlement,[[101,175],[101,197]],[142,190]);
+      route(settlement,pending,[[185,239],[202,239]],[193,191]);
+      route(pending,settled,[[286,281],[286,317]],[330,304]);
+      route(pending,timeout,[[370,239],[378,239],[378,420],[286,420],[286,437]],[434,286],true);
+      route(settled,ack,[[370,359],[387,359]],[431,312]);
+      route(settled,failed,[[202,359],[193,359],[193,603],[101,603],[101,617]],[132,602],true);
+      route(timeout,failed,[[286,521],[286,582],[101,582],[101,617]],[286,574],true);
+      route(worker,captured,[[17,133],[8,133],[8,519],[17,519]],[64,429],true);
+      route(cleared,captured,[[387,519],[378,519],[378,542],[193,542],[193,519],[185,519]],[286,535],true);
+      route(captured,input,[[185,519],[187,519],[187,610],[656,610],[656,617]],[471,598],true);
+      route(failed,input,[[185,659],[572,659]],[380,646]);
+      route(input,reloaded,[[656,701],[656,751]],[706,736]);
+    }
+    for (const e of diagram.edges) {
+      const r=routes.get(e.from+'>'+e.to);
+      if (!r) { edges(c,pos,[e]);continue; }
+      const a=byID.get(e.from),b=byID.get(e.to);
+      const tone=a.tone==='danger' || b.tone==='danger' ? 'danger' : a.tone || 'control';
+      c.line(r.points,e.shortLabel || '',tone,r.dashed,r.labelPoint);
+    }
     c.text(W/2,compact?1478:855,'超时不产生安全释放证明；恢复不重放旧请求',compact?12:14,'#ad6250');
     return [finish(c)];
   }
@@ -88,10 +128,19 @@ export function renderRecoveryFigure(diagram, { compact, id, canvas, figurePalet
     } else {
       [[groups[0].nodes[0],260,20,240],[groups[0].nodes[1],260,145,240],[groups[0].nodes[2],260,265,240],[groups[0].nodes[3],260,385,240],
        [groups[1].nodes[0],260,505,240],[groups[1].nodes[1],260,625,240],[groups[1].nodes[2],260,745,240],
-       [groups[2].nodes[0],20,385,180],[groups[2].nodes[1],552,625,180],[groups[2].nodes[2],552,745,180],[groups[3].nodes[0],552,20,180]]
+       [groups[2].nodes[0],20,385,172],[groups[2].nodes[1],552,625,180],[groups[2].nodes[2],552,745,180],[groups[3].nodes[0],552,20,180]]
         .forEach(([n,x,y,w])=>put(c,pos,n,x,y,w,80));
     }
-    edges(c,pos);
+    const registration=groups[0].nodes[1],cooldown=groups[0].nodes[3],skip=groups[2].nodes[0];
+    for (const e of diagram.edges) {
+      if (e.to!==skip.id || ![registration.id,cooldown.id].includes(e.from)) { edges(c,pos,[e]);continue; }
+      const missingRegistration=e.from===registration.id;
+      const points=compact
+        ? missingRegistration ? [[37,193],[12,193],[12,937],[37,937]] : [[283,441],[308,441],[308,937],[283,937]]
+        : missingRegistration ? [[257,185],[228,185],[228,350],[106,350],[106,382]] : [[257,425],[195,425]];
+      const labelPoint=compact ? missingRegistration ? [90,885] : [231,875] : missingRegistration ? [106,371] : [226,412];
+      c.line(points,e.shortLabel || '',byID.get(e.from).tone || 'control',missingRegistration || compact,labelPoint);
+    }
     c.text(W/2,compact?1435:887,'冷却只跳过本次；再试由后续失败触发',compact?13:15,'#ad6250');
     c.text(W/2,compact?1454:909,'一秒间隔 ≠ 后台定时器 ≠ 恢复 SLA',12,'#697985');
     return [finish(c)];
@@ -155,7 +204,12 @@ export function renderRecoveryFigure(diagram, { compact, id, canvas, figurePalet
     });
     put(c,pos,groups[1].nodes[0],compact?40:180,compact?536:274,compact?240:400,94,'danger');
     put(c,pos,groups[2].nodes[0],compact?40:180,compact?712:426,compact?240:400,94,'neutral');
-    edges(c,pos);
+    const isolation=groups[1].nodes[0],firstGate=groups[0].nodes[0];
+    for (const e of diagram.edges) {
+      if (e.from!==isolation.id || e.to!==firstGate.id) { edges(c,pos,[e]);continue; }
+      const points=compact ? [[160,633],[160,686],[8,686],[8,80],[37,80]] : [[583,321],[751,321],[751,43],[9,43],[9,116],[21,116]];
+      c.line(points,e.shortLabel || '','danger',true,compact ? [97,677] : [669,222]);
+    }
     c.text(W/2,compact?837:556,'性能对比是独立检查，不抵消数值失败',compact?12:15,'#ad6250');
     return [finish(c)];
   }
