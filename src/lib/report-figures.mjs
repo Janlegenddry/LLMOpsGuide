@@ -1,5 +1,6 @@
 // Original responsive technical figures. Coordinates and SVG markup are generated here,
 // never imported from a payload; every payload label is XML-escaped.
+import { renderRecoveryFigure } from './report-recovery-figures.mjs';
 export const figurePalette = {
   compute: ['#edf4fd', '#4776a8'], kv: ['#edf7f2', '#438779'],
   communication: ['#fff7e6', '#aa7d35'], control: ['#f3effa', '#8563a2'],
@@ -111,6 +112,8 @@ export function renderNumericalFigure(chart, { compact = false, id = 'numerical-
 }
 
 export function renderTechnicalFigure(diagram, { compact = false, id = 'technical-figure' } = {}) {
+  const recovery = renderRecoveryFigure(diagram, { compact, id, canvas, figurePalette });
+  if (recovery) return recovery;
   const { kind, panels } = diagram.presentation;
   const nodes = new Map(diagram.nodes.map(n => [n.id, n]));
   const groups = panels.map(p => ({ ...p, nodes: p.nodeIds.map(id => nodes.get(id)) }));

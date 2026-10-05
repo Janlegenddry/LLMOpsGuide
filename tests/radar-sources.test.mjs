@@ -17,7 +17,7 @@ test('all curated official source examples validate and display the correct proj
 });
 
 test('curated repositories allow release, PR and source paths but reject other repositories and lookalikes', () => {
-  for (const repo of ['vllm-project/vllm', 'vllm-project/vllm-ascend', 'flashinfer-ai/flashinfer', 'kvcache-ai/Mooncake', 'NVIDIA/nccl', 'pytorch/pytorch', 'triton-lang/triton', 'ai-dynamo/dynamo']) {
+  for (const repo of ['vllm-project/vllm', 'vllm-project/vllm-ascend', 'flashinfer-ai/flashinfer', 'kvcache-ai/Mooncake', 'NVIDIA/nccl', 'pytorch/pytorch', 'triton-lang/triton', 'ai-dynamo/dynamo', 'ai-dynamo/nixl']) {
     for (const path of ['/releases', '/pull/1', '/blob/main/README.md']) assert.doesNotThrow(() => sourceURL(`https://github.com/${repo}${path}`));
   }
   for (const url of [
@@ -26,6 +26,8 @@ test('curated repositories allow release, PR and source paths but reject other r
     'https://github.com/vllm-project/not-approved',
     'https://github.com/fork/vllm',
     'https://github.com/pytorch/serve',
+    'https://github.com/ai-dynamo/nixl-evil',
+    'https://github.com/ai-dynamo/not-approved',
     'https://github.com/vllm-project',
     'https://github.com/vllm-project/vllm%2Fprivate',
     'https://github.com/vllm-project/vllm/%2e%2e/private',
@@ -72,7 +74,7 @@ test('repository casing, anchors and trailing slashes canonicalize without chang
 
 test('individually verified CUDA, extension, wheel and API evidence permits only its exact page', () => {
   const exact = webSources.filter(s => s.exact);
-  assert.equal(exact.length, 8);
+  assert.equal(exact.length, 12);
   for (const s of exact) {
     const url = `https://${s.hostname}${s.path}`;
     assert.equal(sourceURL(url), url);

@@ -9,6 +9,7 @@ export const githubSources = [
   { repository: 'pytorch/pytorch', name: 'PyTorch' },
   { repository: 'triton-lang/triton', name: 'Triton' },
   { repository: 'ai-dynamo/dynamo', name: 'Dynamo' },
+  { repository: 'ai-dynamo/nixl', name: 'NIXL' },
 ];
 
 // A path matches the exact segment and its descendants, never a substring prefix.
@@ -36,6 +37,10 @@ export const webSources = [
   { hostname: 'download-r2.pytorch.org', path: '/whl/cu132/torch-2.14.1%2Bcu132-cp310-cp310-manylinux_2_28_x86_64.whl.metadata', exact: true, name: 'PyTorch 2.14.1 · Wheel Metadata' },
   { hostname: 'api.github.com', path: '/repos/pytorch/pytorch/releases/tags/v2.14.1', exact: true, name: 'PyTorch 2.14.1 · Release Metadata' },
   { hostname: 'api.github.com', path: '/repos/pytorch/pytorch/pulls/196351', exact: true, name: 'PyTorch #196351 · PR Metadata' },
+  { hostname: 'docs.nvidia.com', path: '/nixl/resources/troubleshooting', exact: true, name: 'NIXL · Troubleshooting' },
+  { hostname: 'docs.nvidia.com', path: '/cuda/cuda-math-api/cuda_math_api/struct____nv__bfloat16.html', exact: true, name: 'CUDA · BF16 Type' },
+  { hostname: 'docs.nvidia.com', path: '/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html', exact: true, name: 'CUDA · BF16 Constants' },
+  { hostname: 'api.github.com', path: '/repos/sgl-project/sglang/pulls/41691', exact: true, name: 'SGLang #41691 · Merge Metadata' },
 ];
 
 export const pathWithin = (pathname, prefix) => prefix === '/' || pathname === prefix || pathname.startsWith(`${prefix}/`);

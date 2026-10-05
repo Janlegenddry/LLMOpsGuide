@@ -21,5 +21,10 @@
   { "url": "https://docs.nvidia.com/dynamo/", "name": "Dynamo · Docs", "topics": ["服务调度", "PD 分离"] },
   { "url": "https://developer.nvidia.com/blog/", "name": "NVIDIA · Blog", "topics": ["GPU 通信", "推理编译"] },
   { "url": "https://pytorch.org/blog/", "name": "PyTorch · Blog", "topics": ["分布式训练", "推理编译"] },
-  { "url": "https://triton-lang.org", "name": "Triton · Docs", "topics": ["推理编译"] }
+  { "url": "https://triton-lang.org", "name": "Triton · Docs", "topics": ["推理编译"] },
+  {"url": "https://github.com/ai-dynamo/nixl", "name": "NIXL · GitHub", "topics": ["GPU 通信", "PD 分离"]},
+  {"url": "https://docs.nvidia.com/nixl/resources/troubleshooting", "name": "NIXL · Troubleshooting", "topics": ["GPU 通信", "故障分析"]},
+  {"url": "https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/struct____nv__bfloat16.html", "name": "CUDA · BF16 Type", "topics": ["推理编译"]},
+  {"url": "https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html", "name": "CUDA · BF16 Constants", "topics": ["推理编译"]},
+  {"url": "https://api.github.com/repos/sgl-project/sglang/pulls/41691", "name": "SGLang #41691 · Merge Metadata", "topics": ["SGLang", "PD 分离"]}
 ]

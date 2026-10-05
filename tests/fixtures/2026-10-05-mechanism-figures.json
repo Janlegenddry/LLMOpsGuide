@@ -1,0 +1,1474 @@
+[
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      6
+    ],
+    "title": "图一：两层状态分歧与准备状态的生命周期",
+    "caption": "原创源码抽象，非实测时间线。三条泳道与四个阶段对应同一对端；红色回路表示两层状态不一致造成的持续失败。恢复后续可用性不自动重放旧请求，也不证明旧 KV 已安全释放。",
+    "presentation": {
+      "kind": "state-lanes",
+      "panels": [
+        {
+          "title": "健康",
+          "tone": "control",
+          "nodeIds": [
+            "state-0-0",
+            "state-0-1",
+            "state-0-2"
+          ]
+        },
+        {
+          "title": "断连后",
+          "tone": "danger",
+          "nodeIds": [
+            "state-1-0",
+            "state-1-1",
+            "state-1-2"
+          ]
+        },
+        {
+          "title": "后续请求",
+          "tone": "danger",
+          "nodeIds": [
+            "state-2-0",
+            "state-2-1",
+            "state-2-2"
+          ]
+        },
+        {
+          "title": "恢复后",
+          "tone": "control",
+          "nodeIds": [
+            "state-3-0",
+            "state-3-1",
+            "state-3-2"
+          ]
+        },
+        {
+          "title": "旧请求独立终点",
+          "tone": "danger",
+          "nodeIds": [
+            "old-request-failed"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "state-0-0",
+        "label": "同一对端仍登记",
+        "shortLabel": "已登记",
+        "subtitle": "应用注册表",
+        "tone": "control",
+        "detail": "同一对端仍登记。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "state-0-1",
+        "label": "同一对端可访问",
+        "shortLabel": "有效元数据",
+        "subtitle": "NIXL 元数据",
+        "tone": "communication",
+        "detail": "同一对端可访问。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "state-0-2",
+        "label": "目标描述符可使用",
+        "shortLabel": "准备有效",
+        "subtitle": "目标描述符",
+        "tone": "kv",
+        "detail": "目标描述符可使用。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "state-1-0",
+        "label": "应用仍保留登记",
+        "shortLabel": "登记未删",
+        "subtitle": "应用注册表",
+        "tone": "control",
+        "detail": "应用仍保留登记。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "state-1-1",
+        "label": "NIXL 元数据失效",
+        "shortLabel": "元数据失效",
+        "subtitle": "NIXL 元数据",
+        "tone": "danger",
+        "detail": "NIXL 元数据失效。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "state-1-2",
+        "label": "旧描述符不可依赖",
+        "shortLabel": "旧准备失效",
+        "subtitle": "目标描述符",
+        "tone": "danger",
+        "detail": "旧描述符不可依赖。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "state-2-0",
+        "label": "已有登记仍可见",
+        "shortLabel": "仍有登记",
+        "subtitle": "应用注册表",
+        "tone": "control",
+        "detail": "已有登记仍可见。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "state-2-1",
+        "label": "后续请求继续失败",
+        "shortLabel": "继续失败",
+        "subtitle": "NIXL 元数据",
+        "tone": "danger",
+        "detail": "后续请求继续失败。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "state-2-2",
+        "label": "准备状态仍不可靠",
+        "shortLabel": "准备不可靠",
+        "subtitle": "目标描述符",
+        "tone": "danger",
+        "detail": "准备状态仍不可靠。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "state-3-0",
+        "label": "读取已有登记",
+        "shortLabel": "读取登记",
+        "subtitle": "应用注册表",
+        "tone": "control",
+        "detail": "读取已有登记。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "state-3-1",
+        "label": "重新载入元数据",
+        "shortLabel": "重新加载",
+        "subtitle": "NIXL 元数据",
+        "tone": "communication",
+        "detail": "重新载入元数据。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 2,
+        "row": 2
+      },
+      {
+        "id": "state-3-2",
+        "label": "重新准备目标描述符",
+        "shortLabel": "重新准备",
+        "subtitle": "目标描述符",
+        "tone": "kv",
+        "detail": "重新准备目标描述符。这是同一对端名字下的一个独立状态层，不能由另一个状态层的存在代替其有效性。",
+        "column": 3,
+        "row": 2
+      },
+      {
+        "id": "old-request-failed",
+        "label": "触发故障的旧请求仍失败，不自动重放",
+        "shortLabel": "旧请求失败终点",
+        "subtitle": "不连回成功路径",
+        "tone": "danger",
+        "detail": "修复供后续传输使用；触发异常的请求已经走失败处理，恢复元数据不把该请求改写为成功。",
+        "column": 0,
+        "row": 3
+      }
+    ],
+    "edges": [
+      {
+        "from": "state-0-0",
+        "to": "state-1-0",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-0-1",
+        "to": "state-1-1",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-0-2",
+        "to": "state-1-2",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-1-0",
+        "to": "state-2-0",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-1-1",
+        "to": "state-2-1",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-1-2",
+        "to": "state-2-2",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-2-0",
+        "to": "state-3-0",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-2-1",
+        "to": "state-3-1",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-2-2",
+        "to": "state-3-2",
+        "label": "同一状态层进入下一阶段",
+        "shortLabel": "下一阶段"
+      },
+      {
+        "from": "state-2-1",
+        "to": "state-1-1",
+        "label": "没有重载时可能持续失败",
+        "shortLabel": "失败回路"
+      },
+      {
+        "from": "state-2-1",
+        "to": "old-request-failed",
+        "label": "触发请求保留失败结果",
+        "shortLabel": "旧请求失败"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3
+    ],
+    "title": "图二：失败结算与恢复承担不同责任",
+    "caption": "原创控制关系图，非运行时测量。四条泳道分离工作线程、旧句柄、room 清理和恢复。已结束与未确认是分支，不是串行完成事件；超时不产生 ACK，连接恢复不替旧请求 KV 出具释放证明。",
+    "presentation": {
+      "kind": "failure-settlement",
+      "panels": [
+        {
+          "title": "传输工作线程",
+          "tone": "control",
+          "nodeIds": [
+            "worker-exception",
+            "settlement-call",
+            "captured-room",
+            "failed-batch-done"
+          ]
+        },
+        {
+          "title": "旧句柄",
+          "tone": "kv",
+          "nodeIds": [
+            "old-pending",
+            "old-settled",
+            "old-timeout"
+          ]
+        },
+        {
+          "title": "room 清理线程",
+          "tone": "neutral",
+          "nodeIds": [
+            "shared-room-clear",
+            "conditional-ack"
+          ]
+        },
+        {
+          "title": "恢复逻辑",
+          "tone": "communication",
+          "nodeIds": [
+            "recovery-input",
+            "reload-following"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "worker-exception",
+        "label": "传输工作线程遇到异常",
+        "shortLabel": "传输异常",
+        "subtitle": "失败批次入口",
+        "tone": "danger",
+        "detail": "异常进入既有失败处理；触发请求不会因为稍后的连接恢复而自动成功。",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "settlement-call",
+        "label": "调用旧批次句柄结算处理",
+        "shortLabel": "结算尝试",
+        "subtitle": "先处理旧句柄",
+        "tone": "control",
+        "detail": "先进行原有结算尝试，避免旧句柄后续失败再次按 agent 名使刚恢复的元数据失效。",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "captured-room",
+        "label": "沿用本批次已捕获的 room_transfer_infos",
+        "shortLabel": "局部引用保留",
+        "subtitle": "故障前已捕获",
+        "tone": "control",
+        "detail": "worker 在处理批次时已取得局部引用；共享 room 表之后被清理，不会抹去本次恢复所需对端列表。",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "failed-batch-done",
+        "label": "既有失败批次处理结束后进入恢复",
+        "shortLabel": "失败处理结束",
+        "subtitle": "超时语义不被覆盖",
+        "tone": "control",
+        "detail": "两个结算分支都保留原有失败、poison 和超时保护语义，再调用恢复；结束处理不等于证实全部写入停止。",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "old-pending",
+        "label": "检查旧句柄是否已结算",
+        "shortLabel": "检查旧句柄",
+        "subtitle": "可能仍在处理",
+        "tone": "kv",
+        "detail": "检查旧句柄状态；这是资源安全分支的依据，不读取后续请求成功来替代它。",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "old-settled",
+        "label": "旧句柄确认已结束",
+        "shortLabel": "确认已结束",
+        "subtitle": "还须满足其他条件",
+        "tone": "kv",
+        "detail": "确认句柄结束仅是既有 drain ACK 判断的一部分，仍须满足 room 的其他 outstanding / abort 条件。",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "old-timeout",
+        "label": "未确认结束或等待超时",
+        "shortLabel": "未确认或超时",
+        "subtitle": "保留保护状态",
+        "tone": "danger",
+        "detail": "超时可能留下未确认停写的请求；此分支没有指向安全释放 ACK 的箭头。",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "shared-room-clear",
+        "label": "清理线程可删除共享 room 表",
+        "shortLabel": "共享表清理",
+        "subtitle": "不删除局部引用",
+        "tone": "neutral",
+        "detail": "共享表清理与 worker 捕获的局部 room_transfer_infos 是不同对象。图中的虚线表示引用仍保留，并非新建登记。",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "conditional-ack",
+        "label": "按既有完整条件才允许 drain ACK",
+        "shortLabel": "有条件 ACK",
+        "subtitle": "不能只看恢复成功",
+        "tone": "kv",
+        "detail": "仅在原有完整安全条件满足时 ACK；未确认或超时不进入此节点。",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "recovery-input",
+        "label": "恢复逻辑读取局部对端信息",
+        "shortLabel": "读局部元数据",
+        "subtitle": "后续连接责任",
+        "tone": "communication",
+        "detail": "失败批次处理后的恢复调用从局部引用识别对端，不依赖此时共享 room 表仍存在。",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "reload-following",
+        "label": "恢复元数据与目标准备供后续请求使用",
+        "shortLabel": "恢复后续传输",
+        "subtitle": "不证明旧 KV 安全",
+        "tone": "communication",
+        "detail": "重载和重建作用于后续连接可用性，与旧请求的失败结果和资源释放证明分离。",
+        "column": 2,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "worker-exception",
+        "to": "settlement-call",
+        "label": "先处理失败批次",
+        "shortLabel": "先结算"
+      },
+      {
+        "from": "settlement-call",
+        "to": "old-pending",
+        "label": "检查旧句柄",
+        "shortLabel": "检查"
+      },
+      {
+        "from": "old-pending",
+        "to": "old-settled",
+        "label": "确认已结束分支",
+        "shortLabel": "已结束"
+      },
+      {
+        "from": "old-pending",
+        "to": "old-timeout",
+        "label": "未确认或超时分支",
+        "shortLabel": "超时分支"
+      },
+      {
+        "from": "old-settled",
+        "to": "conditional-ack",
+        "label": "满足其他既有条件才 ACK",
+        "shortLabel": "其他条件"
+      },
+      {
+        "from": "old-settled",
+        "to": "failed-batch-done",
+        "label": "完成既有失败处理",
+        "shortLabel": "继续处理"
+      },
+      {
+        "from": "old-timeout",
+        "to": "failed-batch-done",
+        "label": "保留失败和 poison，不发安全释放确认",
+        "shortLabel": "保留保护"
+      },
+      {
+        "from": "worker-exception",
+        "to": "captured-room",
+        "label": "沿用故障前已捕获的本批次引用",
+        "shortLabel": "沿用引用"
+      },
+      {
+        "from": "shared-room-clear",
+        "to": "captured-room",
+        "label": "删除共享表不抹掉局部引用",
+        "shortLabel": "引用仍在"
+      },
+      {
+        "from": "captured-room",
+        "to": "recovery-input",
+        "label": "传递局部元数据引用",
+        "shortLabel": "局部引用"
+      },
+      {
+        "from": "failed-batch-done",
+        "to": "recovery-input",
+        "label": "失败处理之后才恢复",
+        "shortLabel": "再恢复"
+      },
+      {
+        "from": "recovery-input",
+        "to": "reload-following",
+        "label": "调用重载并重建准备",
+        "shortLabel": "重载重建"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3
+    ],
+    "title": "图三：重建失败的回退状态机",
+    "caption": "原创源码控制流示意。分支覆盖登记、锁内复查、每对端冷却、旧准备清理、加载、重建与失败回退；循环只由后续失败触发。一秒为频率限制，不是后台定时器，也不是一秒内恢复承诺。健康旁路不经过重建。",
+    "presentation": {
+      "kind": "peer-reload",
+      "panels": [
+        {
+          "title": "检查与限制",
+          "tone": "control",
+          "nodeIds": [
+            "metadata-missing",
+            "registration-check",
+            "locked-recheck",
+            "cooldown-check"
+          ]
+        },
+        {
+          "title": "重建动作",
+          "tone": "communication",
+          "nodeIds": [
+            "clear-prepared",
+            "load-saved",
+            "prepare-target"
+          ]
+        },
+        {
+          "title": "本次结果",
+          "tone": "danger",
+          "nodeIds": [
+            "skip-attempt",
+            "ready-next",
+            "remove-again"
+          ]
+        },
+        {
+          "title": "健康旁路",
+          "tone": "neutral",
+          "nodeIds": [
+            "healthy-bypass"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "metadata-missing",
+        "label": "遇到失效的远端元数据",
+        "shortLabel": "元数据缺失",
+        "subtitle": "受影响对端",
+        "tone": "danger",
+        "detail": "本次失败携带的对端成为检查对象；健康对端不需要重建。",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "registration-check",
+        "label": "检查是否仍持有对端登记",
+        "shortLabel": "登记仍在？",
+        "subtitle": "无登记则跳过",
+        "tone": "control",
+        "detail": "decode_kv_args_table 中没有登记则跳过；已有登记是否代表新进程和新内存，仍需上层核验。",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "locked-recheck",
+        "label": "进入锁后再次检查远端元数据",
+        "shortLabel": "锁内复查",
+        "subtitle": "已恢复则旁路",
+        "tone": "control",
+        "detail": "锁内复查避免另一个尝试已经恢复后仍重复清理准备状态。",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "cooldown-check",
+        "label": "检查每对端距离上次尝试的间隔",
+        "shortLabel": "允许尝试？",
+        "subtitle": "不足一秒跳过",
+        "tone": "control",
+        "detail": "使用 monotonic 时间和每对端一秒最小间隔；这里只跳过本次，不创建后台定时器或恢复 SLA。",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "clear-prepared",
+        "label": "清除旧准备缓存与分段记录",
+        "shortLabel": "清旧准备",
+        "subtitle": "准备缓存 / 分段",
+        "tone": "kv",
+        "detail": "清除 prep_handles、目标 slice 准备和 kv_xfer_segments，再加载登记与准备目标。",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "load-saved",
+        "label": "加载已有注册元数据",
+        "shortLabel": "加载登记",
+        "subtitle": "不是重新发现对端",
+        "tone": "communication",
+        "detail": "add_remote_agent 使用已有登记的 agent_metadata；不能解决登记已过期的新进程或新注册内存。",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "prepare-target",
+        "label": "重建目标描述符",
+        "shortLabel": "准备目标",
+        "subtitle": "可能抛出异常",
+        "tone": "communication",
+        "detail": "重新执行目标准备；此过程失败时不得保留半成品为已恢复状态。",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "skip-attempt",
+        "label": "本次跳过：无登记或处于冷却期",
+        "shortLabel": "本次跳过",
+        "subtitle": "无定时器重试",
+        "tone": "neutral",
+        "detail": "本次函数跳过对应对端；未来有新失败才可能再进入，不宣称一秒内必然恢复。",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "ready-next",
+        "label": "恢复成功，供后续请求使用",
+        "shortLabel": "后续可用",
+        "subtitle": "旧请求不重放",
+        "tone": "communication",
+        "detail": "描述符准备完成后的可用性供后续传输使用；触发请求仍失败，旧 KV 仍须原安全证明。",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "remove-again",
+        "label": "准备失败后再次移除对端元数据",
+        "shortLabel": "再次移除",
+        "subtitle": "留给后续失败再试",
+        "tone": "danger",
+        "detail": "准备失败时 remove_remote_agent，使后续失败仍可看到元数据缺失并重试，而非使用半成品。",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "healthy-bypass",
+        "label": "健康或锁内已恢复的对端旁路",
+        "shortLabel": "健康旁路",
+        "subtitle": "不参加重建",
+        "tone": "neutral",
+        "detail": "没有失效或已被其他尝试恢复的对端直接跳过重建，其准备句柄保持不变。",
+        "column": 2,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "metadata-missing",
+        "to": "registration-check",
+        "label": "从已有登记识别对端",
+        "shortLabel": "查登记"
+      },
+      {
+        "from": "registration-check",
+        "to": "skip-attempt",
+        "label": "登记不存在则跳过",
+        "shortLabel": "无登记"
+      },
+      {
+        "from": "registration-check",
+        "to": "locked-recheck",
+        "label": "持有登记且元数据缺失",
+        "shortLabel": "有登记"
+      },
+      {
+        "from": "registration-check",
+        "to": "healthy-bypass",
+        "label": "元数据仍健康时旁路",
+        "shortLabel": "仍健康"
+      },
+      {
+        "from": "locked-recheck",
+        "to": "healthy-bypass",
+        "label": "锁内已恢复时旁路",
+        "shortLabel": "已恢复"
+      },
+      {
+        "from": "locked-recheck",
+        "to": "cooldown-check",
+        "label": "仍缺失才检查间隔",
+        "shortLabel": "仍缺失"
+      },
+      {
+        "from": "cooldown-check",
+        "to": "skip-attempt",
+        "label": "最近一次尝试不足一秒",
+        "shortLabel": "未满一秒"
+      },
+      {
+        "from": "cooldown-check",
+        "to": "clear-prepared",
+        "label": "允许尝试才清旧准备",
+        "shortLabel": "允许尝试"
+      },
+      {
+        "from": "clear-prepared",
+        "to": "load-saved",
+        "label": "清旧准备后载入登记",
+        "shortLabel": "加载"
+      },
+      {
+        "from": "load-saved",
+        "to": "prepare-target",
+        "label": "重新准备目标",
+        "shortLabel": "准备"
+      },
+      {
+        "from": "prepare-target",
+        "to": "ready-next",
+        "label": "准备成功供后续使用",
+        "shortLabel": "成功"
+      },
+      {
+        "from": "prepare-target",
+        "to": "remove-again",
+        "label": "准备失败再次失效",
+        "shortLabel": "失败"
+      },
+      {
+        "from": "remove-again",
+        "to": "metadata-missing",
+        "label": "后续失败触发新的尝试，不是定时器",
+        "shortLabel": "后续失败"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [],
+    "title": "图四：验收证据的三轨时间轴",
+    "caption": "原创待执行实验示意，无实测时刻或数值。共同观察注入、触发失败、恢复尝试和首次后续成功；通信、请求、KV 三轨按事件对齐。首次后续成功没有指向 KV 释放的箭头。性能采样按健康、恢复中、恢复后分窗，不平均掩盖故障窗口。",
+    "presentation": {
+      "kind": "state-lanes",
+      "panels": [
+        {
+          "title": "健康窗口",
+          "tone": "kv",
+          "nodeIds": [
+            "observe-0-0",
+            "observe-0-1",
+            "observe-0-2"
+          ]
+        },
+        {
+          "title": "故障注入",
+          "tone": "danger",
+          "nodeIds": [
+            "observe-1-0",
+            "observe-1-1",
+            "observe-1-2"
+          ]
+        },
+        {
+          "title": "恢复尝试",
+          "tone": "kv",
+          "nodeIds": [
+            "observe-2-0",
+            "observe-2-1",
+            "observe-2-2"
+          ]
+        },
+        {
+          "title": "后续首次成功",
+          "tone": "kv",
+          "nodeIds": [
+            "observe-3-0",
+            "observe-3-1",
+            "observe-3-2"
+          ]
+        },
+        {
+          "title": "独立证据边界",
+          "tone": "danger",
+          "nodeIds": [
+            "no-success-release"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "observe-0-0",
+        "label": "通信登记有效",
+        "shortLabel": "登记有效",
+        "subtitle": "通信状态",
+        "tone": "communication",
+        "detail": "通信登记有效。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "observe-0-1",
+        "label": "健康请求输出对照",
+        "shortLabel": "健康对照",
+        "subtitle": "请求结果",
+        "tone": "compute",
+        "detail": "健康请求输出对照。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "observe-0-2",
+        "label": "正常保留与释放",
+        "shortLabel": "正常生命周期",
+        "subtitle": "KV / 释放",
+        "tone": "kv",
+        "detail": "正常保留与释放。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "observe-1-0",
+        "label": "元数据被移除",
+        "shortLabel": "元数据失效",
+        "subtitle": "通信状态",
+        "tone": "danger",
+        "detail": "元数据被移除。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "observe-1-1",
+        "label": "触发请求失败",
+        "shortLabel": "触发请求失败",
+        "subtitle": "请求结果",
+        "tone": "danger",
+        "detail": "触发请求失败。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "observe-1-2",
+        "label": "旧请求停写未确认",
+        "shortLabel": "停写未确认",
+        "subtitle": "KV / 释放",
+        "tone": "danger",
+        "detail": "旧请求停写未确认。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "observe-2-0",
+        "label": "加载与准备尝试",
+        "shortLabel": "恢复尝试",
+        "subtitle": "通信状态",
+        "tone": "communication",
+        "detail": "加载与准备尝试。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "observe-2-1",
+        "label": "后续请求仍需逐个核对",
+        "shortLabel": "逐请求核对",
+        "subtitle": "请求结果",
+        "tone": "compute",
+        "detail": "后续请求仍需逐个核对。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "observe-2-2",
+        "label": "观察 ACK / poison",
+        "shortLabel": "检查释放条件",
+        "subtitle": "KV / 释放",
+        "tone": "kv",
+        "detail": "观察 ACK / poison。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "observe-3-0",
+        "label": "后续通信可用",
+        "shortLabel": "后续可用",
+        "subtitle": "通信状态",
+        "tone": "communication",
+        "detail": "后续通信可用。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "observe-3-1",
+        "label": "首次后续请求成功",
+        "shortLabel": "首次后续成功",
+        "subtitle": "请求结果",
+        "tone": "compute",
+        "detail": "首次后续请求成功。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 2,
+        "row": 2
+      },
+      {
+        "id": "observe-3-2",
+        "label": "仅有安全证据才释放",
+        "shortLabel": "有条件释放",
+        "subtitle": "KV / 释放",
+        "tone": "kv",
+        "detail": "仅有安全证据才释放。属于建议保存的观察证据，本站没有执行这个故障实验；不同轨道不得相互代替。",
+        "column": 3,
+        "row": 2
+      },
+      {
+        "id": "no-success-release",
+        "label": "首次后续成功不是旧 KV 释放凭证",
+        "shortLabel": "成功不替代 ACK",
+        "subtitle": "健康 / 恢复中 / 恢复后分窗",
+        "tone": "danger",
+        "detail": "时间轴对齐三轨，仅比较先后。性能分别采样健康、恢复中和恢复后；不把错误率、输出正确性和 KV 资源安全混成一个成功数。",
+        "column": 0,
+        "row": 3
+      }
+    ],
+    "edges": [
+      {
+        "from": "observe-0-0",
+        "to": "observe-1-0",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      },
+      {
+        "from": "observe-0-1",
+        "to": "observe-1-1",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      },
+      {
+        "from": "observe-0-2",
+        "to": "observe-1-2",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      },
+      {
+        "from": "observe-1-0",
+        "to": "observe-2-0",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      },
+      {
+        "from": "observe-1-1",
+        "to": "observe-2-1",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      },
+      {
+        "from": "observe-1-2",
+        "to": "observe-2-2",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      },
+      {
+        "from": "observe-2-0",
+        "to": "observe-3-0",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      },
+      {
+        "from": "observe-2-1",
+        "to": "observe-3-1",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      },
+      {
+        "from": "observe-2-2",
+        "to": "observe-3-2",
+        "label": "建议记录同一轨道的下一事件",
+        "shortLabel": "记录下一事件"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      0,
+      3,
+      5,
+      6
+    ],
+    "title": "图一：信息在表示转换的哪一步丢失",
+    "caption": "原创表示链图。固定源码解释旧路径与直接构造路径；1e-8、0.000000 与约 1.0012e-8 来自上游 L40S 复现，非本站测试。运行时张量加载单独列出，不自动归入编译期常量缺陷。本图不表达硬件性能。",
+    "presentation": {
+      "kind": "constant-paths",
+      "panels": [
+        {
+          "title": "编译期共用输入",
+          "tone": "control",
+          "nodeIds": [
+            "constant-input"
+          ]
+        },
+        {
+          "title": "旧文本构造",
+          "tone": "danger",
+          "nodeIds": [
+            "old-builder",
+            "decimal-text",
+            "bf16-zero"
+          ]
+        },
+        {
+          "title": "修复后直接构造",
+          "tone": "compute",
+          "nodeIds": [
+            "fixed-builder",
+            "direct-attribute",
+            "nearby-bf16"
+          ]
+        },
+        {
+          "title": "独立运行时路径",
+          "tone": "neutral",
+          "nodeIds": [
+            "runtime-tensor"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "constant-input",
+        "label": "编译期数值 1e-8",
+        "shortLabel": "编译期 1e-8",
+        "subtitle": "共用输入",
+        "tone": "control",
+        "detail": "Python 字面量或 constexpr 在编译期间已知；本图只讨论要求创建 BF16 标量常量的入口。",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "old-builder",
+        "label": "旧 BF16 builder",
+        "shortLabel": "旧 BF16 builder",
+        "subtitle": "编译期常量入口",
+        "tone": "compute",
+        "detail": "稳定标签 3.8.0 与被 pin 的 aad2a60 源码均存在该文本构造路径。",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "decimal-text",
+        "label": "std::to_string 先生成六位小数文本 0.000000",
+        "shortLabel": "0.000000",
+        "subtitle": "信息在这里丢失",
+        "tone": "danger",
+        "detail": "1e-8 在进入 BF16 正常舍入前就被六位小数文本变成零；这是中间表示丢失，而非 BF16 数值范围。",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "bf16-zero",
+        "label": "再解析目标浮点常量，得到 BF16 零",
+        "shortLabel": "BF16 零",
+        "subtitle": "GPU 无法恢复丢失值",
+        "tone": "danger",
+        "detail": "GPU 执行只接收已构造的常量，不能逆转编译阶段的文本信息丢失。",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "fixed-builder",
+        "label": "修复后的 BF16 builder",
+        "shortLabel": "修复 BF16 builder",
+        "subtitle": "11506fc 固定源码",
+        "tone": "compute",
+        "detail": "修复移除 std::to_string，将 float 值直接交给目标类型 FloatAttr 构造。",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "direct-attribute",
+        "label": "直接创建目标浮点属性",
+        "shortLabel": "直接构造",
+        "subtitle": "目标类型正常舍入",
+        "tone": "control",
+        "detail": "使用 getFloatAttr(type, v) 构建 arith ConstantOp，没有六位小数文本中间层。",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "nearby-bf16",
+        "label": "邻近非零 BF16 约 1.0012e-8",
+        "shortLabel": "约 1.0012e-8",
+        "subtitle": "上游复现数字",
+        "tone": "compute",
+        "detail": "数字来自 issue 作者的 L40S 复现和参考；本站没有运行 GPU 或验证目标 H20 的行为。",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "runtime-tensor",
+        "label": "独立的运行时张量加载与 cast 路径",
+        "shortLabel": "运行时张量加载",
+        "subtitle": "不能仅凭 dtype 推定覆盖",
+        "tone": "neutral",
+        "detail": "从设备内存读取已有 BF16 张量，不因 dtype 就重新经过同一文本 builder；仍需分析实际算子与前端分支。",
+        "column": 3,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "constant-input",
+        "to": "old-builder",
+        "label": "编译期输入走旧 builder",
+        "shortLabel": "旧路径"
+      },
+      {
+        "from": "constant-input",
+        "to": "fixed-builder",
+        "label": "编译期输入走修复 builder",
+        "shortLabel": "修复路径"
+      },
+      {
+        "from": "old-builder",
+        "to": "decimal-text",
+        "label": "文本构造先截断信息",
+        "shortLabel": "六位文本"
+      },
+      {
+        "from": "decimal-text",
+        "to": "bf16-zero",
+        "label": "文本解析到目标格式",
+        "shortLabel": "解析为零"
+      },
+      {
+        "from": "fixed-builder",
+        "to": "direct-attribute",
+        "label": "直接创建目标 FloatAttr",
+        "shortLabel": "直接构造"
+      },
+      {
+        "from": "direct-attribute",
+        "to": "nearby-bf16",
+        "label": "目标类型正常舍入",
+        "shortLabel": "正常舍入"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      0,
+      4,
+      5,
+      11,
+      12
+    ],
+    "title": "图二：版本显示、精确源码与实际产物分开核查",
+    "caption": "原创证据引用图；箭头不是时间先后。3.8.0 与 PyTorch pin 的 aad2a60 仍有旧 builder，11506fc 改为直接构造。实际安装产物统一留作待核查，不把“3.9”画为已修复区域，不用发布日期推断提交祖先关系。",
+    "presentation": {
+      "kind": "source-containment",
+      "panels": [
+        {
+          "title": "稳定标签",
+          "tone": "neutral",
+          "nodeIds": [
+            "stable-version",
+            "stable-builder"
+          ]
+        },
+        {
+          "title": "PyTorch 依赖 pin",
+          "tone": "control",
+          "nodeIds": [
+            "pytorch-pin-change",
+            "triton-pinned-sha",
+            "pinned-builder"
+          ]
+        },
+        {
+          "title": "修复提交",
+          "tone": "compute",
+          "nodeIds": [
+            "fix-commit",
+            "fix-builder"
+          ]
+        },
+        {
+          "title": "待核查产物",
+          "tone": "neutral",
+          "nodeIds": [
+            "installed-pending"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "stable-version",
+        "label": "稳定标签 Triton 3.8.0",
+        "shortLabel": "稳定标签 3.8.0",
+        "subtitle": "2026-08-28 发布",
+        "tone": "neutral",
+        "detail": "官方稳定版列表核对到 3.8.0；标签固定源码不是第三方回补包的包含证明。",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "stable-builder",
+        "label": "v3.8.0 固定源码仍有旧 BF16 builder",
+        "shortLabel": "仍有旧 builder",
+        "subtitle": "固定标签源码",
+        "tone": "danger",
+        "detail": "直接读取 v3.8.0 python/src/ir.cc 的 get_bf16，仍使用 std::to_string。",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "pytorch-pin-change",
+        "label": "PyTorch 5ba9627 更新 Triton pin",
+        "shortLabel": "PyTorch 5ba9627",
+        "subtitle": "标题涉及 3.9",
+        "tone": "control",
+        "detail": "2026-10-05 02:01:17 UTC 的 PyTorch 主分支提交，实际 pin 必须从文件读取。",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "triton-pinned-sha",
+        "label": "实际 pin 指向 Triton aad2a60",
+        "shortLabel": "Triton aad2a60",
+        "subtitle": "精确 commit",
+        "tone": "control",
+        "detail": "精确 commit 为 aad2a60d958f945420c5c40936b37d411fb02e89。这是 PyTorch pin 指向的精确 Triton 提交；比较 API 确认它在 11506fc 修复之前，不能用标题推断修复已纳入。",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "pinned-builder",
+        "label": "被 pin 的固定源码仍有旧 BF16 builder",
+        "shortLabel": "仍有旧 builder",
+        "subtitle": "已读取 ir.cc",
+        "tone": "danger",
+        "detail": "该提交 get_bf16 仍使用 std::to_string 的 APFloat 文本构造，pin 更新不是修复包含证据。",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "fix-commit",
+        "label": "修复提交 Triton 11506fc",
+        "shortLabel": "修复 11506fc",
+        "subtitle": "2026-10-04 主分支",
+        "tone": "compute",
+        "detail": "精确修复提交已包含于 Triton main；这仍不是正式稳定版本发布。",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "fix-builder",
+        "label": "固定修复源码直接构造目标属性",
+        "shortLabel": "直接构造",
+        "subtitle": "已读取补丁",
+        "tone": "compute",
+        "detail": "该提交移除文本往返，并增加 BF16 full 与乘法 constexpr 的针对性回归测试。",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "installed-pending",
+        "label": "实际安装的 wheel、扩展与镜像仍待核查",
+        "shortLabel": "实际产物待核查",
+        "subtitle": "来源 / 构建 / 行为分别证明",
+        "tone": "neutral",
+        "detail": "需要关联实际安装产物与固定源码或等效回补，并跑受控最小复现。三条上游引用不能自动为容器声明修复。",
+        "column": 3,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "stable-version",
+        "to": "stable-builder",
+        "label": "标签引用固定旧实现",
+        "shortLabel": "固定源码"
+      },
+      {
+        "from": "pytorch-pin-change",
+        "to": "triton-pinned-sha",
+        "label": "pin 文件引用精确 Triton 提交",
+        "shortLabel": "文件指向"
+      },
+      {
+        "from": "triton-pinned-sha",
+        "to": "pinned-builder",
+        "label": "读取该提交实际 builder",
+        "shortLabel": "固定源码"
+      },
+      {
+        "from": "fix-commit",
+        "to": "fix-builder",
+        "label": "修复补丁引用新实现",
+        "shortLabel": "固定源码"
+      },
+      {
+        "from": "stable-builder",
+        "to": "installed-pending",
+        "label": "核对实际产物是否来自该构建",
+        "shortLabel": "核对来源"
+      },
+      {
+        "from": "pinned-builder",
+        "to": "installed-pending",
+        "label": "核对实际产物是否来自该构建",
+        "shortLabel": "核对来源"
+      },
+      {
+        "from": "fix-builder",
+        "to": "installed-pending",
+        "label": "核对实际产物是否确实包含修复",
+        "shortLabel": "核对包含"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [],
+    "title": "图三：测试与上线的四道门",
+    "caption": "原创待执行验收流程，所有门均计划执行，没有绿色通过标志或测量数字。构建记录、逐值对照、真实算子精度与小范围运行观测各自形成证据；失败回隔离环境。性能对比独立，不能抵消数值失败。",
+    "presentation": {
+      "kind": "deployment-gates",
+      "panels": [
+        {
+          "title": "计划执行的四道门",
+          "tone": "control",
+          "nodeIds": [
+            "artifact-identity",
+            "minimum-semantics",
+            "business-correctness",
+            "limited-deployment"
+          ]
+        },
+        {
+          "title": "失败返回",
+          "tone": "danger",
+          "nodeIds": [
+            "isolation-return"
+          ]
+        },
+        {
+          "title": "独立性能检查",
+          "tone": "neutral",
+          "nodeIds": [
+            "performance-independent"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "artifact-identity",
+        "label": "计划执行：先证明产物身份",
+        "shortLabel": "产物身份",
+        "subtitle": "输出：构建记录",
+        "tone": "control",
+        "detail": "源码、wheel、C++ 扩展、镜像与缓存的身份可追溯，不能只看包版本名称。",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "minimum-semantics",
+        "label": "计划执行：验证最小常量语义",
+        "shortLabel": "最小常量语义",
+        "subtitle": "输出：逐值对照",
+        "tone": "control",
+        "detail": "用规定的 BF16 参考核对相关常量入口与位模式，普通值对照不能出现新增异常。",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "business-correctness",
+        "label": "计划执行：验证真实算子与业务精度",
+        "shortLabel": "真实算子与精度",
+        "subtitle": "输出：精度报告",
+        "tone": "control",
+        "detail": "证明候选实现被执行，并按预定义业务容差验证质量，不临时放宽标准。",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "limited-deployment",
+        "label": "计划执行：小范围上线并观察回滚",
+        "shortLabel": "小范围上线",
+        "subtitle": "输出：观测 / 回滚记录",
+        "tone": "control",
+        "detail": "前三门满足后再灰度；持续观察业务质量、服务指标，并验证完整产物组合可回滚。",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "isolation-return",
+        "label": "任何门失败：留在或返回隔离环境",
+        "shortLabel": "回到隔离环境",
+        "subtitle": "保存证据后修正",
+        "tone": "danger",
+        "detail": "任一门失败都保留最小输入、输出、构建与缓存记录；修正后重新证明身份和相关数值语义。",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "performance-independent",
+        "label": "性能对比独立执行，不能抵消数值失败",
+        "shortLabel": "性能独立检查",
+        "subtitle": "没有虚构测量值",
+        "tone": "neutral",
+        "detail": "性能用自己的负载与预定义 SLO 比较；吞吐或时延变好不能抵消数值语义或业务质量失败。",
+        "column": 1,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "artifact-identity",
+        "to": "minimum-semantics",
+        "label": "满足预设条件才进入下一门",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "minimum-semantics",
+        "to": "business-correctness",
+        "label": "满足预设条件才进入下一门",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "business-correctness",
+        "to": "limited-deployment",
+        "label": "满足预设条件才进入下一门",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "artifact-identity",
+        "to": "isolation-return",
+        "label": "本门未通过则回到隔离环境",
+        "shortLabel": "失败回隔离"
+      },
+      {
+        "from": "minimum-semantics",
+        "to": "isolation-return",
+        "label": "本门未通过则回到隔离环境",
+        "shortLabel": "失败回隔离"
+      },
+      {
+        "from": "business-correctness",
+        "to": "isolation-return",
+        "label": "本门未通过则回到隔离环境",
+        "shortLabel": "失败回隔离"
+      },
+      {
+        "from": "limited-deployment",
+        "to": "isolation-return",
+        "label": "本门未通过则回到隔离环境",
+        "shortLabel": "失败回隔离"
+      },
+      {
+        "from": "isolation-return",
+        "to": "artifact-identity",
+        "label": "修正之后从产物身份重新证明",
+        "shortLabel": "修正后重验"
+      }
+    ]
+  }
+]

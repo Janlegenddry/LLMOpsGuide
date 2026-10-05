@@ -4,7 +4,7 @@
 
 ## 精确 GitHub 仓库
 
-仅 `github.com` 下这九个 owner/repo：`sgl-project/sglang`、`vllm-project/vllm`、`vllm-project/vllm-ascend`、`flashinfer-ai/flashinfer`、`kvcache-ai/Mooncake`、`NVIDIA/nccl`、`pytorch/pytorch`、`triton-lang/triton`、`ai-dynamo/dynamo`。仓库根、发布、PR、代码路径均可作为公开证据；同组织的其他仓库、个人 fork 和同名前缀不放行。仓库名大小写规范化到来源表，避免大小写生成重复知识。
+仅 `github.com` 下这十个 owner/repo：`sgl-project/sglang`、`vllm-project/vllm`、`vllm-project/vllm-ascend`、`flashinfer-ai/flashinfer`、`kvcache-ai/Mooncake`、`NVIDIA/nccl`、`pytorch/pytorch`、`triton-lang/triton`、`ai-dynamo/dynamo`、`ai-dynamo/nixl`。仓库根、发布、PR、代码路径均可作为公开证据；同组织的其他仓库、个人 fork 和同名前缀不放行。仓库名大小写规范化到来源表，避免大小写生成重复知识。
 
 ## 精确网站及路径
 
@@ -48,3 +48,16 @@ wheel 只读取文本元数据，没有下载或执行二进制。API 路径用�
 保留 `SGLang`、`GPU 通信`、`KV Cache`、`PD 分离`、`投机解码`、`故障分析`，新增 `vLLM`、`NPU/昇腾`、`推理编译`、`服务调度`、`分布式训练`。每条仍最多六个主题，选择真实相关项，不强行给非 SGLang 文章打 SGLang 标签，不使用任意自由标签。
 
 继续使用 `schemaVersion: 1` 和完整 `report`；[完整报告接口](radar-report-format.md)及[既有发布通道](radar-publishing.md)不变。白名单扩展不会允许私有资料、凭证、无证据事实、缺失章节或静默截断，也不会增加抓取任务、调度、API 凭证或付费服务。未完成解读的内容继续显示“尚未解读”。
+
+## 2026-10-05 精确证据登记
+
+已读取 ai-dynamo/nixl 官方仓库的 Python API、Backend Guide 与 README，并固定到 ee4bddbbccfc80afe5bcea8e86727055fc908667。仅增加这个 owner/repo，不放行 ai-dynamo 整个组织、个人 fork 或相似名称。NVIDIA 官方 NIXL 故障参考和 CUDA Math API 13.4 的两个 BF16 页面经公开访问核对，只登记下列页面；PR API 用于区别提交时间与合并时间。
+
+| hostname | 精确 path |
+| --- | --- |
+| docs.nvidia.com | /nixl/resources/troubleshooting |
+| docs.nvidia.com | /cuda/cuda-math-api/cuda_math_api/struct____nv__bfloat16.html |
+| docs.nvidia.com | /cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html |
+| api.github.com | /repos/sgl-project/sglang/pulls/41691 |
+
+不扩大 CUDA / NIXL 整站或 GitHub API 范围，不改变 HTTPS、公网、凭证、查询参数、隐私及依据等级校验。PR / issue 的作者 CPU 或 GPU 成绩另以 attributed community 引用，不因位于官方仓库就作为本站实测。

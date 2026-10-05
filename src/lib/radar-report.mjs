@@ -4,6 +4,7 @@ export const reportSectionIDs = ['conclusion', 'background', 'mechanism', 'evide
 export const basisNames = { official: '官方事实', author: '作者报告结果', inference: '推导 / 教学示例', pending: '待验证' };
 export const figureKinds = { 'request-lanes': [2, 2, 5], lifecycle: [4, 4], boundary: [3, 3], 'cache-routing': [2, 2, 1], 'pipeline-loop': [3, 3], 'memory-budget': [1, 4, 1], 'decision-gates': [1, 1, 1, 1], paths: [2, 2], 'build-runtime': [3, 3, 3, 1], 'causal-branches': [1, 3, 3, 2], 'acceptance-gates': [6, 2], 'kv-map': [2, 1, 1, 2], 'kv-zeroing': [3, 3, 3, 1], 'release-gates': [4, 2] };
 const tones = ['compute', 'kv', 'communication', 'control', 'danger', 'neutral'];
+Object.assign(figureKinds, { 'state-lanes': [3, 3, 3, 3, 1], 'failure-settlement': [4, 3, 2, 2], 'peer-reload': [4, 3, 3, 1], 'constant-paths': [1, 3, 3, 1], 'source-containment': [2, 3, 2, 1], 'deployment-gates': [4, 1, 1] });
 
 // Only structured text and graph coordinates enter the renderer; no HTML or SVG payloads.
 export function validateReport(raw, sources, { keys, str, array, fail }) {
