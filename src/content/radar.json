@@ -1,6 +1,1419 @@
 [
   {
     "schemaVersion": 1,
+    "id": "dynamo-v1-5-1-operations",
+    "kind": "analysis",
+    "title": "Dynamo v1.5.1 运维解读",
+    "summary": "正式补丁优先核对过载后的状态恢复与 tokenizer-free 停止/取消边界。按标准 decode、sidecar 和媒体路径分别验收；一秒提示不是健康保证，已知限制仍需暂缓相应路径。",
+    "publishedAt": "2026-10-07",
+    "reviewedAt": "2026-10-07",
+    "topics": [
+      "SGLang",
+      "GPU 通信",
+      "PD 分离",
+      "KV Cache",
+      "服务调度",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Dynamo v1.5.1 正式发布与已知限制",
+        "url": "https://github.com/ai-dynamo/dynamo/releases/tag/v1.5.1",
+        "publishedAt": "2026-10-07",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "路由提示 PR #14210",
+        "url": "https://github.com/ai-dynamo/dynamo/pull/14210",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub 原 PR 作者",
+          "status": "attributed",
+          "note": "已阅读最终摘要和容器 A/B 作者报告：128 并发、3 成功/125 个 529、约 1.038 秒恢复与 24 个对照失败探针；硬件信息不足，未独立运行容器或 GPU。"
+        },
+        "publishedAt": "2026-09-02",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "最小生成长度与清理 PR #14276",
+        "url": "https://github.com/ai-dynamo/dynamo/pull/14276",
+        "publishedAt": "2026-09-03",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "GMS 初始入场超时 PR #14877",
+        "url": "https://github.com/ai-dynamo/dynamo/pull/14877",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub 原 PR 作者",
+          "status": "attributed",
+          "note": "已阅读最终收窄摘要及 CPU 验证说明：作者报告 79 passed、12 skipped；参数转发源码另外引用固定版本文件。未将 CPU 结果外推 GPU 故障转移。"
+        },
+        "publishedAt": "2026-09-15",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "v1.5.1 Client 状态与测试",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.5.1/lib/runtime/src/component/client.rs",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "v1.5.1 decode handler",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.5.1/components/src/dynamo/sglang/request_handlers/llm/decode_handler.py",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "v1.5.1 cancellation handler",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.5.1/components/src/dynamo/sglang/request_handlers/handler_base.py",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "v1.5.1 HTTP 配置说明",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.5.1/components/src/dynamo/common/http/README.md",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "v1.5.1 媒体引用校验",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.5.1/components/src/dynamo/common/http/url_validator.py",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "v1.5.1 远程引用落地与限制",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.5.1/components/src/dynamo/common/http/media_reference.py",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "v1.5.1 GMS 初始权重客户端固定源码",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.5.1/lib/gpu_memory_service/integrations/vllm/worker.py",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "PR #14210 固定合并提交",
+        "url": "https://github.com/ai-dynamo/dynamo/commit/bbbd97384cc8fb9c88e7fd2b1d92a8bf690e78e2",
+        "publishedAt": "2026-09-09",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "PR #14276 固定合并提交",
+        "url": "https://github.com/ai-dynamo/dynamo/commit/e5ef9d778b9b34a8ffaa7916162b897ccd55495a",
+        "publishedAt": "2026-09-17",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "PR #14877 固定合并提交",
+        "url": "https://github.com/ai-dynamo/dynamo/commit/4df3f3af83dd1e6ffd36d7c0a152b4efdd85f30f",
+        "publishedAt": "2026-09-16",
+        "accessedAt": "2026-10-07"
+      },
+      {
+        "title": "Dynamo v1.5.1 固定发布元数据",
+        "url": "https://api.github.com/repos/ai-dynamo/dynamo/releases/tags/v1.5.1",
+        "publishedAt": "2026-10-07",
+        "accessedAt": "2026-10-07"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "Dynamo v1.5.1 为 2026-10-07 交付的正式补丁，发布说明保留 SGLang sidecar 和 H.264 已知限制。",
+        "sourceIndices": [
+          0,
+          14
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "固定 Client 代码的一秒请求提示与监控过载独立；到期不等于 worker 健康或资源已排空。",
+        "sourceIndices": [
+          4
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "上游作者的容器恢复数字与 CPU 测试均未在本站复现，不补写未知 GPU 条件。",
+        "sourceIndices": [
+          1,
+          3
+        ]
+      }
+    ],
+    "questions": [
+      "提示过期、候选恢复和首个成功响应是否分开观测？",
+      "取消后每个候选 ID 与资源收敛是否可验证？",
+      "已知受限路径是否有明确暂停与回滚？"
+    ],
+    "related": [
+      {
+        "title": "SGLang NIXL 恢复机制与验证边界",
+        "path": "/radar/sglang-nixl-peer-reload/"
+      },
+      {
+        "title": "线上推理挂起排查",
+        "path": "/inference/sglang-hang-diagnosis/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "审阅截止：2026-10-07 17:23 UTC。本文是公开资料研究与原创验证方案，未运行 GPU、容器或生产 A/B 实验。 固定标签与官方 API 已独立交叉核对；图表均为原创控制关系或待执行流程，无本站 GPU/NPU 实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                14
+              ],
+              "text": "Dynamo v1.5.1 于 2026-10-07 01:54 UTC 发布，属于正式补丁版本。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                0
+              ],
+              "text": "此次最值得关注的是过载后重新接流的状态管理，以及 tokenizer-free SGLang 请求的停止与取消语义。适合把它作为恢复正确性升级评估；现有证据不足以给出通用吞吐提升比例。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                0
+              ],
+              "text": "建议按实际部署路径分组验证。标准 Python decode、sidecar、多模态和 GPU Memory Service 不能互相代替验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "尤其要注意：发布说明仍列出 SGLang sidecar 每次推理 HTTP 500 的已知问题，以及部分 H.264 输入造成 worker 崩溃的问题；两项修复目标均为 v1.6.0，不能把目标版本当成已经交付。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "推理服务出现“GPU 已空闲，客户端仍被拒绝”的情况时，算子耗时通常不是第一条排查线索。一次容量拒绝会改变路由侧对 worker 的判断；如果拒绝留下的状态没有及时失效，真正的压力已经消失，流量仍进不来。读懂这次补丁，需要把三个问题分开：worker 是否被发现、是否允许路由、当前是否被标记过载。这是本文的运维分析框架，不是新增的产品承诺。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "另一类问题发生在请求结束边界。客户端已经看到终止，并不等于后端所有并行分支都停止执行。对于最小生成长度、提前停止和多候选生成，必须分别观察输出语义、后端生成和资源释放，不能只看 HTTP 状态。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                11,
+                12,
+                13
+              ],
+              "text": "新增事实是 10 月 7 日的版本交付。相关上游 PR 在 9 月已有合并：路由 #14210 为 9 月 9 日，SGLang #14276 为 9 月 17 日，GMS #14877 为 9 月 16 日。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                3
+              ],
+              "text": "本文不将这些补丁描述为 10 月首次发现的问题。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制",
+          "blocks": [
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "v1.5.1 的 Client 源码保留两组信息：监控上报的过载集合，以及请求路径产生的过载截止时间。后者冷却常量为一秒。候选集合计算使用两类信息，清理到期提示不会顺便清除监控上报的过载状态。新监控更新也能提前替换请求提示；到期清理在读取路由快照时检查并协调，并非定时强制探活。发现列表变化时，相应状态随 worker 生命周期协调。",
+              "title": "请求路径过载提示与监控状态"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这意味着“一秒后提示过期”只恢复一次重新考虑该 worker 的机会。它不保证 worker 在一秒内完成排空，也不保证排队、网络、引擎或模型已经恢复。验收要分别设置“提示过期时刻”“再次选中时刻”和“首个成功响应时刻”，避免将不同阶段压成一个恢复时间。"
+            },
+            {
+              "type": "diagram",
+              "title": "图一：路由过载的双源状态",
+              "caption": "原创控制状态示意，不是性能时间线。请求提示的一秒来自固定代码；到期只清提示，监控过载保留自己的更新关系。可再次评估不是保证健康，也不是一秒排空或恢复 SLA。",
+              "basis": "inference",
+              "sourceIndices": [
+                4
+              ],
+              "nodes": [
+                {
+                  "id": "capacity-reject",
+                  "label": "容量拒绝",
+                  "detail": "容量拒绝给该 worker 设置请求路径提示。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "容量拒绝",
+                  "tone": "danger"
+                },
+                {
+                  "id": "request-hint",
+                  "label": "独立截止时间",
+                  "detail": "每个请求提示有自己的 deadline；代码冷却为一秒。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "独立截止时间",
+                  "subtitle": "代码：一秒提示",
+                  "tone": "control"
+                },
+                {
+                  "id": "monitor-update",
+                  "label": "监控上报",
+                  "detail": "监控更新替换监控集合，也可提前清空请求路径提示。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "监控上报",
+                  "tone": "kv"
+                },
+                {
+                  "id": "monitor-overload",
+                  "label": "监控过载集合",
+                  "detail": "请求提示到期不清除这里的过载状态。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "监控过载集合",
+                  "subtitle": "独立更新",
+                  "tone": "kv"
+                },
+                {
+                  "id": "candidate-filter",
+                  "label": "双源候选过滤",
+                  "detail": "合并两种过载来源，并继续遵守发现与可路由状态。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "双源候选过滤",
+                  "tone": "communication"
+                },
+                {
+                  "id": "hint-expiry",
+                  "label": "到期或监控更新",
+                  "detail": "读取路由快照时检查到期；监控更新也可替换提示。不是定时强制探活。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "到期或监控更新",
+                  "subtitle": "只清请求提示",
+                  "tone": "control"
+                },
+                {
+                  "id": "reconsider-worker",
+                  "label": "可再次评估",
+                  "detail": "提示失效给重新考虑 worker 的机会，仍须检查监控状态、路由与真实响应。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "可再次评估",
+                  "subtitle": "不保证健康",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "capacity-reject",
+                  "to": "request-hint",
+                  "label": "设置提示",
+                  "shortLabel": "设置提示"
+                },
+                {
+                  "from": "monitor-update",
+                  "to": "monitor-overload",
+                  "label": "更新监控",
+                  "shortLabel": "更新监控"
+                },
+                {
+                  "from": "request-hint",
+                  "to": "candidate-filter",
+                  "label": "请求提示",
+                  "shortLabel": "请求提示"
+                },
+                {
+                  "from": "monitor-overload",
+                  "to": "candidate-filter",
+                  "label": "监控状态",
+                  "shortLabel": "监控状态"
+                },
+                {
+                  "from": "request-hint",
+                  "to": "hint-expiry",
+                  "label": "核对截止",
+                  "shortLabel": "核对截止"
+                },
+                {
+                  "from": "monitor-update",
+                  "to": "hint-expiry",
+                  "label": "新更新替换",
+                  "shortLabel": "新更新替换"
+                },
+                {
+                  "from": "hint-expiry",
+                  "to": "candidate-filter",
+                  "label": "重算双源",
+                  "shortLabel": "重算双源"
+                },
+                {
+                  "from": "candidate-filter",
+                  "to": "reconsider-worker",
+                  "label": "其他状态允许",
+                  "shortLabel": "其他状态允许"
+                }
+              ],
+              "presentation": {
+                "kind": "overload-sources",
+                "panels": [
+                  {
+                    "title": "请求路径",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "capacity-reject",
+                      "request-hint"
+                    ]
+                  },
+                  {
+                    "title": "监控路径",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "monitor-update",
+                      "monitor-overload"
+                    ]
+                  },
+                  {
+                    "title": "过滤",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "candidate-filter"
+                    ]
+                  },
+                  {
+                    "title": "提示失效",
+                    "tone": "control",
+                    "nodeIds": [
+                      "hint-expiry"
+                    ]
+                  },
+                  {
+                    "title": "验证边界",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "reconsider-worker"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "已发布的 decode handler 在无 tokenizer 的 token 请求路径中，遇到正的 min_tokens 且 skip_tokenizer_init 开启时，不再向 SGLang 传递正的 min_new_tokens，并让引擎忽略 EOS、移除该路径的引擎 stop token 集，交由 Dynamo decoder 判定结束。max_tokens 仍进入后端参数。",
+              "title": "tokenizer-free 路径的最小长度与退出"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "PR 明确把最小长度兼容限定在非 native 的 DecodeWorkerHandler token 路径；不应外推到 sidecar、native passthrough 或专用多模态 lowering。它还说明 chunk 内停止时需对齐截断 token 相关字段，并忽略已经完成候选的后续 chunk。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5,
+                6
+              ],
+              "text": "取消逻辑通过每个候选的后端 ID 跟踪未完成集合，已经完成的 ID 从集合移除。token 与 text 流退出时均有取消清理，取消后迟到的 ID 也需要处理。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                5,
+                6
+              ],
+              "text": "这是后端代码中的请求级清理设计，不等于已经证明 KV、显存和所有外部传输在任意故障下都无泄漏。"
+            },
+            {
+              "type": "diagram",
+              "title": "图二：多候选请求的输出与取消边界",
+              "caption": "原创关系图，A/B/C 代表并行候选，不是三个串行阶段。停止输出、后端完成、调用 abort 与资源收敛是不同观测点；资源回落必须实测，本文没有运行 GPU 验证。",
+              "basis": "inference",
+              "sourceIndices": [
+                5,
+                6
+              ],
+              "nodes": [
+                {
+                  "id": "parallel-request",
+                  "label": "一个请求 n 候选",
+                  "detail": "一个请求可以有多个独立后端 choice ID。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "一个请求 n 候选",
+                  "tone": "control"
+                },
+                {
+                  "id": "choice-a",
+                  "label": "候选 A",
+                  "detail": "A 在 Dynamo decoder 到达本地停止条件。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "候选 A",
+                  "subtitle": "到达本地停止",
+                  "tone": "compute"
+                },
+                {
+                  "id": "choice-b",
+                  "label": "候选 B",
+                  "detail": "A 结束时 B 仍可能执行。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "候选 B",
+                  "subtitle": "仍在执行",
+                  "tone": "compute"
+                },
+                {
+                  "id": "choice-c",
+                  "label": "候选 C",
+                  "detail": "A 结束时 C 仍可能执行。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "候选 C",
+                  "subtitle": "仍在执行",
+                  "tone": "compute"
+                },
+                {
+                  "id": "local-output-stop",
+                  "label": "停止对外输出",
+                  "detail": "本地已完成 choice 的后续 chunk 被忽略；不据此宣称后端资源已释放。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "停止对外输出",
+                  "tone": "control"
+                },
+                {
+                  "id": "unfinished-ids",
+                  "label": "未完成 ID 集合",
+                  "detail": "流中观察到的后端 ID 加入 live set，后端 finish_reason 删除相应 ID。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "未完成 ID 集合",
+                  "tone": "kv"
+                },
+                {
+                  "id": "remove-finished",
+                  "label": "完成事件删 ID",
+                  "detail": "由后端完成事件删除对应 ID；本地停止对外输出不是独立的资源释放证明。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "完成事件删 ID",
+                  "tone": "kv"
+                },
+                {
+                  "id": "cancel-or-close",
+                  "label": "取消或流关闭",
+                  "detail": "取消、退出及流关闭清理可能与首包到达竞态。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "取消或流关闭",
+                  "tone": "danger"
+                },
+                {
+                  "id": "abort-by-id",
+                  "label": "逐 ID abort",
+                  "detail": "逐个 abort 已观察到且未完成的后端 ID。调用不等于资源已回落。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "逐 ID abort",
+                  "tone": "danger"
+                },
+                {
+                  "id": "late-choice-id",
+                  "label": "迟到首包 ID",
+                  "detail": "新的后端 ID 可能在取消监控触发之后出现；记录后再次检查已停止上下文。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "迟到首包 ID",
+                  "tone": "control"
+                },
+                {
+                  "id": "resource-observation",
+                  "label": "验证活动与资源",
+                  "detail": "待测引擎活动请求、显存/KV 与后续请求隔离；池化内存口径应单独解释。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "验证活动与资源",
+                  "subtitle": "尚未执行",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "parallel-request",
+                  "to": "choice-a",
+                  "label": "A 分支",
+                  "shortLabel": "A 分支"
+                },
+                {
+                  "from": "parallel-request",
+                  "to": "choice-b",
+                  "label": "B 分支",
+                  "shortLabel": "B 分支"
+                },
+                {
+                  "from": "parallel-request",
+                  "to": "choice-c",
+                  "label": "C 分支",
+                  "shortLabel": "C 分支"
+                },
+                {
+                  "from": "choice-a",
+                  "to": "local-output-stop",
+                  "label": "本地停止",
+                  "shortLabel": "本地停止"
+                },
+                {
+                  "from": "choice-a",
+                  "to": "unfinished-ids",
+                  "label": "记录 A ID",
+                  "shortLabel": "记录 A ID"
+                },
+                {
+                  "from": "choice-b",
+                  "to": "unfinished-ids",
+                  "label": "记录 B ID",
+                  "shortLabel": "记录 B ID"
+                },
+                {
+                  "from": "choice-c",
+                  "to": "unfinished-ids",
+                  "label": "记录 C ID",
+                  "shortLabel": "记录 C ID"
+                },
+                {
+                  "from": "local-output-stop",
+                  "to": "remove-finished",
+                  "label": "另查完成事件",
+                  "shortLabel": "另查完成事件"
+                },
+                {
+                  "from": "remove-finished",
+                  "to": "unfinished-ids",
+                  "label": "删除完成 ID",
+                  "shortLabel": "删除完成 ID"
+                },
+                {
+                  "from": "cancel-or-close",
+                  "to": "abort-by-id",
+                  "label": "触发清理",
+                  "shortLabel": "触发清理"
+                },
+                {
+                  "from": "unfinished-ids",
+                  "to": "abort-by-id",
+                  "label": "未完成 ID",
+                  "shortLabel": "未完成 ID"
+                },
+                {
+                  "from": "late-choice-id",
+                  "to": "unfinished-ids",
+                  "label": "记录迟到 ID",
+                  "shortLabel": "记录迟到 ID"
+                },
+                {
+                  "from": "late-choice-id",
+                  "to": "abort-by-id",
+                  "label": "已取消时补 abort",
+                  "shortLabel": "已取消时补 abort"
+                },
+                {
+                  "from": "abort-by-id",
+                  "to": "resource-observation",
+                  "label": "实测资源回落",
+                  "shortLabel": "实测资源回落"
+                }
+              ],
+              "presentation": {
+                "kind": "choice-cleanup",
+                "panels": [
+                  {
+                    "title": "请求",
+                    "tone": "control",
+                    "nodeIds": [
+                      "parallel-request"
+                    ]
+                  },
+                  {
+                    "title": "并行候选",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "choice-a",
+                      "choice-b",
+                      "choice-c"
+                    ]
+                  },
+                  {
+                    "title": "对外输出",
+                    "tone": "control",
+                    "nodeIds": [
+                      "local-output-stop"
+                    ]
+                  },
+                  {
+                    "title": "ID 状态",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "unfinished-ids"
+                    ]
+                  },
+                  {
+                    "title": "完成事件",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "remove-finished"
+                    ]
+                  },
+                  {
+                    "title": "退出信号",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "cancel-or-close"
+                    ]
+                  },
+                  {
+                    "title": "清理调用",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "abort-by-id"
+                    ]
+                  },
+                  {
+                    "title": "迟到首包",
+                    "tone": "control",
+                    "nodeIds": [
+                      "late-choice-id"
+                    ]
+                  },
+                  {
+                    "title": "实测边界",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "resource-observation"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                10
+              ],
+              "text": "GMS #14877 将操作者已经配置的 gms_ro_connect_timeout_ms 传到初始 vLLM 权重客户端创建。没有配置时仍可能无界等待。最终补丁没有新增默认超时，也没有证明或修复一个通用死锁。PR 中早期方案比最终范围大，阅读历史时应采用最终摘要与发布结果。",
+              "title": "权重入场超时的边界"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "关键证据",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "关键证据：证据与边界",
+              "columns": [
+                "证据",
+                "已核对事实",
+                "不能据此推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正式发布 v1.5.1",
+                    "10 月 7 日交付，列明所含修复与已知问题",
+                    "所有后端路径均已可用"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    14
+                  ]
+                },
+                {
+                  "cells": [
+                    "#14210 作者实验",
+                    "同样 128 并发，两组先均得到 3 个成功和 125 个 529；补丁组约 1.038 秒恢复，对照的 24 次恢复探针均失败",
+                    "任意 GPU、模型或负载都按同样时间恢复"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "版本固定 Client 代码",
+                    "一秒请求提示，与监控过载状态分开",
+                    "一秒 TTL 是健康检查或排空期限"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "#14276 与版本固定 handler",
+                    "限定路径的参数转换，以及并行候选清理",
+                    "sidecar 问题随之解决"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    5,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "#14877",
+                    "初始权重加载传递已配置超时；作者报告 CPU 测试",
+                    "GPU 故障转移已经端到端验证"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    3
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                3
+              ],
+              "text": "表中实验数字均为上游作者自报，本文未复现；#14210 页面没有给出足以将该结果归因于特定 GPU 的完整硬件条件，故不补写硬件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "发布说明给出的关键运行时为 SGLang v0.5.18、TensorRT-LLM v1.3.0rc25、vLLM v0.28.0；对应 CUDA 为 13.0、13.1、13.0。SGLang sidecar 问题虽在上游 SGLang v0.5.19 修正，但这不能改变 v1.5.1 所捆绑版本的已知限制。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "过载提示的自动失效降低“永远拒绝”的风险，但重新尝试可能发生在 worker 尚未恢复时。因而应同时关注恢复速度与重复拒绝数量，而不是只追求更短冷却。这里是机制推导，未声称存在新的可调参数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                2
+              ],
+              "text": "为了保证最小生成长度，Dynamo 接手停止判定后，后端可能继续生成最终不会交付给用户的 token。这使输出正确性、生成开销和取消响应成为同一个实验中的三个维度。客户端 token 数少并不能证明后端计算少。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "HTTP 客户端现在统一到 aiohttp。固定版本的 HTTP 说明指出，旧的 httpx 专用连接参数仍被接受但被忽略；保留旧环境变量不代表保留原行为。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                7
+              ],
+              "text": "建议迁移前导出实际生效配置，再对远程媒体扇出请求单独压测，不引用其他业务的 HTTP benchmark 作为本服务收益。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产故障关联与部署兼容",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "媒体请求经过环境代理时，升级可能变成明确拒绝。DYN_MM_TRUST_EGRESS_PROXY=1 表示部署方信任代理自己执行目标访问策略；它不只是一个消除错误的开关。NO_PROXY 命中的直连情况有不同路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                7
+              ],
+              "text": "应由部署与安全负责人确认实际出口，避免为了恢复请求而放宽全局策略。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8,
+                9
+              ],
+              "text": "SGLang diffusion 的本地 input_reference 需要配置 DYN_MM_LOCAL_PATH 允许目录。远程引用先落临时文件后交给生成器；下载默认上限为 64 MiB，由 DYN_MM_MAX_FILE_SIZE_MB 调整。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                8,
+                9
+              ],
+              "text": "应验证容器内路径、挂载和临时存储，不把宿主机目录写法直接照搬。"
+            },
+            {
+              "type": "table",
+              "caption": "生产故障关联与部署兼容（原创方案，尚未执行）",
+              "columns": [
+                "现象",
+                "先查看什么",
+                "原创诊断问题"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "worker 空闲但持续 529",
+                    "请求拒绝、监控负载、路由候选快照",
+                    "是未过期提示、持续监控过载，还是另一个准入层？"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "min_tokens 请求生成前失败",
+                    "handler 类型、tokenizer 设置、采样参数",
+                    "请求是否真的走到修复涵盖的路径？"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "用户断开后 GPU 仍忙",
+                    "每个 choice 的后端 ID 与 abort 记录",
+                    "有迟到候选、另一个请求，还是清理未完成？"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GMS 启动长期等待",
+                    "超时是否配置、初始入场日志",
+                    "配置是否传入初始权重路径，而非仅后续重映射？"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级后本地媒体被拒绝",
+                    "容器内允许目录与实际引用",
+                    "目录边界是否匹配真实挂载？"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "sidecar 全部 HTTP 500",
+                    "精确版本与错误栈",
+                    "是否命中发布说明保留的问题？"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "diagram",
+              "title": "图三：按部署路径检查兼容性",
+              "caption": "原创升级分流建议，尚未执行。各启用路径独立验收；命中 SGLang sidecar 或已知 H.264 限制时应暂缓相应路径，v1.6.0 只是目标版本。汇入验收不表示已经通过。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                7,
+                8,
+                9
+              ],
+              "nodes": [
+                {
+                  "id": "upgrade-plan",
+                  "label": "计划升级 v1.5.1",
+                  "detail": "固定发布事件；先识别实际使用的部署路径。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "计划升级 v1.5.1",
+                  "tone": "control"
+                },
+                {
+                  "id": "standard-decode",
+                  "label": "标准 decode",
+                  "detail": "标准 Python token decode 与 native/sidecar/MM 不互相代替。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "标准 decode",
+                  "tone": "compute"
+                },
+                {
+                  "id": "tokenizer-check",
+                  "label": "核对 tokenizer",
+                  "detail": "核对正 min_tokens、skip_tokenizer_init 及停止字段实际路径。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "核对 tokenizer",
+                  "tone": "control"
+                },
+                {
+                  "id": "sidecar-path",
+                  "label": "sidecar 路径",
+                  "detail": "确认具体后端与所捆绑版本。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "sidecar 路径",
+                  "tone": "control"
+                },
+                {
+                  "id": "sidecar-limit",
+                  "label": "SGLang 协议限制",
+                  "detail": "v1.5.1 捆绑 SGLang 0.5.18，发布说明保留每次推理 HTTP 500，不能假设已修复。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "SGLang 协议限制",
+                  "tone": "danger"
+                },
+                {
+                  "id": "media-path",
+                  "label": "媒体处理路径",
+                  "detail": "按真实请求分别检查代理、目录与批准的媒体样本。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "媒体处理路径",
+                  "tone": "communication"
+                },
+                {
+                  "id": "egress-policy",
+                  "label": "出口代理授权",
+                  "detail": "DYN_MM_TRUST_EGRESS_PROXY 是部署信任选择；NO_PROXY 直连应区分。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "出口代理授权",
+                  "tone": "control"
+                },
+                {
+                  "id": "local-directory",
+                  "label": "本地引用目录",
+                  "detail": "核对容器内 DYN_MM_LOCAL_PATH、挂载、临时存储及文件限制。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "本地引用目录",
+                  "tone": "control"
+                },
+                {
+                  "id": "video-limit",
+                  "label": "核对 H.264 限制",
+                  "detail": "部分 H.264 视频导致 worker 崩溃仍是已知问题，不外推到图像和音频。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "核对 H.264 限制",
+                  "tone": "danger"
+                },
+                {
+                  "id": "per-path-acceptance",
+                  "label": "固定镜像逐路径验收",
+                  "detail": "仅在适用性与限制检查满足时进入计划验收，不是已验证成功。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "固定镜像逐路径验收",
+                  "subtitle": "计划执行",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "pause-path",
+                  "label": "暂缓受限路径",
+                  "detail": "命中已知不支持路径时暂停该路径，保留明确拒绝与回滚，不扩大到全部服务。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "暂缓受限路径",
+                  "tone": "danger"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "upgrade-plan",
+                  "to": "standard-decode",
+                  "label": "标准路径",
+                  "shortLabel": "标准路径"
+                },
+                {
+                  "from": "upgrade-plan",
+                  "to": "sidecar-path",
+                  "label": "sidecar 分支",
+                  "shortLabel": "sidecar 分支"
+                },
+                {
+                  "from": "upgrade-plan",
+                  "to": "media-path",
+                  "label": "媒体分支",
+                  "shortLabel": "媒体分支"
+                },
+                {
+                  "from": "standard-decode",
+                  "to": "tokenizer-check",
+                  "label": "检查参数路径",
+                  "shortLabel": "检查参数路径"
+                },
+                {
+                  "from": "tokenizer-check",
+                  "to": "per-path-acceptance",
+                  "label": "适用时待验收",
+                  "shortLabel": "适用时待验收"
+                },
+                {
+                  "from": "sidecar-path",
+                  "to": "sidecar-limit",
+                  "label": "查后端版本",
+                  "shortLabel": "查后端版本"
+                },
+                {
+                  "from": "sidecar-limit",
+                  "to": "pause-path",
+                  "label": "命中已知限制",
+                  "shortLabel": "命中已知限制"
+                },
+                {
+                  "from": "sidecar-limit",
+                  "to": "per-path-acceptance",
+                  "label": "非受限路径待验收",
+                  "shortLabel": "非受限路径待验收"
+                },
+                {
+                  "from": "media-path",
+                  "to": "egress-policy",
+                  "label": "检查代理",
+                  "shortLabel": "检查代理"
+                },
+                {
+                  "from": "media-path",
+                  "to": "local-directory",
+                  "label": "检查目录",
+                  "shortLabel": "检查目录"
+                },
+                {
+                  "from": "media-path",
+                  "to": "video-limit",
+                  "label": "检查样本",
+                  "shortLabel": "检查样本"
+                },
+                {
+                  "from": "egress-policy",
+                  "to": "per-path-acceptance",
+                  "label": "授权符合边界",
+                  "shortLabel": "授权符合边界"
+                },
+                {
+                  "from": "local-directory",
+                  "to": "per-path-acceptance",
+                  "label": "目录符合边界",
+                  "shortLabel": "目录符合边界"
+                },
+                {
+                  "from": "video-limit",
+                  "to": "pause-path",
+                  "label": "命中视频限制",
+                  "shortLabel": "命中视频限制"
+                },
+                {
+                  "from": "video-limit",
+                  "to": "per-path-acceptance",
+                  "label": "其余样本待验收",
+                  "shortLabel": "其余样本待验收"
+                }
+              ],
+              "presentation": {
+                "kind": "deployment-paths",
+                "panels": [
+                  {
+                    "title": "计划",
+                    "tone": "control",
+                    "nodeIds": [
+                      "upgrade-plan"
+                    ]
+                  },
+                  {
+                    "title": "标准 decode",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "standard-decode",
+                      "tokenizer-check"
+                    ]
+                  },
+                  {
+                    "title": "sidecar",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "sidecar-path",
+                      "sidecar-limit"
+                    ]
+                  },
+                  {
+                    "title": "媒体处理",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "media-path",
+                      "egress-policy",
+                      "local-directory",
+                      "video-limit"
+                    ]
+                  },
+                  {
+                    "title": "逐路径验收",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "per-path-acceptance"
+                    ]
+                  },
+                  {
+                    "title": "暂缓",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "pause-path"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "隔离环境验证矩阵",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下均为待执行的原创方案。先固定镜像 digest、模型 revision、驱动、CUDA、GPU 型号和数量、请求分布、后端配置及网络拓扑，再建立旧版与新版成对对照。镜像不同引入的其他依赖变化也要记录，不能把全部差异自动归因于一个 PR。"
+            },
+            {
+              "type": "table",
+              "caption": "隔离环境验证矩阵（原创方案，尚未执行）",
+              "columns": [
+                "试验",
+                "控制变量与操作",
+                "记录",
+                "验证意图"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "过载后恢复",
+                    "固定负载施压后停止新增流量，再发低频探针",
+                    "排空、提示失效、候选恢复、成功响应四个时刻",
+                    "区分路由状态与引擎恢复"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "监控仍过载",
+                    "请求提示到期时保留监控过载证据",
+                    "路由选择与拒绝来源",
+                    "防止把 TTL 当成强制健康"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "min_tokens 边界",
+                    "缺省、0、正值；EOS 在边界前后；同一模型采样",
+                    "原始 token、输出 token、停止原因、logprob 对齐",
+                    "发现边界计数和字段截断错误"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "n 候选取消",
+                    "一候选先结束；其余执行；在首包前后断流",
+                    "ID 集合、abort、活动请求、资源回落",
+                    "检验迟到候选与退出竞态"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GMS 入场",
+                    "分别有无显式超时；隔离环境制造锁等待",
+                    "配置值、进入/退出时刻、错误来源",
+                    "验证参数作用域，不宣称修复死锁"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "媒体兼容",
+                    "合规直连、已批准代理、本地允许目录",
+                    "接受/拒绝、错误类别、下载和临时文件状态",
+                    "确认升级未扩大访问范围"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回归与回滚",
+                    "文本和批准的媒体样本；固定原镜像",
+                    "错误率、输出、SLO、回滚后结果",
+                    "形成可操作回退依据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "指标与验收",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "实验前预登记验收口径（原创方案，尚未执行）",
+              "columns": [
+                "维度",
+                "完整验收口径"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "路由恢复",
+                    "建议在实验前约定阈值。路由恢复从“压力已结束且 worker 已排空”起计，同时另记从首次拒绝起计的用户影响时间。HTTP 529 占比与总请求数一起保留，重试产生的额外负载单列。不能只汇报成功请求延迟并丢弃被拒绝样本。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "输出与资源",
+                    "输出验收优先于吞吐：最小长度、隐藏停止序列、每个候选的终止原因和字段对齐均应通过。资源验收用取消后的活动请求数、显存/KV 状态与后续请求隔离共同判断；单次显存没有下降也可能来自池化，应先理解分配器口径，不能直接定性泄漏。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "放行门槛",
+                    "发布门槛应分别覆盖：正确性无回归；每条启用路径满足约定错误率；过载解除后可恢复接流；真实持续过载仍得到正确保护；配置边界保持收敛；遇到已知不支持路径可以明确拒绝或暂停上线。性能数字仅在这些门槛通过后比较。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证与资料",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "仍待本地验证：真实 GPU 下恢复时间分布、并行候选取消后的资源收敛、业务停止条件组合、代理与挂载目录兼容、GMS 锁等待，以及现有灰度/回滚体系是否覆盖这些行为。没有证据支持把 v1.6.0 的目标修复写成当前可用。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原始资料均为公开第一方仓库。已阅读发布正文、相关 PR 的最终摘要与评审上下文，并检查以下 v1.5.1 固定版本源码；PR 的早期提交不是最终交付范围的替代物。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14
+              ],
+              "text": "来源索引保留原稿 S1–S10；API 的发布身份固定到版本，在线目录按查阅日期使用。附加固定源码、合并提交与发布元数据用于交叉核验。作者报告不等于本站实测。",
+              "title": "原始资料与固定版本核对"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "triton-bf16-constant",
     "kind": "analysis",
     "title": "Triton BF16 标量常量修复与生产验证",
