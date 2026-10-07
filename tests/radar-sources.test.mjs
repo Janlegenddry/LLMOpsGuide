@@ -74,7 +74,7 @@ test('repository casing, anchors and trailing slashes canonicalize without chang
 
 test('individually verified CUDA, extension, wheel and API evidence permits only its exact page', () => {
   const exact = webSources.filter(s => s.exact);
-  assert.equal(exact.length, 12);
+  assert.equal(exact.length, 14);
   for (const s of exact) {
     const url = `https://${s.hostname}${s.path}`;
     assert.equal(sourceURL(url), url);

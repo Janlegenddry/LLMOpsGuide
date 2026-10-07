@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { mergeRecords } from '../src/lib/radar-store.mjs';
+import { inlineText, splitInternalLinks } from '../src/lib/report-inline.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const records = mergeRecords(JSON.parse(await readFile(join(root, 'src/content/radar.json'), 'utf8')), []).records;
@@ -24,14 +25,17 @@ for (const record of records) {
   assert.deepEqual(api.records.find(r => r.id === record.id).report, record.report, `${record.id} API lost report data`);
   assert.ok(html.includes('阅读完整报告') && html.includes('data-report-version="1"'));
   const text = compact(plain(html));
-  const contains = value => { assert.ok(text.includes(compact(value)), `${record.id} missing rendered text: ${value.slice(0, 50)}`); textChecks++; };
+  const contains = value => { assert.ok(text.includes(compact(inlineText(value))), `${record.id} missing rendered text: ${value.slice(0, 50)}`); textChecks++; };
   contains(record.report.scope);
   let expectedFigures = 0;
   for (const section of record.report.sections) {
     assert.ok(html.includes(`id="report-${section.id}"`), `${record.id} missing section ${section.id}`);
     contains(section.title);
     for (const block of section.blocks) {
-      if (block.text) contains(block.text);
+      if (block.text) {
+        contains(block.text);
+        for (const part of splitInternalLinks(block.text)) if (part.path) assert.ok(html.includes(`href="/LLMOpsGuide${part.path}"`), `${record.id} missing base-aware internal link`);
+      }
       if (block.title) contains(block.title);
       if (block.caption) contains(block.caption);
       if (block.items) block.items.forEach(contains);

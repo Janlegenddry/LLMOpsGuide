@@ -61,3 +61,14 @@ wheel 只读取文本元数据，没有下载或执行二进制。API 路径用�
 | api.github.com | /repos/sgl-project/sglang/pulls/41691 |
 
 不扩大 CUDA / NIXL 整站或 GitHub API 范围，不改变 HTTPS、公网、凭证、查询参数、隐私及依据等级校验。PR / issue 的作者 CPU 或 GPU 成绩另以 attributed community 引用，不因位于官方仓库就作为本站实测。
+
+## 2026-10-07 固定发布元数据
+
+已独立读取下列官方 API 的正式状态、原始发布时间与资产更新时间，仅登记这两个精确版本路径。vLLM 的 release updated_at 与同一 wheel 资产更新同刻出现，不据此判断发布正文修订；Dynamo 的已知限制以固定发布正文为准。
+
+| hostname | 精确 path |
+| --- | --- |
+| api.github.com | /repos/ai-dynamo/dynamo/releases/tags/v1.5.1 |
+| api.github.com | /repos/vllm-project/vllm/releases/tags/v0.31.0 |
+
+其他版本、API 路径和子路径仍不自动登记。CPU / 容器作者成绩继续按作者报告引用，未在本站运行 GPU 或 NPU 验证。

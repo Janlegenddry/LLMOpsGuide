@@ -1,0 +1,1412 @@
+[
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      4
+    ],
+    "title": "图一：路由过载的双源状态",
+    "caption": "原创控制状态示意，不是性能时间线。请求提示的一秒来自固定代码；到期只清提示，监控过载保留自己的更新关系。可再次评估不是保证健康，也不是一秒排空或恢复 SLA。",
+    "presentation": {
+      "kind": "overload-sources",
+      "panels": [
+        {
+          "title": "请求路径",
+          "tone": "danger",
+          "nodeIds": [
+            "capacity-reject",
+            "request-hint"
+          ]
+        },
+        {
+          "title": "监控路径",
+          "tone": "kv",
+          "nodeIds": [
+            "monitor-update",
+            "monitor-overload"
+          ]
+        },
+        {
+          "title": "过滤",
+          "tone": "communication",
+          "nodeIds": [
+            "candidate-filter"
+          ]
+        },
+        {
+          "title": "提示失效",
+          "tone": "control",
+          "nodeIds": [
+            "hint-expiry"
+          ]
+        },
+        {
+          "title": "验证边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "reconsider-worker"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "capacity-reject",
+        "label": "容量拒绝",
+        "shortLabel": "容量拒绝",
+        "detail": "容量拒绝给该 worker 设置请求路径提示。",
+        "tone": "danger",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "request-hint",
+        "label": "独立截止时间",
+        "shortLabel": "独立截止时间",
+        "detail": "每个请求提示有自己的 deadline；代码冷却为一秒。",
+        "tone": "control",
+        "subtitle": "代码：一秒提示",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "monitor-update",
+        "label": "监控上报",
+        "shortLabel": "监控上报",
+        "detail": "监控更新替换监控集合，也可提前清空请求路径提示。",
+        "tone": "kv",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "monitor-overload",
+        "label": "监控过载集合",
+        "shortLabel": "监控过载集合",
+        "detail": "请求提示到期不清除这里的过载状态。",
+        "tone": "kv",
+        "subtitle": "独立更新",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "candidate-filter",
+        "label": "双源候选过滤",
+        "shortLabel": "双源候选过滤",
+        "detail": "合并两种过载来源，并继续遵守发现与可路由状态。",
+        "tone": "communication",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "hint-expiry",
+        "label": "到期或监控更新",
+        "shortLabel": "到期或监控更新",
+        "detail": "读取路由快照时检查到期；监控更新也可替换提示。不是定时强制探活。",
+        "tone": "control",
+        "subtitle": "只清请求提示",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "reconsider-worker",
+        "label": "可再次评估",
+        "shortLabel": "可再次评估",
+        "detail": "提示失效给重新考虑 worker 的机会，仍须检查监控状态、路由与真实响应。",
+        "tone": "neutral",
+        "subtitle": "不保证健康",
+        "column": 2,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "capacity-reject",
+        "to": "request-hint",
+        "label": "设置提示",
+        "shortLabel": "设置提示"
+      },
+      {
+        "from": "monitor-update",
+        "to": "monitor-overload",
+        "label": "更新监控",
+        "shortLabel": "更新监控"
+      },
+      {
+        "from": "request-hint",
+        "to": "candidate-filter",
+        "label": "请求提示",
+        "shortLabel": "请求提示"
+      },
+      {
+        "from": "monitor-overload",
+        "to": "candidate-filter",
+        "label": "监控状态",
+        "shortLabel": "监控状态"
+      },
+      {
+        "from": "request-hint",
+        "to": "hint-expiry",
+        "label": "核对截止",
+        "shortLabel": "核对截止"
+      },
+      {
+        "from": "monitor-update",
+        "to": "hint-expiry",
+        "label": "新更新替换",
+        "shortLabel": "新更新替换"
+      },
+      {
+        "from": "hint-expiry",
+        "to": "candidate-filter",
+        "label": "重算双源",
+        "shortLabel": "重算双源"
+      },
+      {
+        "from": "candidate-filter",
+        "to": "reconsider-worker",
+        "label": "其他状态允许",
+        "shortLabel": "其他状态允许"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      5,
+      6
+    ],
+    "title": "图二：多候选请求的输出与取消边界",
+    "caption": "原创关系图，A/B/C 代表并行候选，不是三个串行阶段。停止输出、后端完成、调用 abort 与资源收敛是不同观测点；资源回落必须实测，本文没有运行 GPU 验证。",
+    "presentation": {
+      "kind": "choice-cleanup",
+      "panels": [
+        {
+          "title": "请求",
+          "tone": "control",
+          "nodeIds": [
+            "parallel-request"
+          ]
+        },
+        {
+          "title": "并行候选",
+          "tone": "compute",
+          "nodeIds": [
+            "choice-a",
+            "choice-b",
+            "choice-c"
+          ]
+        },
+        {
+          "title": "对外输出",
+          "tone": "control",
+          "nodeIds": [
+            "local-output-stop"
+          ]
+        },
+        {
+          "title": "ID 状态",
+          "tone": "kv",
+          "nodeIds": [
+            "unfinished-ids"
+          ]
+        },
+        {
+          "title": "完成事件",
+          "tone": "kv",
+          "nodeIds": [
+            "remove-finished"
+          ]
+        },
+        {
+          "title": "退出信号",
+          "tone": "danger",
+          "nodeIds": [
+            "cancel-or-close"
+          ]
+        },
+        {
+          "title": "清理调用",
+          "tone": "danger",
+          "nodeIds": [
+            "abort-by-id"
+          ]
+        },
+        {
+          "title": "迟到首包",
+          "tone": "control",
+          "nodeIds": [
+            "late-choice-id"
+          ]
+        },
+        {
+          "title": "实测边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "resource-observation"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "parallel-request",
+        "label": "一个请求 n 候选",
+        "shortLabel": "一个请求 n 候选",
+        "detail": "一个请求可以有多个独立后端 choice ID。",
+        "tone": "control",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "choice-a",
+        "label": "候选 A",
+        "shortLabel": "候选 A",
+        "detail": "A 在 Dynamo decoder 到达本地停止条件。",
+        "tone": "compute",
+        "subtitle": "到达本地停止",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "choice-b",
+        "label": "候选 B",
+        "shortLabel": "候选 B",
+        "detail": "A 结束时 B 仍可能执行。",
+        "tone": "compute",
+        "subtitle": "仍在执行",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "choice-c",
+        "label": "候选 C",
+        "shortLabel": "候选 C",
+        "detail": "A 结束时 C 仍可能执行。",
+        "tone": "compute",
+        "subtitle": "仍在执行",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "local-output-stop",
+        "label": "停止对外输出",
+        "shortLabel": "停止对外输出",
+        "detail": "本地已完成 choice 的后续 chunk 被忽略；不据此宣称后端资源已释放。",
+        "tone": "control",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "unfinished-ids",
+        "label": "未完成 ID 集合",
+        "shortLabel": "未完成 ID 集合",
+        "detail": "流中观察到的后端 ID 加入 live set，后端 finish_reason 删除相应 ID。",
+        "tone": "kv",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "remove-finished",
+        "label": "完成事件删 ID",
+        "shortLabel": "完成事件删 ID",
+        "detail": "由后端完成事件删除对应 ID；本地停止对外输出不是独立的资源释放证明。",
+        "tone": "kv",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "cancel-or-close",
+        "label": "取消或流关闭",
+        "shortLabel": "取消或流关闭",
+        "detail": "取消、退出及流关闭清理可能与首包到达竞态。",
+        "tone": "danger",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "abort-by-id",
+        "label": "逐 ID abort",
+        "shortLabel": "逐 ID abort",
+        "detail": "逐个 abort 已观察到且未完成的后端 ID。调用不等于资源已回落。",
+        "tone": "danger",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "late-choice-id",
+        "label": "迟到首包 ID",
+        "shortLabel": "迟到首包 ID",
+        "detail": "新的后端 ID 可能在取消监控触发之后出现；记录后再次检查已停止上下文。",
+        "tone": "control",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "resource-observation",
+        "label": "验证活动与资源",
+        "shortLabel": "验证活动与资源",
+        "detail": "待测引擎活动请求、显存/KV 与后续请求隔离；池化内存口径应单独解释。",
+        "tone": "neutral",
+        "subtitle": "尚未执行",
+        "column": 2,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "parallel-request",
+        "to": "choice-a",
+        "label": "A 分支",
+        "shortLabel": "A 分支"
+      },
+      {
+        "from": "parallel-request",
+        "to": "choice-b",
+        "label": "B 分支",
+        "shortLabel": "B 分支"
+      },
+      {
+        "from": "parallel-request",
+        "to": "choice-c",
+        "label": "C 分支",
+        "shortLabel": "C 分支"
+      },
+      {
+        "from": "choice-a",
+        "to": "local-output-stop",
+        "label": "本地停止",
+        "shortLabel": "本地停止"
+      },
+      {
+        "from": "choice-a",
+        "to": "unfinished-ids",
+        "label": "记录 A ID",
+        "shortLabel": "记录 A ID"
+      },
+      {
+        "from": "choice-b",
+        "to": "unfinished-ids",
+        "label": "记录 B ID",
+        "shortLabel": "记录 B ID"
+      },
+      {
+        "from": "choice-c",
+        "to": "unfinished-ids",
+        "label": "记录 C ID",
+        "shortLabel": "记录 C ID"
+      },
+      {
+        "from": "local-output-stop",
+        "to": "remove-finished",
+        "label": "另查完成事件",
+        "shortLabel": "另查完成事件"
+      },
+      {
+        "from": "remove-finished",
+        "to": "unfinished-ids",
+        "label": "删除完成 ID",
+        "shortLabel": "删除完成 ID"
+      },
+      {
+        "from": "cancel-or-close",
+        "to": "abort-by-id",
+        "label": "触发清理",
+        "shortLabel": "触发清理"
+      },
+      {
+        "from": "unfinished-ids",
+        "to": "abort-by-id",
+        "label": "未完成 ID",
+        "shortLabel": "未完成 ID"
+      },
+      {
+        "from": "late-choice-id",
+        "to": "unfinished-ids",
+        "label": "记录迟到 ID",
+        "shortLabel": "记录迟到 ID"
+      },
+      {
+        "from": "late-choice-id",
+        "to": "abort-by-id",
+        "label": "已取消时补 abort",
+        "shortLabel": "已取消时补 abort"
+      },
+      {
+        "from": "abort-by-id",
+        "to": "resource-observation",
+        "label": "实测资源回落",
+        "shortLabel": "实测资源回落"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      0,
+      7,
+      8,
+      9
+    ],
+    "title": "图三：按部署路径检查兼容性",
+    "caption": "原创升级分流建议，尚未执行。各启用路径独立验收；命中 SGLang sidecar 或已知 H.264 限制时应暂缓相应路径，v1.6.0 只是目标版本。汇入验收不表示已经通过。",
+    "presentation": {
+      "kind": "deployment-paths",
+      "panels": [
+        {
+          "title": "计划",
+          "tone": "control",
+          "nodeIds": [
+            "upgrade-plan"
+          ]
+        },
+        {
+          "title": "标准 decode",
+          "tone": "compute",
+          "nodeIds": [
+            "standard-decode",
+            "tokenizer-check"
+          ]
+        },
+        {
+          "title": "sidecar",
+          "tone": "danger",
+          "nodeIds": [
+            "sidecar-path",
+            "sidecar-limit"
+          ]
+        },
+        {
+          "title": "媒体处理",
+          "tone": "communication",
+          "nodeIds": [
+            "media-path",
+            "egress-policy",
+            "local-directory",
+            "video-limit"
+          ]
+        },
+        {
+          "title": "逐路径验收",
+          "tone": "neutral",
+          "nodeIds": [
+            "per-path-acceptance"
+          ]
+        },
+        {
+          "title": "暂缓",
+          "tone": "danger",
+          "nodeIds": [
+            "pause-path"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "upgrade-plan",
+        "label": "计划升级 v1.5.1",
+        "shortLabel": "计划升级 v1.5.1",
+        "detail": "固定发布事件；先识别实际使用的部署路径。",
+        "tone": "control",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "standard-decode",
+        "label": "标准 decode",
+        "shortLabel": "标准 decode",
+        "detail": "标准 Python token decode 与 native/sidecar/MM 不互相代替。",
+        "tone": "compute",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "tokenizer-check",
+        "label": "核对 tokenizer",
+        "shortLabel": "核对 tokenizer",
+        "detail": "核对正 min_tokens、skip_tokenizer_init 及停止字段实际路径。",
+        "tone": "control",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "sidecar-path",
+        "label": "sidecar 路径",
+        "shortLabel": "sidecar 路径",
+        "detail": "确认具体后端与所捆绑版本。",
+        "tone": "control",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "sidecar-limit",
+        "label": "SGLang 协议限制",
+        "shortLabel": "SGLang 协议限制",
+        "detail": "v1.5.1 捆绑 SGLang 0.5.18，发布说明保留每次推理 HTTP 500，不能假设已修复。",
+        "tone": "danger",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "media-path",
+        "label": "媒体处理路径",
+        "shortLabel": "媒体处理路径",
+        "detail": "按真实请求分别检查代理、目录与批准的媒体样本。",
+        "tone": "communication",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "egress-policy",
+        "label": "出口代理授权",
+        "shortLabel": "出口代理授权",
+        "detail": "DYN_MM_TRUST_EGRESS_PROXY 是部署信任选择；NO_PROXY 直连应区分。",
+        "tone": "control",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "local-directory",
+        "label": "本地引用目录",
+        "shortLabel": "本地引用目录",
+        "detail": "核对容器内 DYN_MM_LOCAL_PATH、挂载、临时存储及文件限制。",
+        "tone": "control",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "video-limit",
+        "label": "核对 H.264 限制",
+        "shortLabel": "核对 H.264 限制",
+        "detail": "部分 H.264 视频导致 worker 崩溃仍是已知问题，不外推到图像和音频。",
+        "tone": "danger",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "per-path-acceptance",
+        "label": "固定镜像逐路径验收",
+        "shortLabel": "固定镜像逐路径验收",
+        "detail": "仅在适用性与限制检查满足时进入计划验收，不是已验证成功。",
+        "tone": "neutral",
+        "subtitle": "计划执行",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "pause-path",
+        "label": "暂缓受限路径",
+        "shortLabel": "暂缓受限路径",
+        "detail": "命中已知不支持路径时暂停该路径，保留明确拒绝与回滚，不扩大到全部服务。",
+        "tone": "danger",
+        "column": 2,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "upgrade-plan",
+        "to": "standard-decode",
+        "label": "标准路径",
+        "shortLabel": "标准路径"
+      },
+      {
+        "from": "upgrade-plan",
+        "to": "sidecar-path",
+        "label": "sidecar 分支",
+        "shortLabel": "sidecar 分支"
+      },
+      {
+        "from": "upgrade-plan",
+        "to": "media-path",
+        "label": "媒体分支",
+        "shortLabel": "媒体分支"
+      },
+      {
+        "from": "standard-decode",
+        "to": "tokenizer-check",
+        "label": "检查参数路径",
+        "shortLabel": "检查参数路径"
+      },
+      {
+        "from": "tokenizer-check",
+        "to": "per-path-acceptance",
+        "label": "适用时待验收",
+        "shortLabel": "适用时待验收"
+      },
+      {
+        "from": "sidecar-path",
+        "to": "sidecar-limit",
+        "label": "查后端版本",
+        "shortLabel": "查后端版本"
+      },
+      {
+        "from": "sidecar-limit",
+        "to": "pause-path",
+        "label": "命中已知限制",
+        "shortLabel": "命中已知限制"
+      },
+      {
+        "from": "sidecar-limit",
+        "to": "per-path-acceptance",
+        "label": "非受限路径待验收",
+        "shortLabel": "非受限路径待验收"
+      },
+      {
+        "from": "media-path",
+        "to": "egress-policy",
+        "label": "检查代理",
+        "shortLabel": "检查代理"
+      },
+      {
+        "from": "media-path",
+        "to": "local-directory",
+        "label": "检查目录",
+        "shortLabel": "检查目录"
+      },
+      {
+        "from": "media-path",
+        "to": "video-limit",
+        "label": "检查样本",
+        "shortLabel": "检查样本"
+      },
+      {
+        "from": "egress-policy",
+        "to": "per-path-acceptance",
+        "label": "授权符合边界",
+        "shortLabel": "授权符合边界"
+      },
+      {
+        "from": "local-directory",
+        "to": "per-path-acceptance",
+        "label": "目录符合边界",
+        "shortLabel": "目录符合边界"
+      },
+      {
+        "from": "video-limit",
+        "to": "pause-path",
+        "label": "命中视频限制",
+        "shortLabel": "命中视频限制"
+      },
+      {
+        "from": "video-limit",
+        "to": "per-path-acceptance",
+        "label": "其余样本待验收",
+        "shortLabel": "其余样本待验收"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      0,
+      6,
+      7,
+      8,
+      9,
+      10,
+      16
+    ],
+    "title": "图一：发布日期与修复包含关系",
+    "caption": "三条平行证据泳道；日期说明事件时间，不用“发布日期晚”替代包含关系。实线连接已核对的证据推导，通向用户产物的虚线是待核查任务。无性能数据。",
+    "presentation": {
+      "kind": "release-evidence",
+      "panels": [
+        {
+          "title": "正式标签",
+          "tone": "neutral",
+          "nodeIds": [
+            "stable-release",
+            "stable-tag-source",
+            "old-zeroing-path",
+            "fix-not-in-tag"
+          ]
+        },
+        {
+          "title": "主分支修复",
+          "tone": "compute",
+          "nodeIds": [
+            "main-fix-merge",
+            "new-group-interface",
+            "check-artifacts"
+          ]
+        },
+        {
+          "title": "开放提案",
+          "tone": "control",
+          "nodeIds": [
+            "open-proposals",
+            "proposal-tests",
+            "not-delivered"
+          ]
+        },
+        {
+          "title": "实际产物",
+          "tone": "neutral",
+          "nodeIds": [
+            "user-image-pending"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "stable-release",
+        "label": "v0.31.0 正式发布",
+        "shortLabel": "v0.31.0 正式发布",
+        "detail": "2026-10-05 06:44:55 UTC；不是 main 的最新快照。",
+        "tone": "neutral",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "stable-tag-source",
+        "label": "固定标签源码",
+        "shortLabel": "固定标签源码",
+        "detail": "核对 scheduler 与 connector base 的 v0.31.0 文件。",
+        "tone": "neutral",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "old-zeroing-path",
+        "label": "旧路径和接口缺失",
+        "shortLabel": "旧路径和接口缺失",
+        "detail": "仍有旧清零筛选，新 get_loaded_kv_cache_group_ids 接口缺失。",
+        "tone": "danger",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "fix-not-in-tag",
+        "label": "#59504 未随标签提供",
+        "shortLabel": "#59504 未随标签提供",
+        "detail": "由精确固定文件和提交包含关系判断，不从发布日期推断。",
+        "tone": "danger",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "main-fix-merge",
+        "label": "#59504 main 合并",
+        "shortLabel": "#59504 main 合并",
+        "detail": "2026-10-03 06:26:13 UTC 合并，不能代替发布标签证据。",
+        "tone": "compute",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "new-group-interface",
+        "label": "新接口与精确豁免",
+        "shortLabel": "新接口与精确豁免",
+        "detail": "main 修复按本次异步加载实际写入的组与块精确豁免清零。",
+        "tone": "compute",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "check-artifacts",
+        "label": "另查发行产物",
+        "shortLabel": "另查发行产物",
+        "detail": "是否进入用户 wheel/镜像需要独立固定源码与构建证据。",
+        "tone": "control",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "open-proposals",
+        "label": "两项 PR 当前 Open",
+        "shortLabel": "两项 PR 当前 Open",
+        "detail": "#59197 与 #59330 在本文核查时尚未合并；分别关注 replay 与 prompt 边界。",
+        "tone": "control",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "proposal-tests",
+        "label": "提案及测试说明",
+        "shortLabel": "提案及测试说明",
+        "detail": "作者测试与拟议补丁不能证明标签已经包含，也不作为本站实测。",
+        "tone": "control",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "not-delivered",
+        "label": "不能当已交付修复",
+        "shortLabel": "不能当已交付修复",
+        "detail": "合并和正式发布两个节点分别复核。",
+        "tone": "danger",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "user-image-pending",
+        "label": "用户镜像与实际源码",
+        "shortLabel": "用户镜像与实际源码",
+        "detail": "用户镜像 digest、回补与具体代码仍待核查；三条来源关系都不是已验证产物证明。",
+        "tone": "neutral",
+        "subtitle": "尚未读取生产环境",
+        "column": 2,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "stable-release",
+        "to": "stable-tag-source",
+        "label": "读取固定标签",
+        "shortLabel": "读取固定标签"
+      },
+      {
+        "from": "stable-tag-source",
+        "to": "old-zeroing-path",
+        "label": "检查文件",
+        "shortLabel": "检查文件"
+      },
+      {
+        "from": "old-zeroing-path",
+        "to": "fix-not-in-tag",
+        "label": "缺少新修复",
+        "shortLabel": "缺少新修复"
+      },
+      {
+        "from": "main-fix-merge",
+        "to": "new-group-interface",
+        "label": "核对合并补丁",
+        "shortLabel": "核对合并补丁"
+      },
+      {
+        "from": "new-group-interface",
+        "to": "check-artifacts",
+        "label": "另查构建",
+        "shortLabel": "另查构建"
+      },
+      {
+        "from": "open-proposals",
+        "to": "proposal-tests",
+        "label": "阅读当前提案",
+        "shortLabel": "阅读当前提案"
+      },
+      {
+        "from": "proposal-tests",
+        "to": "not-delivered",
+        "label": "保持状态边界",
+        "shortLabel": "保持状态边界"
+      },
+      {
+        "from": "fix-not-in-tag",
+        "to": "user-image-pending",
+        "label": "核对用户源码",
+        "shortLabel": "核对用户源码"
+      },
+      {
+        "from": "check-artifacts",
+        "to": "user-image-pending",
+        "label": "核对镜像来源",
+        "shortLabel": "核对镜像来源"
+      },
+      {
+        "from": "not-delivered",
+        "to": "user-image-pending",
+        "label": "核对回补范围",
+        "shortLabel": "核对回补范围"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      1,
+      2
+    ],
+    "title": "图二：权重预加载与引擎重启",
+    "caption": "原创权重生命周期图，不比较恢复秒数。daemon 层跨越引擎 A/B 生命周期；匹配与回退是条件分支，后续初始化仍可能失败。它不代表恢复完整引擎状态或在途请求。",
+    "presentation": {
+      "kind": "preload-restart",
+      "panels": [
+        {
+          "title": "常驻权重层",
+          "tone": "kv",
+          "nodeIds": [
+            "disk-weights",
+            "process-shards",
+            "resident-daemon"
+          ]
+        },
+        {
+          "title": "引擎生命周期",
+          "tone": "control",
+          "nodeIds": [
+            "engine-a",
+            "engine-a-exit",
+            "engine-b-ipc",
+            "fingerprint-device"
+          ]
+        },
+        {
+          "title": "匹配后初始化",
+          "tone": "compute",
+          "nodeIds": [
+            "map-weights",
+            "engine-initialize",
+            "service-ready"
+          ]
+        },
+        {
+          "title": "有条件回退",
+          "tone": "danger",
+          "nodeIds": [
+            "disk-fallback"
+          ]
+        },
+        {
+          "title": "独立约束",
+          "tone": "neutral",
+          "nodeIds": [
+            "preload-constraints"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "disk-weights",
+        "label": "磁盘模型",
+        "shortLabel": "磁盘模型",
+        "detail": "daemon 从磁盘读取模型；不是已经初始化的引擎快照。",
+        "tone": "neutral",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "process-shards",
+        "label": "权重处理及分片",
+        "shortLabel": "权重处理及分片",
+        "detail": "每 rank 完成后处理、量化及布局检查。",
+        "tone": "compute",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "resident-daemon",
+        "label": "每 GPU daemon 常驻",
+        "shortLabel": "每 GPU daemon 常驻",
+        "detail": "每 GPU daemon 保留已处理权重，zero_copy 引擎依赖其存活。",
+        "tone": "kv",
+        "subtitle": "跨引擎生命周期",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "engine-a",
+        "label": "引擎 A",
+        "shortLabel": "引擎 A",
+        "detail": "引擎 A 使用权重，自己的退出不等于 daemon 退出。",
+        "tone": "compute",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "engine-a-exit",
+        "label": "引擎 A 退出",
+        "shortLabel": "引擎 A 退出",
+        "detail": "需要独立进程与 GPU 内存归属观测。",
+        "tone": "control",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "engine-b-ipc",
+        "label": "引擎 B 请求 IPC",
+        "shortLabel": "引擎 B 请求 IPC",
+        "detail": "同一节点、用户与 GPU 的新引擎请求 daemon 权重。",
+        "tone": "compute",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "fingerprint-device",
+        "label": "指纹与 GPU 匹配",
+        "shortLabel": "指纹与 GPU 匹配",
+        "detail": "核对版本、模型、dtype、量化、并行布局、GPU UUID 及 daemon 可用性。",
+        "tone": "control",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "map-weights",
+        "label": "映射权重",
+        "shortLabel": "映射权重",
+        "detail": "匹配且 daemon 存活时 zero_copy；copy 模式另复制并释放 daemon 缓存。",
+        "tone": "kv",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "engine-initialize",
+        "label": "后续引擎初始化",
+        "shortLabel": "后续引擎初始化",
+        "detail": "权重入场不等于图捕获、运行时和服务已就绪。",
+        "tone": "compute",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "service-ready",
+        "label": "服务就绪",
+        "shortLabel": "服务就绪",
+        "detail": "初始化成功并通过就绪检查后才可服务；尚未在本站验证。",
+        "tone": "neutral",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "disk-fallback",
+        "label": "开启 fallback 才回退",
+        "shortLabel": "开启 fallback 才回退",
+        "detail": "daemon 缺失或指纹不匹配且 fallback 开启才加载磁盘；否则保留错误，不画成无条件成功。",
+        "tone": "danger",
+        "column": 2,
+        "row": 2
+      },
+      {
+        "id": "preload-constraints",
+        "label": "平台与存活约束",
+        "shortLabel": "平台与存活约束",
+        "detail": "CUDA/ROCm；daemon 拒绝 PP；量化支持已处理权重传输；zero_copy 不与权重 offload sleep 混用。",
+        "tone": "neutral",
+        "subtitle": "不代表恢复在途请求",
+        "column": 3,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "disk-weights",
+        "to": "process-shards",
+        "label": "处理分片",
+        "shortLabel": "处理分片"
+      },
+      {
+        "from": "process-shards",
+        "to": "resident-daemon",
+        "label": "保留权重",
+        "shortLabel": "保留权重"
+      },
+      {
+        "from": "engine-a",
+        "to": "engine-a-exit",
+        "label": "引擎退出",
+        "shortLabel": "引擎退出"
+      },
+      {
+        "from": "engine-a-exit",
+        "to": "engine-b-ipc",
+        "label": "重启新引擎",
+        "shortLabel": "重启新引擎"
+      },
+      {
+        "from": "resident-daemon",
+        "to": "engine-b-ipc",
+        "label": "本机 IPC",
+        "shortLabel": "本机 IPC"
+      },
+      {
+        "from": "engine-b-ipc",
+        "to": "fingerprint-device",
+        "label": "核对匹配",
+        "shortLabel": "核对匹配"
+      },
+      {
+        "from": "fingerprint-device",
+        "to": "map-weights",
+        "label": "匹配且存活",
+        "shortLabel": "匹配且存活"
+      },
+      {
+        "from": "fingerprint-device",
+        "to": "disk-fallback",
+        "label": "未命中且开启回退",
+        "shortLabel": "未命中且开启回退"
+      },
+      {
+        "from": "map-weights",
+        "to": "engine-initialize",
+        "label": "继续初始化",
+        "shortLabel": "继续初始化"
+      },
+      {
+        "from": "disk-fallback",
+        "to": "engine-initialize",
+        "label": "磁盘加载后初始化",
+        "shortLabel": "磁盘加载后初始化"
+      },
+      {
+        "from": "engine-initialize",
+        "to": "service-ready",
+        "label": "初始化及就绪通过",
+        "shortLabel": "初始化及就绪通过"
+      }
+    ]
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      4,
+      7,
+      15,
+      16
+    ],
+    "title": "图三：从正式发布到业务放行",
+    "caption": "原创有返回边的验收流程，尚未执行。每道门不满足时保留证据并回到已验收基线；P/D 与 preload 约束附着到实际门。终点只证明指定镜像与指定工作负载可放行。",
+    "presentation": {
+      "kind": "rollout-checks",
+      "panels": [
+        {
+          "title": "计划验收门",
+          "tone": "control",
+          "nodeIds": [
+            "artifact-fixed",
+            "path-applicability",
+            "request-compatibility",
+            "correctness-progress",
+            "recovery-rehearsal",
+            "slo-replay",
+            "limited-rollout"
+          ]
+        },
+        {
+          "title": "失败返回",
+          "tone": "danger",
+          "nodeIds": [
+            "accepted-baseline"
+          ]
+        },
+        {
+          "title": "P/D 附着检查",
+          "tone": "communication",
+          "nodeIds": [
+            "pd-attached"
+          ]
+        },
+        {
+          "title": "preload 附着检查",
+          "tone": "kv",
+          "nodeIds": [
+            "preload-attached"
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "artifact-fixed",
+        "label": "固定产物",
+        "shortLabel": "固定产物",
+        "detail": "固定镜像 digest、源码、依赖与 P/D 两端版本协议。",
+        "tone": "control",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "path-applicability",
+        "label": "路径适用性",
+        "shortLabel": "路径适用性",
+        "detail": "检查平台、PP/sleep、daemon 生命周期和实际 connector。",
+        "tone": "control",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "request-compatibility",
+        "label": "请求兼容性",
+        "shortLabel": "请求兼容性",
+        "detail": "受影响客户端已迁移或明确处理多模态参数拒绝。",
+        "tone": "control",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "correctness-progress",
+        "label": "正确性与调度进展",
+        "shortLabel": "正确性与调度进展",
+        "detail": "检查确定性、NaN、KV 进展与 P/D 块及窗口边界。",
+        "tone": "control",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "recovery-rehearsal",
+        "label": "恢复及回退演练",
+        "shortLabel": "恢复及回退演练",
+        "detail": "覆盖 daemon 命中/缺失、配置不匹配及磁盘回退。",
+        "tone": "control",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "slo-replay",
+        "label": "SLO 回放",
+        "shortLabel": "SLO 回放",
+        "detail": "固定业务到达率与样本规模，预先填写预算。",
+        "tone": "control",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "limited-rollout",
+        "label": "小范围灰度",
+        "shortLabel": "小范围灰度",
+        "detail": "只证明指定镜像与指定工作负载的放行条件。",
+        "tone": "control",
+        "subtitle": "不是通用正确性证明",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "accepted-baseline",
+        "label": "保留证据回到基线",
+        "shortLabel": "保留证据回到基线",
+        "detail": "任一门失败时保留证据，回到已验收产物；补齐后从固定产物重新核查。",
+        "tone": "danger",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "pd-attached",
+        "label": "P/D 双端检查",
+        "shortLabel": "P/D 双端检查",
+        "detail": "附着到固定产物和正确性：双端版本、协议、块与窗口边界。",
+        "tone": "communication",
+        "column": 0,
+        "row": 2
+      },
+      {
+        "id": "preload-attached",
+        "label": "preload 适用性检查",
+        "shortLabel": "preload 适用性检查",
+        "detail": "附着到路径适用性和恢复演练：平台、PP/sleep、daemon 生命周期。",
+        "tone": "kv",
+        "column": 1,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "artifact-fixed",
+        "to": "path-applicability",
+        "label": "满足才继续",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "path-applicability",
+        "to": "request-compatibility",
+        "label": "满足才继续",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "request-compatibility",
+        "to": "correctness-progress",
+        "label": "满足才继续",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "correctness-progress",
+        "to": "recovery-rehearsal",
+        "label": "满足才继续",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "recovery-rehearsal",
+        "to": "slo-replay",
+        "label": "满足才继续",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "slo-replay",
+        "to": "limited-rollout",
+        "label": "满足才继续",
+        "shortLabel": "满足才继续"
+      },
+      {
+        "from": "artifact-fixed",
+        "to": "accepted-baseline",
+        "label": "不满足回基线",
+        "shortLabel": "不满足回基线"
+      },
+      {
+        "from": "path-applicability",
+        "to": "accepted-baseline",
+        "label": "不满足回基线",
+        "shortLabel": "不满足回基线"
+      },
+      {
+        "from": "request-compatibility",
+        "to": "accepted-baseline",
+        "label": "不满足回基线",
+        "shortLabel": "不满足回基线"
+      },
+      {
+        "from": "correctness-progress",
+        "to": "accepted-baseline",
+        "label": "不满足回基线",
+        "shortLabel": "不满足回基线"
+      },
+      {
+        "from": "recovery-rehearsal",
+        "to": "accepted-baseline",
+        "label": "不满足回基线",
+        "shortLabel": "不满足回基线"
+      },
+      {
+        "from": "slo-replay",
+        "to": "accepted-baseline",
+        "label": "不满足回基线",
+        "shortLabel": "不满足回基线"
+      },
+      {
+        "from": "limited-rollout",
+        "to": "accepted-baseline",
+        "label": "不满足回基线",
+        "shortLabel": "不满足回基线"
+      },
+      {
+        "from": "accepted-baseline",
+        "to": "artifact-fixed",
+        "label": "补证后重验",
+        "shortLabel": "补证后重验"
+      },
+      {
+        "from": "pd-attached",
+        "to": "artifact-fixed",
+        "label": "核对双端版本",
+        "shortLabel": "核对双端版本"
+      },
+      {
+        "from": "pd-attached",
+        "to": "correctness-progress",
+        "label": "核对块边界",
+        "shortLabel": "核对块边界"
+      },
+      {
+        "from": "preload-attached",
+        "to": "path-applicability",
+        "label": "核对平台约束",
+        "shortLabel": "核对平台约束"
+      },
+      {
+        "from": "preload-attached",
+        "to": "recovery-rehearsal",
+        "label": "核对生命周期",
+        "shortLabel": "核对生命周期"
+      }
+    ]
+  }
+]

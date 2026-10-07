@@ -1,0 +1,7 @@
+---
+import { splitInternalLinks } from '../lib/report-inline.mjs';
+import { withBase } from '../paths';
+interface Props { text: string }
+const { text } = Astro.props;
+---
+{splitInternalLinks(text).map(part => part.path ? <a href={withBase(part.path)}>{part.text}</a> : part.text)}

@@ -2,6 +2,7 @@
 import ReportProvenance from './ReportProvenance.astro';
 import ReportDiagram from './ReportDiagram.astro';
 import ReportBars from './ReportBars.astro';
+import ReportInline from './ReportInline.astro';
 import type { RadarRecord } from '../radar';
 interface Props { record: RadarRecord }
 const { record } = Astro.props;
@@ -13,11 +14,11 @@ const report = record.report!;
   {report.sections.map(section => <section class="report-section" id={`report-${section.id}`} aria-labelledby={`report-${section.id}-heading`}>
     <h2 id={`report-${section.id}-heading`}>{section.title}</h2>
     {section.blocks.map((block, i) => <>
-      {block.type === 'paragraph' && <div class="report-paragraph"><ReportProvenance {...block} sources={record.sources} /><p>{block.text}</p></div>}
-      {block.type === 'list' && <div class="report-list"><ReportProvenance {...block} sources={record.sources} /><ul>{block.items.map(item => <li>{item}</li>)}</ul></div>}
-      {block.type === 'callout' && <aside class="report-callout"><h3>{block.title}</h3><ReportProvenance {...block} sources={record.sources} /><p>{block.text}</p></aside>}
+      {block.type === 'paragraph' && <div class="report-paragraph"><ReportProvenance {...block} sources={record.sources} /><p><ReportInline text={block.text} /></p></div>}
+      {block.type === 'list' && <div class="report-list"><ReportProvenance {...block} sources={record.sources} /><ul>{block.items.map(item => <li><ReportInline text={item} /></li>)}</ul></div>}
+      {block.type === 'callout' && <aside class="report-callout"><h3>{block.title}</h3><ReportProvenance {...block} sources={record.sources} /><p><ReportInline text={block.text} /></p></aside>}
       {block.type === 'code' && <div class="report-code"><ReportProvenance {...block} sources={record.sources} /><pre><code data-language={block.language}>{block.text}</code></pre></div>}
-      {block.type === 'table' && <div class="report-table-scroll" tabindex="0" role="region" aria-label={block.caption}><table><caption>{block.caption}</caption><thead><tr>{block.columns.map(column => <th scope="col">{column}</th>)}<th scope="col">依据</th></tr></thead><tbody>{block.rows.map(row => <tr>{row.cells.map(cell => <td>{cell}</td>)}<td><ReportProvenance {...row} sources={record.sources} /></td></tr>)}</tbody></table></div>}
+      {block.type === 'table' && <div class="report-table-scroll" tabindex="0" role="region" aria-label={block.caption}><table><caption>{block.caption}</caption><thead><tr>{block.columns.map(column => <th scope="col">{column}</th>)}<th scope="col">依据</th></tr></thead><tbody>{block.rows.map(row => <tr>{row.cells.map(cell => <td><ReportInline text={cell} /></td>)}<td><ReportProvenance {...row} sources={record.sources} /></td></tr>)}</tbody></table></div>}
       {block.type === 'diagram' && <ReportDiagram diagram={block} sources={record.sources} figureID={`report-${section.id}-figure-${i + 1}`} />}
       {block.type === 'bars' && <ReportBars chart={block} sources={record.sources} figureID={`report-${section.id}-chart-${i + 1}`} />}
     </>)}

@@ -41,6 +41,8 @@ export const webSources = [
   { hostname: 'docs.nvidia.com', path: '/cuda/cuda-math-api/cuda_math_api/struct____nv__bfloat16.html', exact: true, name: 'CUDA · BF16 Type' },
   { hostname: 'docs.nvidia.com', path: '/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html', exact: true, name: 'CUDA · BF16 Constants' },
   { hostname: 'api.github.com', path: '/repos/sgl-project/sglang/pulls/41691', exact: true, name: 'SGLang #41691 · Merge Metadata' },
+  { hostname: 'api.github.com', path: '/repos/ai-dynamo/dynamo/releases/tags/v1.5.1', exact: true, name: 'Dynamo v1.5.1 · Release Metadata' },
+  { hostname: 'api.github.com', path: '/repos/vllm-project/vllm/releases/tags/v0.31.0', exact: true, name: 'vLLM v0.31.0 · Release Metadata' },
 ];
 
 export const pathWithin = (pathname, prefix) => prefix === '/' || pathname === prefix || pathname.startsWith(`${prefix}/`);
