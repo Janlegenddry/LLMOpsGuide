@@ -7835,9 +7835,9 @@
     "id": "vllm-async-kv-zeroing",
     "kind": "analysis",
     "title": "vLLM 异步 KV 加载修复与生产验证",
-    "summary": "#59504 于 2026-10-03 合入 main，核验时尚未随新版本发布。解释加载组、物理新块与清零任务的竞态，保留上游测试范围和最终模型复验缺口；无本站 GPU 实测。",
+    "summary": "#59504 于 2026-10-03 合入 main；截至 2026-10-08，v0.31.0 未包含该修复与刚合入的 #59197，#59330 仍开放。保留加载组、新块与清零竞态分析及历史测试边界；无本站 GPU 实测。",
     "publishedAt": "2026-09-30",
-    "reviewedAt": "2026-10-04",
+    "reviewedAt": "2026-10-08",
     "topics": [
       "vLLM",
       "KV Cache",
@@ -7915,14 +7915,14 @@
         "accessedAt": "2026-10-04"
       },
       {
-        "title": "vLLM PR #59197",
+        "title": "vLLM PR #59197 已合入 main",
         "url": "https://github.com/vllm-project/vllm/pull/59197",
-        "accessedAt": "2026-10-04"
+        "accessedAt": "2026-10-08"
       },
       {
         "title": "vLLM PR #59330",
         "url": "https://github.com/vllm-project/vllm/pull/59330",
-        "accessedAt": "2026-10-04"
+        "accessedAt": "2026-10-08"
       },
       {
         "title": "修复前的 token 区间切片实现",
@@ -7933,6 +7933,65 @@
         "title": "发布列表",
         "url": "https://github.com/vllm-project/vllm/releases",
         "accessedAt": "2026-10-04"
+      },
+      {
+        "title": "#59197 固定最终合并提交",
+        "url": "https://github.com/vllm-project/vllm/commit/ef63c23d35acccbba8e014fc88da19d541da38a9",
+        "publishedAt": "2026-10-07",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#59197 固定窗口恢复判定",
+        "url": "https://github.com/vllm-project/vllm/blob/ef63c23d35acccbba8e014fc88da19d541da38a9/vllm/v1/core/sched/scheduler.py",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#59197 固定 NIXL 末 token 契约",
+        "url": "https://github.com/vllm-project/vllm/blob/ef63c23d35acccbba8e014fc88da19d541da38a9/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#59197 固定 Mooncake 末 token 契约",
+        "url": "https://github.com/vllm-project/vllm/blob/ef63c23d35acccbba8e014fc88da19d541da38a9/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/mooncake_connector.py",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#59197 固定同步与异步重放测试",
+        "url": "https://github.com/vllm-project/vllm/blob/ef63c23d35acccbba8e014fc88da19d541da38a9/tests/v1/core/test_prefix_replay.py",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#59197 固定 NIXL 边界测试",
+        "url": "https://github.com/vllm-project/vllm/blob/ef63c23d35acccbba8e014fc88da19d541da38a9/tests/v1/kv_connector/unit/test_nixl_connector_hma.py",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#59197 固定 routed-experts 起点测试",
+        "url": "https://github.com/vllm-project/vllm/blob/ef63c23d35acccbba8e014fc88da19d541da38a9/tests/distributed/aux_output_connector/test_store.py",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#59197 作者的最终测试报告",
+        "url": "https://github.com/vllm-project/vllm/pull/59197",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub PR #59197 作者",
+          "status": "attributed",
+          "note": "已阅读合并后的最终摘要：作者报告 754 项单元测试通过及双遍 GSM8K 验证；本站未执行 GPU 或复现。较早评论性能数字不作为最终合并收益。"
+        },
+        "publishedAt": "2026-09-29",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "vLLM v0.31.0 当前正式版本",
+        "url": "https://github.com/vllm-project/vllm/releases/tag/v0.31.0",
+        "publishedAt": "2026-10-05",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "v0.31.0 scheduler 固定包含关系",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/core/sched/scheduler.py",
+        "accessedAt": "2026-10-08"
       }
     ],
     "claims": [
@@ -7962,7 +8021,7 @@
     ],
     "report": {
       "version": 1,
-      "scope": "核验时间：2026 年 10 月 4 日 03:29 UTC。对象：vLLM #59504。本文讨论缓存正确性与上线验证，不提供未经测量的性能收益。",
+      "scope": "核验时间：2026 年 10 月 4 日 03:29 UTC。对象：vLLM #59504。本文讨论缓存正确性与上线验证，不提供未经测量的性能收益。 2026-10-08 增补核对 #59197 最终合并、#59330 开放状态及 v0.31.0 固定标签；原始发布日期、#59504 历史证据和既有分析保留。",
       "sections": [
         {
           "id": "conclusion",
@@ -7973,10 +8032,11 @@
               "basis": "official",
               "sourceIndices": [
                 0,
-                1,
-                16
+                25,
+                26,
+                17
               ],
-              "text": "vLLM #59504 于 2026 年 10 月 3 日 06:26:13 UTC 合入 main，修复异步 KV 加载与新块清零之间的竞态。截至核验时间，最新公开版本仍为 9 月 22 日发布的 v0.30.0；这是一项已合入、未随新版本发布的修复。[1][2]"
+              "text": "vLLM #59504 于 2026 年 10 月 3 日 06:26:13 UTC 合入 main，修复异步 KV 加载与新块清零之间的竞态。[1] 截至 2026-10-08，最新正式版本为 v0.31.0，但固定标签仍未包含 #59504 的异步清零修复，也没有 #59197 的窗口加载判定接口。合入 main、进入稳定标签和进入具体 wheel/镜像是三个不同节点；部署前仍需固定双端产物并核对包含关系。"
             },
             {
               "type": "paragraph",
@@ -8424,9 +8484,16 @@
             {
               "type": "diagram",
               "title": "从修复到发布的证据关卡",
-              "caption": "原创证据状态图。截至 2026-10-04，#59504 已合入 main；单元回归为上游报告，最终端到端复验仍有缺口，尚未随新正式版本发布。两项相邻开放 PR 没有指向已完成节点的交付箭头。",
+              "caption": "原创证据状态图。截至 2026-10-08，#59504 与相邻 #59197 已合入 main，但 v0.31.0 未包含两项修复；#59330 仍开放。上游回归不等于本站实测，也不等于目标产物验收。",
               "basis": "inference",
-              "sourceIndices": [],
+              "sourceIndices": [
+                0,
+                13,
+                14,
+                25,
+                26,
+                17
+              ],
               "nodes": [
                 {
                   "id": "merged",
@@ -8461,27 +8528,27 @@
                 {
                   "id": "release",
                   "label": "正式版本",
-                  "detail": "截至核验时最新公开版本仍为 2026-09-22 发布的 v0.30.0。",
+                  "detail": "截至 2026-10-08 最新正式版为 v0.31.0；固定标签未包含 #59504 与 #59197 两项修复。",
                   "column": 3,
                   "row": 0,
                   "shortLabel": "正式版本",
-                  "subtitle": "尚未随新版本发布",
+                  "subtitle": "v0.31.0 未包含两项修复",
                   "tone": "neutral"
                 },
                 {
                   "id": "replay-pr",
                   "label": "#59197",
-                  "detail": "相邻窗口回放路径仍开放，不能并入 #59504 已完成能力。",
+                  "detail": "#59197 于 10 月 7 日 22:28 UTC 合入 main；最终 bounded-replay 与 N−1 契约须单独验证，不能并入 #59504 原始能力。",
                   "column": 0,
                   "row": 1,
                   "shortLabel": "#59197",
-                  "subtitle": "开放 · 未合入",
-                  "tone": "neutral"
+                  "subtitle": "已合入 · 未进 v0.31.0",
+                  "tone": "kv"
                 },
                 {
                   "id": "boundary-pr",
                   "label": "#59330",
-                  "detail": "最后提示词 token 与回退边界路径仍开放，P/D 两端配合及混用风险需另证。",
+                  "detail": "#59330 仍开放，负责更一般的全模型与复杂 prompt/传输路径；P/D 两端配合及混用风险需另证。",
                   "column": 1,
                   "row": 1,
                   "shortLabel": "#59330",
@@ -8523,7 +8590,7 @@
                     ]
                   },
                   {
-                    "title": "相邻开放 PR · 不计入交付",
+                    "title": "相邻修复 · 分开核对交付",
                     "tone": "neutral",
                     "nodeIds": [
                       "replay-pr",
@@ -8567,14 +8634,16 @@
                 },
                 {
                   "cells": [
-                    "v0.30.0 发布记录 [2]",
-                    "最新公开版本发布时间为 2026-09-22 05:20:54 UTC",
+                    "v0.30.0 历史发布记录 [2]",
+                    "原核验时使用的 9 月 22 日发布基线；现最新正式版为 v0.31.0，修复包含关系另查固定标签",
                     "main 与稳定分支等同"
                   ],
                   "basis": "official",
                   "sourceIndices": [
                     1,
-                    16
+                    16,
+                    25,
+                    26
                   ]
                 },
                 {
@@ -8640,6 +8709,55 @@
                 9
               ],
               "text": "四组合测试的价值在于检查不变量：加载覆盖的新块与清零集合是否相交，同时确保未加载的组仍有初始化。它比“请求返回成功”更贴近错误发生的位置。[10]"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                13,
+                14,
+                17,
+                18,
+                19,
+                20
+              ],
+              "text": "2026 年 10 月 7 日 22:28 UTC，#59197 已合入 main，固定提交为 ef63c23d35acccbba8e014fc88da19d541da38a9。最终补丁只有在连接器声明本次加载恢复全部需重放的 KV 组时，才跳过 SWA 有界重放、整块取整和短命中丢弃；失败加载及没有携带窗口的加载仍保留重放。补丁同时让 NIXL 与 Mooncake 的 bounded-replay 路径在 P 侧停于 N−1、D 侧加载 N−1 后计算末 token，并处理 prompt-logprobs 与 routed-experts 起点边界。#59330 仍开放，负责更一般的全模型与复杂 prompt/传输路径，不能把它的全部范围并入本次合并。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                17,
+                21,
+                22,
+                23
+              ],
+              "text": "最终补丁的定向测试覆盖同步/异步加载、窗口长度与非整块命中、NIXL bounded-replay 的 N−1 边界、跳过前缀读取时不裁剪 prompt，以及 routed-experts 起点裁剪。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                24
+              ],
+              "text": "上游作者报告 754 项单元测试通过；本站仅审阅源码与测试，没有运行 GPU 或复现该数字。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                24
+              ],
+              "text": "此前评论中的性能数据属于较早修订及特定配置，不作为最终合并的通用收益承诺。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [
+                17
+              ],
+              "text": "2026-10-08 更新：#59197 从开放提案变为 main 已合入；其稳定标签和目标产物包含关系仍需分别核对。保留原报告全部九章、#59504 历史回归及原有来源顺序。",
+              "title": "本次更新范围"
             }
           ]
         },
@@ -8886,10 +9004,14 @@
               "basis": "pending",
               "sourceIndices": [
                 13,
-                14
+                14,
+                17,
+                18,
+                19,
+                20
               ],
               "items": [
-                "#59197 在核验时仍开放，处理“已经收到窗口 KV 却又做有界重放”的路径；#59330 仍开放，处理最后一个提示词 token 的传输与回退边界。[14][15] 两者不能列入 #59504 已交付能力。",
+                "#59197 已合入 main，最终补丁与双端契约见本报告证据章节；继续核对稳定版本和目标 wheel/镜像包含关系。#59330 仍开放，更一般的全模型与复杂 prompt/传输路径需另行跟进。[14][15] 两项相邻修复不并入 #59504 的原始能力说明。",
                 "#59330 的方案涉及 P/D 两端配合，并明确指出混用新旧行为存在风险。[15] 不应把未经验证的相邻 PR 拼成生产补丁集合。",
                 "最终接口重构后的真实 GPU 模型复验、具体部署的自定义连接器契约、正式发布或回移状态，均须继续核验。",
                 "若后续版本出现相关修复，更新报告时应重新核对提交包含关系与测试范围，而不是只替换标题中的版本号。"
@@ -8905,7 +9027,7 @@
               "type": "paragraph",
               "basis": "inference",
               "sourceIndices": [],
-              "text": "以下均于 2026-10-04 阅读；代码为 #59504 合入提交的固定快照。"
+              "text": "主体 #59504 固定快照于 2026-10-04 阅读；2026-10-08 增补核对 #59197 最终合并、#59330 状态及 v0.31.0 固定标签。"
             },
             {
               "type": "paragraph",
@@ -8922,7 +9044,7 @@
                 1,
                 16
               ],
-              "text": "[2] vLLM v0.30.0，发布时间 2026-09-22 05:20:54 UTC；发布列表。"
+              "text": "[2] vLLM v0.30.0（2026-10-04 核验使用的历史发布基线），发布时间 2026-09-22 05:20:54 UTC；发布列表。"
             },
             {
               "type": "paragraph",
@@ -9016,9 +9138,11 @@
               "type": "paragraph",
               "basis": "official",
               "sourceIndices": [
-                13
+                13,
+                17,
+                26
               ],
-              "text": "[14] vLLM PR #59197，核验时 open、未合入。"
+              "text": "[14] vLLM PR #59197，2026-10-07 22:28 UTC 已合入 main；最终固定提交为 ef63c23d35acccbba8e014fc88da19d541da38a9，v0.31.0 未包含其窗口加载判定。"
             },
             {
               "type": "paragraph",
@@ -9026,7 +9150,7 @@
               "sourceIndices": [
                 14
               ],
-              "text": "[15] vLLM PR #59330，核验时 open、未合入。"
+              "text": "[15] vLLM PR #59330，截至 2026-10-08 仍 open、未合入；更一般的全模型与复杂 prompt/传输路径需另行跟进。"
             },
             {
               "type": "paragraph",
