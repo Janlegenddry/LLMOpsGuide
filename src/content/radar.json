@@ -5327,6 +5327,1251 @@
   },
   {
     "schemaVersion": 1,
+    "id": "mooncake-rdma-failure-containment",
+    "kind": "analysis",
+    "title": "Mooncake 异步元数据与握手写入的故障边界",
+    "summary": "两项修复于 10 月 8 日合入 main：在途 slice 拥有标识副本，握手写入抑制 SIGPIPE。稳定与候选标签未包含；发送时限、KV 数据正确和业务恢复仍须独立验证，无本站 GPU 实测。",
+    "publishedAt": "2026-10-01",
+    "reviewedAt": "2026-10-08",
+    "topics": [
+      "GPU 通信",
+      "KV Cache",
+      "PD 分离",
+      "故障分析",
+      "服务调度"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "RDMA 所有权 PR #4437",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4437",
+        "publishedAt": "2026-10-01",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "握手 SIGPIPE PR #4463",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4463",
+        "publishedAt": "2026-10-03",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "RDMA 修复固定提交",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/2c7f295eee6896f58cfb3a3e4aeb6b09d997bf47",
+        "publishedAt": "2026-10-08",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "握手修复固定提交",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/9f4c206c2da6e0368a6246efd9b16458acb6a4a5",
+        "publishedAt": "2026-10-08",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "稳定标签 slice.h",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.13.post1/mooncake-transfer-engine/tent/include/tent/transport/rdma/slice.h",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "稳定标签 common.h",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.13.post1/mooncake-transfer-engine/include/common.h",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "候选标签 slice.h",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14-rc1/mooncake-transfer-engine/tent/include/tent/transport/rdma/slice.h",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "候选标签 common.h",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14-rc1/mooncake-transfer-engine/include/common.h",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "Mooncake 公开发布目录",
+        "url": "https://github.com/kvcache-ai/Mooncake/releases",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "联合基线 RDMA workers.cpp",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/9f4c206c2da6e0368a6246efd9b16458acb6a4a5/mooncake-transfer-engine/tent/src/transport/rdma/workers.cpp",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "联合基线 socket 写入 common.h",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/9f4c206c2da6e0368a6246efd9b16458acb6a4a5/mooncake-transfer-engine/include/common.h",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "固定握手实现",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/9f4c206c2da6e0368a6246efd9b16458acb6a4a5/mooncake-transfer-engine/src/transfer_metadata_plugin.cpp",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "发送停滞 PR #4451 · 仍开放",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4451",
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "固定 RDMA 元数据回归测试",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/2c7f295eee6896f58cfb3a3e4aeb6b09d997bf47/mooncake-transfer-engine/tent/tests/rdma_transport_test.cpp",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "固定 socketpair 测试",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/9f4c206c2da6e0368a6246efd9b16458acb6a4a5/mooncake-transfer-engine/tests/common_test.cpp",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#4437 作者实验报告",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4437",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub PR #4437 作者",
+          "status": "attributed",
+          "note": "作者 ASan 旧路径释放后读取报告；本站只阅读，未执行 ASan 或 GPU 实验。"
+        },
+        "publishedAt": "2026-10-01",
+        "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "#4463 作者实验报告",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4463",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub PR #4463 作者",
+          "status": "attributed",
+          "note": "作者针对 #4451 与 #4463 组合补丁的 macOS 独立 harness 报告一秒发送超时交互；这不是当前 main 单独测试，也不是本站实测。"
+        },
+        "publishedAt": "2026-10-03",
+        "accessedAt": "2026-10-08"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#4437 与 #4463 于 2026-10-08 分别合入 main；修复标识所有权与 socket SIGPIPE 边界。",
+        "sourceIndices": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "v0.3.13.post1 与 v0.3.14-rc1 固定文件仍保留旧实现，不能声称正式包已包含。",
+        "sourceIndices": [
+          4,
+          5,
+          6,
+          7
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "进程存活、时限内返回、数据正确和业务恢复须分别验证；无本站 H20/RDMA 实测。",
+        "sourceIndices": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    ],
+    "questions": [
+      "实际镜像是否命中 TENT RDMA 路径并包含两项固定修复？",
+      "停止读取的连接是否具备明确发送预算，且不会拖住健康请求？",
+      "KV 数据校验、重试和业务 SLO 是否有独立观测证据？"
+    ],
+    "related": [
+      {
+        "title": "vLLM 异步 KV 清零与窗口加载边界",
+        "path": "/radar/vllm-async-kv-zeroing/"
+      },
+      {
+        "title": "SGLang NIXL 对端恢复",
+        "path": "/radar/sglang-nixl-peer-reload/"
+      },
+      {
+        "title": "线上推理挂起排查",
+        "path": "/inference/sglang-hang-diagnosis/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "核验时间：2026 年 10 月 8 日 02:55 UTC。适用读者：维护 Mooncake KV 传输、推理服务和 GPU 集群的工程团队。 原文日期保留 #4437 首次公开的 2026-10-01；10 月 8 日为合并和本站核验日期。仅阅读公开固定源码与测试，实验/验收计划未执行。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "text": "Mooncake 在今天合入了两项值得进入升级评估的修复：TENT RDMA 完成阶段的元数据所有权修复，以及 Transfer Engine 握手写入的 SIGPIPE 抑制。二者共同回答一个运维问题：对端变化或异步延迟发生后，错误能否留在可处理的边界内。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议先核对线上实际构建的源码，再建立带故障注入的候选版本验证。今天的新事实是主干合入，不能写成正式版本已经提供修复。两项变更也没有证明请求自动重试、KV 数据一致性或整组服务恢复已经完成。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下机制结论来自固定提交源码；实验及上线标准是本文提出的验证方案，均未在本次核验中实际执行。未获得 H20、真实 RDMA 网络或推理框架集成的测试结果。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景与发布边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "RDMA 请求提交和完成处理分属不同时间点；完成回调依赖的对象，必须覆盖这段异步间隔。握手服务则同时面对正常连接、突然断开的连接和停止读取的连接。把这些情况都归入“网络异常”，容易漏掉进程退出、内存生命周期和阻塞时限这三种不同问题。"
+            },
+            {
+              "type": "table",
+              "caption": "事件时间线",
+              "columns": [
+                "变更",
+                "原 PR 首次公开",
+                "主干提交时间",
+                "GitHub 合并事件时间",
+                "状态"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#4437 RDMA 元数据所有权",
+                    "2026-10-01 08:15:34 UTC",
+                    "2026-10-08 02:29:57 UTC",
+                    "2026-10-08 02:29:58 UTC",
+                    "已合入 main"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "#4463 握手 SIGPIPE 抑制",
+                    "2026-10-03 17:30:56 UTC",
+                    "2026-10-08 02:37:17 UTC",
+                    "2026-10-08 02:37:18 UTC",
+                    "已合入 main"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "时间来自 #4437 原 PR、#4463 原 PR 的公开创建和合并字段，以及对应固定提交。首次讨论日期、提交日期和合并事件相差一秒的记录应分别保留。"
+            },
+            {
+              "type": "table",
+              "caption": "背景与发布边界：证据与边界",
+              "columns": [
+                "核验对象",
+                "源码观察",
+                "可以得出的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "v0.3.13.post1",
+                    "slice.h 仍有借用指针；writeString 仍调用 writeFully",
+                    "该固定标签未包含这两处修正"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.3.14-rc1",
+                    "同样保留上述旧实现",
+                    "该候选标签也未包含修正"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6,
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "main 固定提交 9f4c206",
+                    "两项修正均可见",
+                    "可作为联合验证的源码基线"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    3,
+                    9,
+                    10
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "text": "逐文件核对：稳定标签 slice.h、稳定标签 common.h、候选标签 slice.h、候选标签 common.h。发布订阅源最近列出 v0.3.14-rc1（2026-09-07），没有提供包含今天提交的新发布证明；这不是对全部分发渠道的穷尽检查。发布记录"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制与故障隔离",
+          "blocks": [
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "#4437 将 slice 中的源 NIC 名、目标 NIC 名和目标 machine ID 改为持有值。generatePostPath 在每次提交路径生成时复制标识，完成处理使用这些副本；元数据快照替换不再决定这些标识的存活期。该修改针对 GDR 可达性上报所用的元数据，不代表数据缓冲区、注册内存或 endpoint 的全部生命周期都已重新验证。固定提交",
+              "title": "RDMA 元数据的有效期"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "工程上的重点是分别检查“当前路由是什么”和“这次已提交操作使用过什么”。对在途操作的归因应绑定提交时的信息，否则刷新配置本身就可能破坏诊断或恢复动作。建议日志保留提交尝试 ID，将重试产生的新归因与旧完成事件区分开。"
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "#4463 新增 socket 专用写入函数，Linux 使用 MSG_NOSIGNAL，macOS 使用 SO_NOSIGPIPE；writeString 转用该函数。EINTR 重试，EAGAIN/EWOULDBLOCK 返回已写字节数，由上层完整长度检查判失败。原文件写入函数保持独立。固定提交及完整补丁",
+              "title": "握手错误返回的边界"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "必须继续区分三个条件：进程没有因信号退出、失败能在时限内返回、业务能够再次成功。第一项成立不能替代后两项。尤其“有超时返回分支”并不等于当前 socket 已设置发送超时。"
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                11
+              ],
+              "text": "在 9f4c206 的握手实现里，接收端设置了 SO_RCVTIMEO，未见 SO_SNDTIMEO；writeString 既用于服务端应答，也用于主动连接的请求。不能把影响面简化为只覆盖 accept 得到的 socket。固定握手实现",
+              "title": "当前主干仍需单独核对的时限"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                12
+              ],
+              "text": "发送停滞的专门变更 #4451 在本次核验时仍为 OPEN。本文不把它算入今天已合入的保证。发送停滞 PR"
+            },
+            {
+              "type": "diagram",
+              "title": "图一：元数据所有权与异步完成",
+              "caption": "横轴为时间、三条角色泳道；上半为旧路径，下半为修复路径。旧引用失效不代表每次必现故障。重试回到路径生成并复制新标识，不沿用旧副本。只展示标识所有权，不表示 GPU 数据已完成或 endpoint 已恢复。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                9,
+                13
+              ],
+              "nodes": [
+                {
+                  "id": "old-snapshot-a",
+                  "label": "旧快照 A",
+                  "detail": "旧路径的源 NIC、目标 NIC 与 machine ID 来自元数据快照。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "旧快照 A",
+                  "subtitle": "旧路径",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "old-snapshot-b",
+                  "label": "快照 B 替换 A",
+                  "detail": "不可变快照替换后，旧对象可能释放。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "快照 B 替换 A",
+                  "subtitle": "旧路径",
+                  "tone": "danger"
+                },
+                {
+                  "id": "new-snapshot-a",
+                  "label": "提交快照 A",
+                  "detail": "修复路径生成时读取本次选定路由。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "提交快照 A",
+                  "subtitle": "修复路径",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "new-snapshot-b",
+                  "label": "新快照 B",
+                  "detail": "刷新不再决定在途标识副本的有效期。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "新快照 B",
+                  "subtitle": "修复路径",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "borrowed-ids",
+                  "label": "借用三个标识",
+                  "detail": "旧 slice 持有指针，未拥有标识存储。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "借用三个标识",
+                  "subtitle": "旧路径",
+                  "tone": "danger"
+                },
+                {
+                  "id": "owned-ids",
+                  "label": "复制三个标识",
+                  "detail": "每次 generatePostPath 复制源/目标 NIC 名和目标 machine ID。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "复制三个标识",
+                  "subtitle": "修复路径",
+                  "tone": "kv"
+                },
+                {
+                  "id": "retry-path",
+                  "label": "重试重新生成路径",
+                  "detail": "重试时重新核对路由并复制新标识，不复用旧副本。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "重试重新生成路径",
+                  "subtitle": "重试 · 新的尝试",
+                  "tone": "control"
+                },
+                {
+                  "id": "invalid-read",
+                  "label": "潜在失效引用读取",
+                  "detail": "旧完成处理可能读取已释放元数据；红色虚线标注失效区。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "潜在失效引用读取",
+                  "subtitle": "旧路径",
+                  "tone": "danger"
+                },
+                {
+                  "id": "completion-owned",
+                  "label": "完成使用自有标识",
+                  "detail": "固定修复使用 slice 自有字符串上报 GDR 可达性。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "完成使用自有标识",
+                  "subtitle": "修复路径",
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-snapshot-a",
+                  "to": "borrowed-ids",
+                  "label": "旧：借用指针",
+                  "shortLabel": "旧：借用指针"
+                },
+                {
+                  "from": "old-snapshot-a",
+                  "to": "old-snapshot-b",
+                  "label": "快照刷新",
+                  "shortLabel": "快照刷新"
+                },
+                {
+                  "from": "borrowed-ids",
+                  "to": "invalid-read",
+                  "label": "刷新后潜在失效",
+                  "shortLabel": "刷新后潜在失效"
+                },
+                {
+                  "from": "old-snapshot-b",
+                  "to": "invalid-read",
+                  "label": "旧快照不再存活",
+                  "shortLabel": "旧快照不再存活"
+                },
+                {
+                  "from": "new-snapshot-a",
+                  "to": "owned-ids",
+                  "label": "提交时复制",
+                  "shortLabel": "提交时复制"
+                },
+                {
+                  "from": "new-snapshot-a",
+                  "to": "new-snapshot-b",
+                  "label": "快照刷新",
+                  "shortLabel": "快照刷新"
+                },
+                {
+                  "from": "owned-ids",
+                  "to": "completion-owned",
+                  "label": "副本继续有效",
+                  "shortLabel": "副本继续有效"
+                },
+                {
+                  "from": "completion-owned",
+                  "to": "retry-path",
+                  "label": "需重试时重新生成",
+                  "shortLabel": "需重试时重新生成"
+                },
+                {
+                  "from": "retry-path",
+                  "to": "owned-ids",
+                  "label": "新尝试复制新标识",
+                  "shortLabel": "新尝试复制新标识"
+                }
+              ],
+              "presentation": {
+                "kind": "metadata-ownership",
+                "panels": [
+                  {
+                    "title": "路由快照",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "old-snapshot-a",
+                      "old-snapshot-b",
+                      "new-snapshot-a",
+                      "new-snapshot-b"
+                    ]
+                  },
+                  {
+                    "title": "在途 slice",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "borrowed-ids",
+                      "owned-ids",
+                      "retry-path"
+                    ]
+                  },
+                  {
+                    "title": "完成处理",
+                    "tone": "control",
+                    "nodeIds": [
+                      "invalid-read",
+                      "completion-owned"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "diagram",
+              "title": "图二：握手错误返回与进程存活",
+              "caption": "正常读取、关闭和停止读取是不同条件。旧 SIGPIPE 分支可终止进程；修复返回 EPIPE 等错误。停止读取仍需独立发送时限，橙色未闭合门不表示五秒必然恢复；SO_RCVTIMEO 不能替代发送时限。",
+              "basis": "inference",
+              "sourceIndices": [
+                3,
+                10,
+                11,
+                12,
+                14
+              ],
+              "nodes": [
+                {
+                  "id": "peer-reading",
+                  "label": "对端正常读取",
+                  "detail": "健康 socketpair 测试覆盖字节完整交付。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "对端正常读取",
+                  "tone": "kv"
+                },
+                {
+                  "id": "peer-closed",
+                  "label": "对端关闭",
+                  "detail": "需要同时记录错误返回与宿主进程存活。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "对端关闭",
+                  "tone": "danger"
+                },
+                {
+                  "id": "peer-stalled",
+                  "label": "对端停止读取",
+                  "detail": "写缓冲填满后可能阻塞；须另证发送预算。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "对端停止读取",
+                  "tone": "communication"
+                },
+                {
+                  "id": "socket-write",
+                  "label": "socket 专用写入",
+                  "detail": "Linux MSG_NOSIGNAL / macOS SO_NOSIGPIPE；EINTR 重试，部分写入由上层完整长度核查。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "socket 专用写入",
+                  "tone": "control"
+                },
+                {
+                  "id": "full-write",
+                  "label": "完整写入",
+                  "detail": "只能说明对应字节写入，不代替完整业务成功。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "完整写入",
+                  "tone": "kv"
+                },
+                {
+                  "id": "error-return",
+                  "label": "EPIPE / 错误处理",
+                  "detail": "关闭对端不再因 SIGPIPE 终止进程；仍须上层恢复。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "EPIPE / 错误处理",
+                  "tone": "control"
+                },
+                {
+                  "id": "timeout-pending",
+                  "label": "发送时限待单独验证",
+                  "detail": "EAGAIN/EWOULDBLOCK 分支不意味着 socket 已设置发送超时。#4451 仍开放。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "发送时限待单独验证",
+                  "subtitle": "未闭合条件",
+                  "tone": "communication"
+                },
+                {
+                  "id": "old-sigpipe",
+                  "label": "旧：SIGPIPE 进程终止",
+                  "detail": "旧路径风险示意，实际失败样本由部署方故障注入验证。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "旧：SIGPIPE 进程终止",
+                  "tone": "danger"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "peer-reading",
+                  "to": "socket-write",
+                  "label": "正常输入",
+                  "shortLabel": "正常输入"
+                },
+                {
+                  "from": "peer-closed",
+                  "to": "socket-write",
+                  "label": "修复后的关闭输入",
+                  "shortLabel": "修复后的关闭输入"
+                },
+                {
+                  "from": "peer-stalled",
+                  "to": "socket-write",
+                  "label": "停止读取输入",
+                  "shortLabel": "停止读取输入"
+                },
+                {
+                  "from": "socket-write",
+                  "to": "full-write",
+                  "label": "正常且完整写入",
+                  "shortLabel": "正常且完整写入"
+                },
+                {
+                  "from": "socket-write",
+                  "to": "error-return",
+                  "label": "关闭等写入错误",
+                  "shortLabel": "关闭等写入错误"
+                },
+                {
+                  "from": "socket-write",
+                  "to": "timeout-pending",
+                  "label": "停止读取需独立预算",
+                  "shortLabel": "停止读取需独立预算"
+                },
+                {
+                  "from": "peer-closed",
+                  "to": "old-sigpipe",
+                  "label": "旧路径：信号可能终止",
+                  "shortLabel": "旧路径：信号可能终止"
+                }
+              ],
+              "presentation": {
+                "kind": "handshake-boundaries",
+                "panels": [
+                  {
+                    "title": "对端条件",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "peer-reading",
+                      "peer-closed",
+                      "peer-stalled"
+                    ]
+                  },
+                  {
+                    "title": "握手路径",
+                    "tone": "control",
+                    "nodeIds": [
+                      "socket-write"
+                    ]
+                  },
+                  {
+                    "title": "条件结果",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "full-write",
+                      "error-return",
+                      "timeout-pending"
+                    ]
+                  },
+                  {
+                    "title": "旧路径故障",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-sigpipe"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "已有证据与证明强度",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已有证据与证明强度：证据与边界",
+              "columns": [
+                "证据",
+                "实际覆盖",
+                "尚未覆盖"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#4437 作者给出的 ASan 报告",
+                    "旧路径出现释放后读取",
+                    "线上发生率、用户数据损坏范围"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    15
+                  ]
+                },
+                {
+                  "cells": [
+                    "RDMA 元数据回归测试",
+                    "旧的本地与远端快照均过期后，驱动合成成功完成并核对 GDR 状态恢复",
+                    "真实 NIC、GPU DMA、链路抖动和服务重试"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    13
+                  ]
+                },
+                {
+                  "cells": [
+                    "socketpair 正常与关闭测试",
+                    "正常字节交付，以及关闭对端后的错误返回和进程存活",
+                    "长时阻塞、多连接饥饿、实际网络设备"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    14
+                  ]
+                },
+                {
+                  "cells": [
+                    "#4463 作者的组合补丁实验",
+                    "作者报告 macOS 独立 harness 验证发送超时交互",
+                    "当前 main 单独具备该时限、Linux 集群结果"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    16
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                13
+              ],
+              "text": "RDMA 测试先通过 weak_ptr 确认旧快照确实消失，再操作可达性状态并注入成功 completion；它使用构造的 GPU 位置元数据，不应当宣传为真实 GPU 测试。固定回归测试"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                14
+              ],
+              "text": "握手新增测试是健康 socketpair 和关闭对端两个情形。本次阅读了测试，未执行。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                16
+              ],
+              "text": "作者针对#4451 加 #4463 的组合报告一秒发送超时测试；"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                12,
+                14,
+                16
+              ],
+              "text": "这是带额外补丁的作者实验，不能用作当前主干的实测指标。固定 socket 测试、#4463 实验讨论"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "收益与代价",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次最直接的潜在收益是缩小故障扩散范围。运维上应关注因异常导致的进程重启、健康流量受阻和错误归因，而不只盯平均带宽。故障被正常返回后，如果调用方立即无界重试，仍可能把原来的崩溃变成重试风暴。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "拥有字符串会引入复制和生命周期管理成本。不能凭字符串短就宣布成本可以忽略；高 slice 速率下，建议同时看 CPU 使用、分配行为和尾延迟。ASan 构建用于暴露生命周期问题，正式优化构建用于比较性能，两个数据集应单独记录。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "握手失败更可见之后，错误日志量也可能变化。应按目标与错误类型聚合，并保留速率限制，避免一次故障让日志吞吐成为新的瓶颈。部署策略上，优先做单组 canary，保留可回滚镜像和精确依赖清单。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产落地顺序",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "第一步确定实际运行路径。记录 Mooncake 版本、构建提交、是否使用 TENT RDMA，以及握手插件和上层调用者。框架的版本号不足以说明链接了哪份传输库；SGLang 或其他服务的镜像需要单独检查，不能由上游 main 推导其包含修复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "第二步形成候选构建。保留原版本、只加入元数据修复、只加入握手修复、联合修复四组基线，以便定位收益和回归。若选择 cherry-pick，必须重新验证依赖上下文；“补丁可以应用”不是行为等价证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "第三步建立观测链。把请求 ID、传输批次、对端身份、失败类型和重试次数关联起来。分别记录进程存活、握手返回、传输结果和用户请求完成，避免把错误日志消失当成成功。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "第四步再做真实硬件验收。H20 部署要使用实际驱动、CUDA、NIC 固件、拓扑和内存注册方式。这里的源码修改没有提供 H20 性能提升、兼容性认证或显存用量改善的直接证据。"
+            },
+            {
+              "type": "diagram",
+              "title": "图三：从源码包含到服务恢复的验收门",
+              "caption": "五个顺序门均为未执行的部署验收计划。前两门有源码和定向单元证据，不能据此填满生产状态；第三门需要独立时限条件，后两门等待真实集群验证。发布标签只连到构建核对，不跨越后续门。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                13,
+                14
+              ],
+              "nodes": [
+                {
+                  "id": "build-includes",
+                  "label": "构建包含修复",
+                  "detail": "观察镜像 digest、实际装载库、完整源码 SHA；现有源码证据不代替目标构建。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "构建包含修复",
+                  "subtitle": "○ 源码证据 · 产物待核对",
+                  "tone": "control"
+                },
+                {
+                  "id": "memory-process",
+                  "label": "内存与进程安全",
+                  "detail": "观察快照释放/完成事件、ASan、关闭对端退出码；已有定向测试，本站未运行。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "内存与进程安全",
+                  "subtitle": "○ 单元证据 · 部署待测",
+                  "tone": "control"
+                },
+                {
+                  "id": "bounded-return",
+                  "label": "失败返回有界",
+                  "detail": "独立冻结发送预算并测停止读取情形；接收超时不能替代。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "失败返回有界",
+                  "subtitle": "○ 独立时限条件待补",
+                  "tone": "communication"
+                },
+                {
+                  "id": "transfer-data",
+                  "label": "传输与数据正确",
+                  "detail": "真实 NIC/GPU 故障注入；KV 内容校验独立于传输返回成功。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "传输与数据正确",
+                  "subtitle": "○ 真实集群实验待补",
+                  "tone": "control"
+                },
+                {
+                  "id": "business-slo",
+                  "label": "业务 SLO 恢复",
+                  "detail": "健康与故障窗口的 TTFT、错误率、重试与请求结果满足预登记阈值。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "业务 SLO 恢复",
+                  "subtitle": "○ 真实业务验收待补",
+                  "tone": "control"
+                },
+                {
+                  "id": "release-tag",
+                  "label": "固定发布标签",
+                  "detail": "稳定与候选标签未含两项修复；main 不是实际 wheel/镜像包含证明。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "固定发布标签",
+                  "subtitle": "只进入第一道核对",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "release-tag",
+                  "to": "build-includes",
+                  "label": "逐文件核对包含",
+                  "shortLabel": "逐文件核对包含"
+                },
+                {
+                  "from": "build-includes",
+                  "to": "memory-process",
+                  "label": "验证通过才继续",
+                  "shortLabel": "验证通过才继续"
+                },
+                {
+                  "from": "memory-process",
+                  "to": "bounded-return",
+                  "label": "验证通过才继续",
+                  "shortLabel": "验证通过才继续"
+                },
+                {
+                  "from": "bounded-return",
+                  "to": "transfer-data",
+                  "label": "验证通过才继续",
+                  "shortLabel": "验证通过才继续"
+                },
+                {
+                  "from": "transfer-data",
+                  "to": "business-slo",
+                  "label": "验证通过才继续",
+                  "shortLabel": "验证通过才继续"
+                }
+              ],
+              "presentation": {
+                "kind": "fault-acceptance",
+                "panels": [
+                  {
+                    "title": "部署验收 · 尚未执行",
+                    "tone": "control",
+                    "nodeIds": [
+                      "build-includes",
+                      "memory-process",
+                      "bounded-return",
+                      "transfer-data",
+                      "business-slo"
+                    ]
+                  },
+                  {
+                    "title": "发布与版本证据",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "release-tag"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "建议实验矩阵",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下均是建议执行的实验，不是已得到的结果。超时预算和 SLO 阈值由部署方在执行前填写并冻结。"
+            },
+            {
+              "type": "table",
+              "caption": "建议实验矩阵（建议方案，尚未执行）",
+              "columns": [
+                "编号",
+                "注入条件",
+                "对照与记录",
+                "预期验证问题"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "E1",
+                    "在途请求期间替换本地与远端元数据",
+                    "原版和修复版 ASan；快照释放时刻、完成事件",
+                    "是否仍有释放后读取"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E2",
+                    "元数据刷新期间多次提交与重试",
+                    "保存每次尝试的 NIC 与 machine ID",
+                    "归因是否绑定正确尝试"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E3",
+                    "握手回应前或回应中关闭对端",
+                    "子进程退出码、返回错误、后续健康请求",
+                    "是否隔离信号导致的进程退出"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E4",
+                    "对端接收后停止读取",
+                    "当前 main 与明确包含超时方案的候选分开测",
+                    "阻塞是否在约定预算内结束"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E5",
+                    "异常连接与健康连接同时进入",
+                    "健康握手尾延迟、排队、错误日志速率",
+                    "单个异常能否拖住无关请求"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E6",
+                    "真实 H20/RDMA 集群的对端重启与恢复",
+                    "KV 内容校验、重试次数、TTFT、错误率",
+                    "底层隔离能否转化为业务恢复"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E7",
+                    "无故障稳态负载",
+                    "同模型、同拓扑、同参数的多轮对照",
+                    "修复的正常路径成本是否可接受"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "E1 与 E3 应设计能使未修复版本失败的对照，否则通过结果的信息量很低。E4 不能借用接收超时配置作为完成条件。E6 的数据校验必须独立于“传输返回成功”，以免把控制面状态恢复误当作 KV 数据正确。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收与回滚",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "验收与回滚（建议方案，尚未执行）",
+              "columns": [
+                "验收门",
+                "通过条件",
+                "不通过时的动作"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "版本可追溯",
+                    "镜像、依赖和源码 SHA 一致，并核对实际装载库",
+                    "停止扩大流量，修正构建链"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期安全",
+                    "对照可触发、修复路径通过；ASan 无相关错误",
+                    "保留复现，排查其他异步引用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "进程安全",
+                    "对端关闭不终止宿主；健康请求仍可继续",
+                    "回滚候选并检查其他 socket 写入路径"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "时限明确",
+                    "停止读取情形满足预先确定的预算",
+                    "不宣称故障恢复完成，补独立超时方案"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据正确",
+                    "KV 校验及请求结果符合预定义要求",
+                    "停止发布，区分传输与上层重试问题"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务可接受",
+                    "健康负载和故障窗口均符合团队 SLO",
+                    "回滚或缩小部署范围"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可接受的最终记录应同时包含成功与失败样本、机器配置、软件清单、注入脚本和时间线。若只取得单元测试结果，阶段结论应停留在相应边界，不提前授予生产就绪判断。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待补信息与来源索引",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "仍需补齐：线上是否命中 TENT 路径、实际分发包是否回移修复、#4451 后续状态、真实 RDMA/H20 验证、上层框架的重试与清理行为、字符串复制在目标负载下的成本。没有这些信息时，最合理的动作是安排验证，而不是全量升级。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "固定版本锚点："
+            },
+            {
+              "type": "list",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                3,
+                9,
+                10
+              ],
+              "items": [
+                "元数据修复完整 SHA：2c7f295eee6896f58cfb3a3e4aeb6b09d997bf47。提交",
+                "握手修复完整 SHA：9f4c206c2da6e0368a6246efd9b16458acb6a4a5。提交",
+                "联合基线完成处理及路径生成：workers.cpp",
+                "联合基线 socket 写入：common.h"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本报告没有将未发布主干变更包装为稳定版能力，也没有将作者的局部测试外推为生产集群恢复保证。后续最有价值的证据是同一构建在明确故障模型下，能否同时满足安全、时限、数据正确和业务 SLO 四项要求。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "pytorch-2-14-1-cuda-correctness",
     "kind": "analysis",
     "title": "PyTorch 2.14.1 CUDA 正确性更新与推理服务验证",
