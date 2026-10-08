@@ -1,0 +1,495 @@
+[
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      9,
+      13
+    ],
+    "title": "图一：元数据所有权与异步完成",
+    "caption": "横轴为时间、三条角色泳道；上半为旧路径，下半为修复路径。旧引用失效不代表每次必现故障。重试回到路径生成并复制新标识，不沿用旧副本。只展示标识所有权，不表示 GPU 数据已完成或 endpoint 已恢复。",
+    "nodes": [
+      {
+        "id": "old-snapshot-a",
+        "label": "旧快照 A",
+        "shortLabel": "旧快照 A",
+        "detail": "旧路径的源 NIC、目标 NIC 与 machine ID 来自元数据快照。",
+        "tone": "neutral",
+        "subtitle": "旧路径",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "old-snapshot-b",
+        "label": "快照 B 替换 A",
+        "shortLabel": "快照 B 替换 A",
+        "detail": "不可变快照替换后，旧对象可能释放。",
+        "tone": "danger",
+        "subtitle": "旧路径",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "new-snapshot-a",
+        "label": "提交快照 A",
+        "shortLabel": "提交快照 A",
+        "detail": "修复路径生成时读取本次选定路由。",
+        "tone": "neutral",
+        "subtitle": "修复路径",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "new-snapshot-b",
+        "label": "新快照 B",
+        "shortLabel": "新快照 B",
+        "detail": "刷新不再决定在途标识副本的有效期。",
+        "tone": "neutral",
+        "subtitle": "修复路径",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "borrowed-ids",
+        "label": "借用三个标识",
+        "shortLabel": "借用三个标识",
+        "detail": "旧 slice 持有指针，未拥有标识存储。",
+        "tone": "danger",
+        "subtitle": "旧路径",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "owned-ids",
+        "label": "复制三个标识",
+        "shortLabel": "复制三个标识",
+        "detail": "每次 generatePostPath 复制源/目标 NIC 名和目标 machine ID。",
+        "tone": "kv",
+        "subtitle": "修复路径",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "retry-path",
+        "label": "重试重新生成路径",
+        "shortLabel": "重试重新生成路径",
+        "detail": "重试时重新核对路由并复制新标识，不复用旧副本。",
+        "tone": "control",
+        "subtitle": "重试 · 新的尝试",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "invalid-read",
+        "label": "潜在失效引用读取",
+        "shortLabel": "潜在失效引用读取",
+        "detail": "旧完成处理可能读取已释放元数据；红色虚线标注失效区。",
+        "tone": "danger",
+        "subtitle": "旧路径",
+        "column": 3,
+        "row": 1
+      },
+      {
+        "id": "completion-owned",
+        "label": "完成使用自有标识",
+        "shortLabel": "完成使用自有标识",
+        "detail": "固定修复使用 slice 自有字符串上报 GDR 可达性。",
+        "tone": "kv",
+        "subtitle": "修复路径",
+        "column": 0,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "old-snapshot-a",
+        "to": "borrowed-ids",
+        "label": "旧：借用指针",
+        "shortLabel": "旧：借用指针"
+      },
+      {
+        "from": "old-snapshot-a",
+        "to": "old-snapshot-b",
+        "label": "快照刷新",
+        "shortLabel": "快照刷新"
+      },
+      {
+        "from": "borrowed-ids",
+        "to": "invalid-read",
+        "label": "刷新后潜在失效",
+        "shortLabel": "刷新后潜在失效"
+      },
+      {
+        "from": "old-snapshot-b",
+        "to": "invalid-read",
+        "label": "旧快照不再存活",
+        "shortLabel": "旧快照不再存活"
+      },
+      {
+        "from": "new-snapshot-a",
+        "to": "owned-ids",
+        "label": "提交时复制",
+        "shortLabel": "提交时复制"
+      },
+      {
+        "from": "new-snapshot-a",
+        "to": "new-snapshot-b",
+        "label": "快照刷新",
+        "shortLabel": "快照刷新"
+      },
+      {
+        "from": "owned-ids",
+        "to": "completion-owned",
+        "label": "副本继续有效",
+        "shortLabel": "副本继续有效"
+      },
+      {
+        "from": "completion-owned",
+        "to": "retry-path",
+        "label": "需重试时重新生成",
+        "shortLabel": "需重试时重新生成"
+      },
+      {
+        "from": "retry-path",
+        "to": "owned-ids",
+        "label": "新尝试复制新标识",
+        "shortLabel": "新尝试复制新标识"
+      }
+    ],
+    "presentation": {
+      "kind": "metadata-ownership",
+      "panels": [
+        {
+          "title": "路由快照",
+          "tone": "neutral",
+          "nodeIds": [
+            "old-snapshot-a",
+            "old-snapshot-b",
+            "new-snapshot-a",
+            "new-snapshot-b"
+          ]
+        },
+        {
+          "title": "在途 slice",
+          "tone": "communication",
+          "nodeIds": [
+            "borrowed-ids",
+            "owned-ids",
+            "retry-path"
+          ]
+        },
+        {
+          "title": "完成处理",
+          "tone": "control",
+          "nodeIds": [
+            "invalid-read",
+            "completion-owned"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      3,
+      10,
+      11,
+      12,
+      14
+    ],
+    "title": "图二：握手错误返回与进程存活",
+    "caption": "正常读取、关闭和停止读取是不同条件。旧 SIGPIPE 分支可终止进程；修复返回 EPIPE 等错误。停止读取仍需独立发送时限，橙色未闭合门不表示五秒必然恢复；SO_RCVTIMEO 不能替代发送时限。",
+    "nodes": [
+      {
+        "id": "peer-reading",
+        "label": "对端正常读取",
+        "shortLabel": "对端正常读取",
+        "detail": "健康 socketpair 测试覆盖字节完整交付。",
+        "tone": "kv",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "peer-closed",
+        "label": "对端关闭",
+        "shortLabel": "对端关闭",
+        "detail": "需要同时记录错误返回与宿主进程存活。",
+        "tone": "danger",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "peer-stalled",
+        "label": "对端停止读取",
+        "shortLabel": "对端停止读取",
+        "detail": "写缓冲填满后可能阻塞；须另证发送预算。",
+        "tone": "communication",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "socket-write",
+        "label": "socket 专用写入",
+        "shortLabel": "socket 专用写入",
+        "detail": "Linux MSG_NOSIGNAL / macOS SO_NOSIGPIPE；EINTR 重试，部分写入由上层完整长度核查。",
+        "tone": "control",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "full-write",
+        "label": "完整写入",
+        "shortLabel": "完整写入",
+        "detail": "只能说明对应字节写入，不代替完整业务成功。",
+        "tone": "kv",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "error-return",
+        "label": "EPIPE / 错误处理",
+        "shortLabel": "EPIPE / 错误处理",
+        "detail": "关闭对端不再因 SIGPIPE 终止进程；仍须上层恢复。",
+        "tone": "control",
+        "column": 1,
+        "row": 1
+      },
+      {
+        "id": "timeout-pending",
+        "label": "发送时限待单独验证",
+        "shortLabel": "发送时限待单独验证",
+        "detail": "EAGAIN/EWOULDBLOCK 分支不意味着 socket 已设置发送超时。#4451 仍开放。",
+        "tone": "communication",
+        "subtitle": "未闭合条件",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "old-sigpipe",
+        "label": "旧：SIGPIPE 进程终止",
+        "shortLabel": "旧：SIGPIPE 进程终止",
+        "detail": "旧路径风险示意，实际失败样本由部署方故障注入验证。",
+        "tone": "danger",
+        "column": 3,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "peer-reading",
+        "to": "socket-write",
+        "label": "正常输入",
+        "shortLabel": "正常输入"
+      },
+      {
+        "from": "peer-closed",
+        "to": "socket-write",
+        "label": "修复后的关闭输入",
+        "shortLabel": "修复后的关闭输入"
+      },
+      {
+        "from": "peer-stalled",
+        "to": "socket-write",
+        "label": "停止读取输入",
+        "shortLabel": "停止读取输入"
+      },
+      {
+        "from": "socket-write",
+        "to": "full-write",
+        "label": "正常且完整写入",
+        "shortLabel": "正常且完整写入"
+      },
+      {
+        "from": "socket-write",
+        "to": "error-return",
+        "label": "关闭等写入错误",
+        "shortLabel": "关闭等写入错误"
+      },
+      {
+        "from": "socket-write",
+        "to": "timeout-pending",
+        "label": "停止读取需独立预算",
+        "shortLabel": "停止读取需独立预算"
+      },
+      {
+        "from": "peer-closed",
+        "to": "old-sigpipe",
+        "label": "旧路径：信号可能终止",
+        "shortLabel": "旧路径：信号可能终止"
+      }
+    ],
+    "presentation": {
+      "kind": "handshake-boundaries",
+      "panels": [
+        {
+          "title": "对端条件",
+          "tone": "neutral",
+          "nodeIds": [
+            "peer-reading",
+            "peer-closed",
+            "peer-stalled"
+          ]
+        },
+        {
+          "title": "握手路径",
+          "tone": "control",
+          "nodeIds": [
+            "socket-write"
+          ]
+        },
+        {
+          "title": "条件结果",
+          "tone": "neutral",
+          "nodeIds": [
+            "full-write",
+            "error-return",
+            "timeout-pending"
+          ]
+        },
+        {
+          "title": "旧路径故障",
+          "tone": "danger",
+          "nodeIds": [
+            "old-sigpipe"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      13,
+      14
+    ],
+    "title": "图三：从源码包含到服务恢复的验收门",
+    "caption": "五个顺序门均为未执行的部署验收计划。前两门有源码和定向单元证据，不能据此填满生产状态；第三门需要独立时限条件，后两门等待真实集群验证。发布标签只连到构建核对，不跨越后续门。",
+    "nodes": [
+      {
+        "id": "build-includes",
+        "label": "构建包含修复",
+        "shortLabel": "构建包含修复",
+        "detail": "观察镜像 digest、实际装载库、完整源码 SHA；现有源码证据不代替目标构建。",
+        "tone": "control",
+        "subtitle": "○ 源码证据 · 产物待核对",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "memory-process",
+        "label": "内存与进程安全",
+        "shortLabel": "内存与进程安全",
+        "detail": "观察快照释放/完成事件、ASan、关闭对端退出码；已有定向测试，本站未运行。",
+        "tone": "control",
+        "subtitle": "○ 单元证据 · 部署待测",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "bounded-return",
+        "label": "失败返回有界",
+        "shortLabel": "失败返回有界",
+        "detail": "独立冻结发送预算并测停止读取情形；接收超时不能替代。",
+        "tone": "communication",
+        "subtitle": "○ 独立时限条件待补",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "transfer-data",
+        "label": "传输与数据正确",
+        "shortLabel": "传输与数据正确",
+        "detail": "真实 NIC/GPU 故障注入；KV 内容校验独立于传输返回成功。",
+        "tone": "control",
+        "subtitle": "○ 真实集群实验待补",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "business-slo",
+        "label": "业务 SLO 恢复",
+        "shortLabel": "业务 SLO 恢复",
+        "detail": "健康与故障窗口的 TTFT、错误率、重试与请求结果满足预登记阈值。",
+        "tone": "control",
+        "subtitle": "○ 真实业务验收待补",
+        "column": 0,
+        "row": 1
+      },
+      {
+        "id": "release-tag",
+        "label": "固定发布标签",
+        "shortLabel": "固定发布标签",
+        "detail": "稳定与候选标签未含两项修复；main 不是实际 wheel/镜像包含证明。",
+        "tone": "neutral",
+        "subtitle": "只进入第一道核对",
+        "column": 1,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "release-tag",
+        "to": "build-includes",
+        "label": "逐文件核对包含",
+        "shortLabel": "逐文件核对包含"
+      },
+      {
+        "from": "build-includes",
+        "to": "memory-process",
+        "label": "验证通过才继续",
+        "shortLabel": "验证通过才继续"
+      },
+      {
+        "from": "memory-process",
+        "to": "bounded-return",
+        "label": "验证通过才继续",
+        "shortLabel": "验证通过才继续"
+      },
+      {
+        "from": "bounded-return",
+        "to": "transfer-data",
+        "label": "验证通过才继续",
+        "shortLabel": "验证通过才继续"
+      },
+      {
+        "from": "transfer-data",
+        "to": "business-slo",
+        "label": "验证通过才继续",
+        "shortLabel": "验证通过才继续"
+      }
+    ],
+    "presentation": {
+      "kind": "fault-acceptance",
+      "panels": [
+        {
+          "title": "部署验收 · 尚未执行",
+          "tone": "control",
+          "nodeIds": [
+            "build-includes",
+            "memory-process",
+            "bounded-return",
+            "transfer-data",
+            "business-slo"
+          ]
+        },
+        {
+          "title": "发布与版本证据",
+          "tone": "neutral",
+          "nodeIds": [
+            "release-tag"
+          ]
+        }
+      ]
+    }
+  }
+]

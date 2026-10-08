@@ -6,6 +6,7 @@ export const figureKinds = { 'request-lanes': [2, 2, 5], lifecycle: [4, 4], boun
 const tones = ['compute', 'kv', 'communication', 'control', 'danger', 'neutral'];
 Object.assign(figureKinds, { 'state-lanes': [3, 3, 3, 3, 1], 'failure-settlement': [4, 3, 2, 2], 'peer-reload': [4, 3, 3, 1], 'constant-paths': [1, 3, 3, 1], 'source-containment': [2, 3, 2, 1], 'deployment-gates': [4, 1, 1] });
 Object.assign(figureKinds, { 'overload-sources': [2, 2, 1, 1, 1], 'choice-cleanup': [1, 3, 1, 1, 1, 1, 1, 1, 1], 'deployment-paths': [1, 2, 2, 4, 1, 1], 'release-evidence': [4, 3, 3, 1], 'preload-restart': [3, 4, 3, 1, 1], 'rollout-checks': [7, 1, 1, 1] });
+Object.assign(figureKinds, { 'metadata-ownership': [4, 3, 2], 'handshake-boundaries': [3, 1, 3, 1], 'fault-acceptance': [5, 1] });
 
 // Only structured text and graph coordinates enter the renderer; no HTML or SVG payloads.
 export function validateReport(raw, sources, { keys, str, array, fail }) {

@@ -2,6 +2,7 @@
 // never imported from a payload; every payload label is XML-escaped.
 import { renderRecoveryFigure } from './report-recovery-figures.mjs';
 import { renderReleaseFigure } from './report-release-figures.mjs';
+import { renderFaultFigure } from './report-fault-figures.mjs';
 export const figurePalette = {
   compute: ['#edf4fd', '#4776a8'], kv: ['#edf7f2', '#438779'],
   communication: ['#fff7e6', '#aa7d35'], control: ['#f3effa', '#8563a2'],
@@ -113,6 +114,8 @@ export function renderNumericalFigure(chart, { compact = false, id = 'numerical-
 }
 
 export function renderTechnicalFigure(diagram, { compact = false, id = 'technical-figure' } = {}) {
+  const fault = renderFaultFigure(diagram, { compact, id, canvas, figurePalette });
+  if (fault) return fault;
   const release = renderReleaseFigure(diagram, { compact, id, canvas, figurePalette });
   if (release) return release;
   const recovery = renderRecoveryFigure(diagram, { compact, id, canvas, figurePalette });
@@ -247,7 +250,7 @@ export function renderTechnicalFigure(diagram, { compact = false, id = 'technica
     const sideX = compact ? 30 : 518, sideY = compact ? bottom + 14 : 84, sideW = compact ? 276 : 216;
     groups[1].nodes.forEach((n, i) => c.card(n, sideX, sideY + i * 116, sideW, 92));
     if (acceptance) c.line([[sideX + sideW / 2, sideY + 96], [sideX + sideW / 2, sideY + 112]], '', 'danger');
-    else { c.text(sideX + sideW / 2, sideY - 12, '相邻开放 PR · 未合入', 13, '#697985'); c.text(sideX + sideW / 2, sideY + 242, '不并入已完成能力', 13, '#697985'); }
+    else { c.text(sideX + sideW / 2, sideY - 12, groups[1].title, 13, '#697985'); c.text(sideX + sideW / 2, sideY + 242, '不并入已完成能力', 13, '#697985'); }
     if (!compact && acceptance) c.text(626, 363, '证据不足 / 未通过', 13, '#ad6250');
     return [finish(c)];
   }
