@@ -1,0 +1,840 @@
+[
+  {
+    "type": "diagram",
+    "title": "布局归属：tier、Python 对象、设备缓冲和捕获地址",
+    "caption": "原创引用关系图，没有性能时间线。Python 布局对象拥有设备张量；CUDA graph 捕获张量设备地址，不持有 Python 对象引用。旧风险以图内直接读取为前提；新路径说明同 tier 的设备地址归属，不代表 GPU 端到端或任意跨流并发已验证。两条路径为对照，不同时执行。",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      4
+    ],
+    "nodes": [
+      {
+        "id": "old-tier",
+        "label": "旧 tier 注册键",
+        "detail": "同一 num_tokens 键最终只登记布局 B；早先的布局 A 不会因此自动重新绑定。",
+        "column": 0,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "旧 tier 键",
+        "subtitle": "登记被替换"
+      },
+      {
+        "id": "old-object-a",
+        "label": "Python 布局对象 A",
+        "detail": "首次捕获准备分配的 Python 对象持有张量 A。",
+        "column": 1,
+        "row": 0,
+        "tone": "kv",
+        "shortLabel": "布局对象 A",
+        "subtitle": "拥有张量"
+      },
+      {
+        "id": "old-object-b",
+        "label": "Python 布局对象 B",
+        "detail": "第二次捕获再次创建对象并替换 tier 登记。",
+        "column": 1,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "布局对象 B",
+        "subtitle": "最后登记"
+      },
+      {
+        "id": "old-buffer-a",
+        "label": "设备缓冲 A：捕获时的偏移",
+        "detail": "图 A 固化这些设备地址；若直接在图内读取，而 staging 不更新这里，就仍读到旧请求边界。",
+        "column": 2,
+        "row": 0,
+        "tone": "danger",
+        "shortLabel": "设备缓冲 A",
+        "subtitle": "旧边界风险"
+      },
+      {
+        "id": "old-buffer-b",
+        "label": "设备缓冲 B：被 staging 刷新",
+        "detail": "replay 从注册表取最后登记对象并复制 live verify_lens 与 qo_indptr_device。",
+        "column": 2,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "设备缓冲 B",
+        "subtitle": "刷新目标"
+      },
+      {
+        "id": "old-graph-a",
+        "label": "CUDA graph A",
+        "detail": "捕获并在执行时读取缓冲 A 的地址；注册表变化不会令图自动重绑定缓冲 B。",
+        "column": 3,
+        "row": 0,
+        "tone": "compute",
+        "shortLabel": "图 A",
+        "subtitle": "捕获设备地址"
+      },
+      {
+        "id": "old-graph-b",
+        "label": "CUDA graph B",
+        "detail": "后一次捕获使用缓冲 B 的设备地址。",
+        "column": 3,
+        "row": 1,
+        "tone": "compute",
+        "shortLabel": "图 B",
+        "subtitle": "捕获设备地址"
+      },
+      {
+        "id": "live-layout",
+        "label": "实际批次的 live 布局",
+        "detail": "同 tier 可有不同 verify_lens；staging 写入本次 padded live 长度和偏移。",
+        "column": 0,
+        "row": 1,
+        "tone": "control",
+        "shortLabel": "live 布局",
+        "subtitle": "本次长度与偏移"
+      },
+      {
+        "id": "new-tier",
+        "label": "修复后的 tier 注册键",
+        "detail": "每个 tier 独立登记一份布局，不能跨 tier 混为一个全局缓冲。",
+        "column": 0,
+        "row": 2,
+        "tone": "control",
+        "shortLabel": "新 tier 键",
+        "subtitle": "按 tier 隔离"
+      },
+      {
+        "id": "new-object",
+        "label": "复用同一个 Python 布局对象",
+        "detail": "同 tier 的后续捕获直接返回已有对象；对象持有同一组张量。",
+        "column": 1,
+        "row": 2,
+        "tone": "kv",
+        "shortLabel": "共享布局对象",
+        "subtitle": "拥有同一组张量"
+      },
+      {
+        "id": "new-buffer",
+        "label": "同 tier 共享设备缓冲",
+        "detail": "各图捕获同一组张量设备地址，staging 也刷新这组地址对应的内容。",
+        "column": 2,
+        "row": 2,
+        "tone": "kv",
+        "shortLabel": "共享设备缓冲",
+        "subtitle": "staging 刷新"
+      },
+      {
+        "id": "new-graph-a",
+        "label": "修复后 CUDA graph A",
+        "detail": "图内读取的设备地址来自共享布局；数值与执行时序仍须验收。",
+        "column": 3,
+        "row": 2,
+        "tone": "compute",
+        "shortLabel": "新图 A",
+        "subtitle": "同一组设备地址"
+      },
+      {
+        "id": "new-graph-b",
+        "label": "修复后 CUDA graph B",
+        "detail": "其他 attention variant 或 PD-mux stream 的同 tier 捕获使用同一组设备地址；跨流次序另验。",
+        "column": 3,
+        "row": 3,
+        "tone": "compute",
+        "shortLabel": "新图 B",
+        "subtitle": "同一组设备地址"
+      }
+    ],
+    "edges": [
+      {
+        "from": "old-tier",
+        "to": "old-object-b",
+        "label": "按 tier 登记被替换为 B",
+        "shortLabel": "登记为 B"
+      },
+      {
+        "from": "old-object-a",
+        "to": "old-buffer-a",
+        "label": "Python 对象拥有张量 A",
+        "shortLabel": "拥有 A"
+      },
+      {
+        "from": "old-object-b",
+        "to": "old-buffer-b",
+        "label": "Python 对象拥有张量 B",
+        "shortLabel": "拥有 B"
+      },
+      {
+        "from": "old-graph-a",
+        "to": "old-buffer-a",
+        "label": "图 A 固化并读取设备地址 A",
+        "shortLabel": "捕获地址 A"
+      },
+      {
+        "from": "old-graph-b",
+        "to": "old-buffer-b",
+        "label": "图 B 固化并读取设备地址 B",
+        "shortLabel": "捕获地址 B"
+      },
+      {
+        "from": "live-layout",
+        "to": "old-buffer-b",
+        "label": "旧 staging 只刷新最后登记对象的设备张量",
+        "shortLabel": "只刷新 B"
+      },
+      {
+        "from": "new-tier",
+        "to": "new-object",
+        "label": "同 tier 查询并复用已有对象",
+        "shortLabel": "复用对象"
+      },
+      {
+        "from": "new-object",
+        "to": "new-buffer",
+        "label": "对象持有一组共享设备张量",
+        "shortLabel": "拥有共享张量"
+      },
+      {
+        "from": "new-graph-a",
+        "to": "new-buffer",
+        "label": "重复捕获仍使用同一组设备地址",
+        "shortLabel": "捕获共享地址"
+      },
+      {
+        "from": "new-graph-b",
+        "to": "new-buffer",
+        "label": "另一变体捕获同一组设备地址",
+        "shortLabel": "捕获共享地址"
+      },
+      {
+        "from": "live-layout",
+        "to": "new-buffer",
+        "label": "新 staging 刷新各图共同读取的设备缓冲",
+        "shortLabel": "刷新共享缓冲"
+      }
+    ],
+    "presentation": {
+      "kind": "graph-buffer-identity",
+      "panels": [
+        {
+          "title": "旧注册与对象",
+          "tone": "control",
+          "nodeIds": [
+            "old-tier",
+            "old-object-a",
+            "old-object-b"
+          ]
+        },
+        {
+          "title": "旧设备张量",
+          "tone": "kv",
+          "nodeIds": [
+            "old-buffer-a",
+            "old-buffer-b"
+          ]
+        },
+        {
+          "title": "旧图捕获地址",
+          "tone": "compute",
+          "nodeIds": [
+            "old-graph-a",
+            "old-graph-b"
+          ]
+        },
+        {
+          "title": "本次输入",
+          "tone": "control",
+          "nodeIds": [
+            "live-layout"
+          ]
+        },
+        {
+          "title": "新 tier",
+          "tone": "control",
+          "nodeIds": [
+            "new-tier"
+          ]
+        },
+        {
+          "title": "新 Python 对象",
+          "tone": "kv",
+          "nodeIds": [
+            "new-object"
+          ]
+        },
+        {
+          "title": "新设备张量",
+          "tone": "kv",
+          "nodeIds": [
+            "new-buffer"
+          ]
+        },
+        {
+          "title": "新图捕获地址",
+          "tone": "compute",
+          "nodeIds": [
+            "new-graph-a",
+            "new-graph-b"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "pause(wait)：按资源责任分流与观测",
+    "caption": "原创分流与观测图，非性能时间线；箭头不代表无条件成功或固定时限。无进展的传输没有连向成功节点，空闲会话被排除不等于资源已清空。完成与 reset 仍是待验收状态。",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3
+    ],
+    "nodes": [
+      {
+        "id": "queued",
+        "label": "未占块排队",
+        "detail": "暂停前尚未取得 KV，保留在普通 waiting。",
+        "column": 0,
+        "row": 0,
+        "tone": "neutral",
+        "shortLabel": "未占块排队",
+        "subtitle": "普通 waiting"
+      },
+      {
+        "id": "queued-hold",
+        "label": "暂停中继续排队",
+        "detail": "不要求该请求在 paused 区间产生输出。",
+        "column": 1,
+        "row": 0,
+        "tone": "neutral",
+        "shortLabel": "暂停保留",
+        "subtitle": "不要求输出"
+      },
+      {
+        "id": "resumed",
+        "label": "resume 后重新准入",
+        "detail": "只有显式恢复后才继续；需核对队列完整性。",
+        "column": 2,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "显式恢复",
+        "subtitle": "之后重新准入"
+      },
+      {
+        "id": "held",
+        "label": "已占块等待 KV",
+        "detail": "异步加载已承担资源责任，不因状态是 waiting 就消失。",
+        "column": 0,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "已占块等待",
+        "subtitle": "KV 加载在途"
+      },
+      {
+        "id": "drainable",
+        "label": "仍计数且可调度",
+        "detail": "PAUSED_NEW 同时保留计数和进展路径。",
+        "column": 1,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "计数与进展",
+        "subtitle": "继续排空"
+      },
+      {
+        "id": "finished",
+        "label": "完成并释放请求引用",
+        "detail": "加载完成后才可推进；引用收敛须实测，不表示驱动显存归零。",
+        "column": 2,
+        "row": 1,
+        "tone": "compute",
+        "shortLabel": "完成待核对",
+        "subtitle": "引用收敛另验"
+      },
+      {
+        "id": "idle-stream",
+        "label": "流式会话等待新输入",
+        "detail": "没有未来输入就不能继续；不能绑住本次维护。",
+        "column": 0,
+        "row": 2,
+        "tone": "neutral",
+        "shortLabel": "空闲流式会话",
+        "subtitle": "等待未来输入"
+      },
+      {
+        "id": "excluded",
+        "label": "不阻塞本次排空",
+        "detail": "不表示会话已删除、全部资源归零或任意 reset 后状态仍完整。",
+        "column": 1,
+        "row": 2,
+        "tone": "neutral",
+        "shortLabel": "本次计数排除",
+        "subtitle": "会话另行核对"
+      },
+      {
+        "id": "inspect",
+        "label": "检查排空条件",
+        "detail": "观察 running、KV 等待和完成状态，不只看 HTTP。",
+        "column": 3,
+        "row": 1,
+        "tone": "control",
+        "shortLabel": "排空观测",
+        "subtitle": "责任集合核对"
+      },
+      {
+        "id": "reset",
+        "label": "验证后续缓存操作",
+        "detail": "独立检查 reset 结果与残留引用，尚未验收。",
+        "column": 3,
+        "row": 2,
+        "tone": "kv",
+        "shortLabel": "缓存操作待验",
+        "subtitle": "结果与引用核对"
+      },
+      {
+        "id": "signal",
+        "label": "暂停控制响应",
+        "detail": "控制结果不能单独替代资源和恢复验收。",
+        "column": 3,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "控制响应",
+        "subtitle": "不替代资源验收"
+      },
+      {
+        "id": "stuck",
+        "label": "加载无进展",
+        "detail": "需要连接器超时、失败、取消与维护期限策略，本补丁未创造完成事件。",
+        "column": 2,
+        "row": 2,
+        "tone": "danger",
+        "shortLabel": "传输无进展",
+        "subtitle": "故障策略另验"
+      }
+    ],
+    "edges": [
+      {
+        "from": "queued",
+        "to": "queued-hold",
+        "label": "暂停保留"
+      },
+      {
+        "from": "queued-hold",
+        "to": "resumed",
+        "label": "显式恢复"
+      },
+      {
+        "from": "held",
+        "to": "drainable",
+        "label": "计数及调度"
+      },
+      {
+        "from": "drainable",
+        "to": "finished",
+        "label": "加载完成后推进",
+        "shortLabel": "完成后推进"
+      },
+      {
+        "from": "drainable",
+        "to": "stuck",
+        "label": "若外部传输不结束",
+        "shortLabel": "传输不结束"
+      },
+      {
+        "from": "finished",
+        "to": "inspect",
+        "label": "提交完成证据",
+        "shortLabel": "完成证据"
+      },
+      {
+        "from": "idle-stream",
+        "to": "excluded",
+        "label": "排空计数排除",
+        "shortLabel": "计数排除"
+      },
+      {
+        "from": "excluded",
+        "to": "inspect",
+        "label": "排除未来输入等待",
+        "shortLabel": "排除未来输入"
+      },
+      {
+        "from": "inspect",
+        "to": "reset",
+        "label": "后续操作另验收",
+        "shortLabel": "另验缓存操作"
+      },
+      {
+        "from": "inspect",
+        "to": "signal",
+        "label": "控制结果"
+      }
+    ],
+    "presentation": {
+      "kind": "pause-kv-drain",
+      "panels": [
+        {
+          "title": "普通队列",
+          "tone": "neutral",
+          "nodeIds": [
+            "queued",
+            "queued-hold",
+            "resumed"
+          ]
+        },
+        {
+          "title": "持块在途",
+          "tone": "kv",
+          "nodeIds": [
+            "held",
+            "drainable",
+            "finished"
+          ]
+        },
+        {
+          "title": "空闲流式",
+          "tone": "neutral",
+          "nodeIds": [
+            "idle-stream",
+            "excluded"
+          ]
+        },
+        {
+          "title": "控制与资源观测",
+          "tone": "control",
+          "nodeIds": [
+            "inspect",
+            "reset",
+            "signal"
+          ]
+        },
+        {
+          "title": "独立故障边界",
+          "tone": "danger",
+          "nodeIds": [
+            "stuck"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "测试同步：先证明在途，再观察排空",
+    "caption": "原创测试同步关系图。旧超时仅在 pause 先到、请求仍排队时成立。首个输出是上游测试的同步条件，不是生产 pause API 的前置要求。",
+    "basis": "inference",
+    "sourceIndices": [
+      5
+    ],
+    "nodes": [
+      {
+        "id": "old-enqueue",
+        "label": "旧测试立即入队",
+        "detail": "测试未证明请求已经调度或持有资源。",
+        "column": 0,
+        "row": 0,
+        "tone": "neutral",
+        "shortLabel": "入队",
+        "subtitle": "未证明已启动"
+      },
+      {
+        "id": "old-pause",
+        "label": "立即 pause(wait)",
+        "detail": "如果 pause 先被处理，请求仍在普通 waiting 中。",
+        "column": 1,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "立即暂停",
+        "subtitle": "竞态条件"
+      },
+      {
+        "id": "old-timeout",
+        "label": "测试等待输出超时",
+        "detail": "仅当请求仍排队；暂停期间没有输出符合语义，不是此情形的引擎故障。",
+        "column": 2,
+        "row": 0,
+        "tone": "danger",
+        "shortLabel": "条件性超时",
+        "subtitle": "请求尚未在途"
+      },
+      {
+        "id": "new-enqueue",
+        "label": "修订测试入队",
+        "detail": "准备一个用于观察排空的请求。",
+        "column": 0,
+        "row": 1,
+        "tone": "neutral",
+        "shortLabel": "测试入队",
+        "subtitle": "准备观察"
+      },
+      {
+        "id": "first-output",
+        "label": "观察首个输出",
+        "detail": "只用于证明此测试已经有在途工作。",
+        "column": 1,
+        "row": 1,
+        "tone": "compute",
+        "shortLabel": "观察首输出",
+        "subtitle": "仅测试同步"
+      },
+      {
+        "id": "new-pause",
+        "label": "再请求 wait 暂停",
+        "detail": "产品仍允许任意时刻调用 pause；没有新增生产前置条件。",
+        "column": 2,
+        "row": 1,
+        "tone": "control",
+        "shortLabel": "测试再暂停",
+        "subtitle": "API 语义不变"
+      },
+      {
+        "id": "wait-finish",
+        "label": "等待已在途请求结束",
+        "detail": "验证暂停排空行为，而不是等待尚未启动的队列请求。",
+        "column": 3,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "观察完成",
+        "subtitle": "在途排空测试"
+      }
+    ],
+    "edges": [
+      {
+        "from": "old-enqueue",
+        "to": "old-pause",
+        "label": "未等待启动",
+        "shortLabel": "立即调用"
+      },
+      {
+        "from": "old-pause",
+        "to": "old-timeout",
+        "label": "若暂停先到且仍排队",
+        "shortLabel": "若仍排队"
+      },
+      {
+        "from": "new-enqueue",
+        "to": "first-output",
+        "label": "证明测试请求已启动",
+        "shortLabel": "等待启动证据"
+      },
+      {
+        "from": "first-output",
+        "to": "new-pause",
+        "label": "测试同步后调用",
+        "shortLabel": "测试同步"
+      },
+      {
+        "from": "new-pause",
+        "to": "wait-finish",
+        "label": "等待在途请求结束",
+        "shortLabel": "观察在途结束"
+      }
+    ],
+    "presentation": {
+      "kind": "test-start-barrier",
+      "panels": [
+        {
+          "title": "旧测试竞态",
+          "tone": "danger",
+          "nodeIds": [
+            "old-enqueue",
+            "old-pause",
+            "old-timeout"
+          ]
+        },
+        {
+          "title": "修订测试同步",
+          "tone": "control",
+          "nodeIds": [
+            "new-enqueue",
+            "first-output",
+            "new-pause",
+            "wait-finish"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "空闲 TCP lane：探测、丢弃与后续 pump 重连",
+    "caption": "原创条件图，只描绘空闲 lane 的复用检查。would_block/try_again、EOF/错误及异常字节分开；丢弃连接后由后续 pump 轮次处理，受既有重试和组状态约束，不保证本次请求成功，更不证明原 CLOSED group 猜测。",
+    "basis": "inference",
+    "sourceIndices": [
+      19
+    ],
+    "nodes": [
+      {
+        "id": "idle-work",
+        "label": "空闲 lane 且队列有工作",
+        "detail": "进入 runGroupPump 的 OPEN group 内；lane 为 IDLE，有待发工作时才检查。",
+        "column": 0,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "空闲 lane",
+        "subtitle": "有待发工作"
+      },
+      {
+        "id": "peek",
+        "label": "非阻塞 Asio peek",
+        "detail": "本地 is_open 不证明对端未关闭；message_peek 不消费字节。",
+        "column": 1,
+        "row": 0,
+        "tone": "communication",
+        "shortLabel": "peek 检查",
+        "subtitle": "不消费字节"
+      },
+      {
+        "id": "would-block",
+        "label": "无字节且 would_block/try_again",
+        "detail": "仅这一组合允许继续复用，不能把无数据写成传输完成。",
+        "column": 0,
+        "row": 1,
+        "tone": "communication",
+        "shortLabel": "暂时无数据",
+        "subtitle": "would_block / try_again"
+      },
+      {
+        "id": "peer-closed",
+        "label": "EOF 或其他错误",
+        "detail": "失效 socket 不能继续复用；包括不存在或本地已关闭。",
+        "column": 1,
+        "row": 1,
+        "tone": "danger",
+        "shortLabel": "EOF / 错误",
+        "subtitle": "丢弃失效连接"
+      },
+      {
+        "id": "unexpected-byte",
+        "label": "peek 读到字节",
+        "detail": "received != 0 同样进入丢弃路径，不在这里推测协议根因。",
+        "column": 2,
+        "row": 1,
+        "tone": "danger",
+        "shortLabel": "发现字节",
+        "subtitle": "同样不复用"
+      },
+      {
+        "id": "reuse",
+        "label": "继续原复用路径",
+        "detail": "该检查只允许后续分配与写入继续；传输完成状态另核对。",
+        "column": 0,
+        "row": 2,
+        "tone": "communication",
+        "shortLabel": "允许复用",
+        "subtitle": "完成仍待核对"
+      },
+      {
+        "id": "disconnect",
+        "label": "重置 socket 与 lane 状态",
+        "detail": "socket.reset，置 DISCONNECTED，并清 last_connect_round；当前循环 continue。",
+        "column": 1,
+        "row": 2,
+        "tone": "control",
+        "shortLabel": "丢弃与断连",
+        "subtitle": "重置连接轮次"
+      },
+      {
+        "id": "next-pump",
+        "label": "后续 pump 轮次尝试重连",
+        "detail": "重连仍受组状态、冷却、重试预算及后续轮次约束，非无条件即时恢复。",
+        "column": 2,
+        "row": 2,
+        "tone": "communication",
+        "shortLabel": "后续 pump",
+        "subtitle": "条件性重连"
+      },
+      {
+        "id": "request-result",
+        "label": "当前请求成功仍需验证",
+        "detail": "丢弃和具备重连机会不等于数据完成、vLLM 请求退出等待或原 issue 根因解决。",
+        "column": 3,
+        "row": 2,
+        "tone": "neutral",
+        "shortLabel": "业务结果待验",
+        "subtitle": "不作成功保证"
+      }
+    ],
+    "edges": [
+      {
+        "from": "idle-work",
+        "to": "peek",
+        "label": "复用前检查"
+      },
+      {
+        "from": "peek",
+        "to": "would-block",
+        "label": "无数据且暂不可读",
+        "shortLabel": "暂不可读"
+      },
+      {
+        "from": "peek",
+        "to": "peer-closed",
+        "label": "EOF 或其他错误",
+        "shortLabel": "EOF / 错误"
+      },
+      {
+        "from": "peek",
+        "to": "unexpected-byte",
+        "label": "received 不为零",
+        "shortLabel": "读到字节"
+      },
+      {
+        "from": "would-block",
+        "to": "reuse",
+        "label": "保持 lane 可复用",
+        "shortLabel": "允许复用"
+      },
+      {
+        "from": "peer-closed",
+        "to": "disconnect",
+        "label": "丢弃失效连接",
+        "shortLabel": "丢弃 socket"
+      },
+      {
+        "from": "unexpected-byte",
+        "to": "disconnect",
+        "label": "同样重置连接",
+        "shortLabel": "同样重置"
+      },
+      {
+        "from": "disconnect",
+        "to": "next-pump",
+        "label": "后续轮次再尝试",
+        "shortLabel": "后续轮次"
+      }
+    ],
+    "presentation": {
+      "kind": "tcp-idle-probe",
+      "panels": [
+        {
+          "title": "复用前条件",
+          "tone": "control",
+          "nodeIds": [
+            "idle-work",
+            "peek"
+          ]
+        },
+        {
+          "title": "三种探测结果",
+          "tone": "communication",
+          "nodeIds": [
+            "would-block",
+            "peer-closed",
+            "unexpected-byte"
+          ]
+        },
+        {
+          "title": "条件性后续路径",
+          "tone": "control",
+          "nodeIds": [
+            "reuse",
+            "disconnect",
+            "next-pump"
+          ]
+        },
+        {
+          "title": "独立业务边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "request-result"
+          ]
+        }
+      ]
+    }
+  }
+]
