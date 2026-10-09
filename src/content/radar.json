@@ -7229,9 +7229,9 @@
     "id": "mooncake-rdma-failure-containment",
     "kind": "analysis",
     "title": "Mooncake 异步元数据与握手写入的故障边界",
-    "summary": "两项修复于 10 月 8 日合入 main：在途 slice 拥有标识副本，握手写入抑制 SIGPIPE。稳定与候选标签未包含；发送时限、KV 数据正确和业务恢复仍须独立验证，无本站 GPU 实测。",
+    "summary": "两项修复于 10 月 8 日合入 main：在途 slice 拥有标识副本，握手写入抑制 SIGPIPE。稳定与候选标签未包含；发送时限、KV 数据正确和业务恢复仍须独立验证，无本站 GPU 实测。 10 月 9 日补充空闲 TCP lane 的 peek 与后续重连边界；不宣布原 H20/A100 现场根因已解决。",
     "publishedAt": "2026-10-01",
-    "reviewedAt": "2026-10-08",
+    "reviewedAt": "2026-10-09",
     "topics": [
       "GPU 通信",
       "KV Cache",
@@ -7345,6 +7345,52 @@
         },
         "publishedAt": "2026-10-03",
         "accessedAt": "2026-10-08"
+      },
+      {
+        "title": "Mooncake #4234 作者报告",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4234",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub PR #4234 作者",
+          "status": "attributed",
+          "note": "已读取正文与作者公开评论。45/45 是 RTX 5090 上 rebase 前的作者结果，作者称 rebase 未改这些文件；原 #4209 的 H20/A100 部署及 CLOSED group 猜测未复现。"
+        },
+        "publishedAt": "2026-09-19",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "Mooncake #4234 固定合并提交",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/b7595de3fab45a580e4ee8819c2a2940d43183cd",
+        "publishedAt": "2026-10-08",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "固定 TCP lane 实现",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/b7595de3fab45a580e4ee8819c2a2940d43183cd/mooncake-transfer-engine/src/transport/tcp_transport/tcp_transport_lane_impl.h",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "固定 TCP 空闲连接回归",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/b7595de3fab45a580e4ee8819c2a2940d43183cd/mooncake-transfer-engine/tests/tcp_write_visibility_test.cpp",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "Mooncake #4209 原始社区报告",
+        "url": "https://github.com/kvcache-ai/Mooncake/issues/4209",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub issue #4209 报告方",
+          "status": "attributed",
+          "note": "已读取 issue 环境、症状和提出的 CLOSED group 分析。H20/A100 结果、空闲 5 秒与约 90 秒观察属于报告方陈述，非本站复现；#4234 作者明确未复现该现场及所猜根因。"
+        },
+        "publishedAt": "2026-09-18",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "#4451 2026-10-09 状态核对",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4451",
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-09"
       }
     ],
     "claims": [
@@ -7377,6 +7423,19 @@
           13,
           14
         ]
+      },
+      {
+        "status": "confirmed",
+        "text": "空闲 TCP lane 固定源码增加 peek 与失效连接丢弃路径。",
+        "sourceIndices": [
+          18,
+          19
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本次请求恢复、原 issue 根因和 wheel 包含仍待核验。",
+        "sourceIndices": []
       }
     ],
     "questions": [
@@ -7400,7 +7459,7 @@
     ],
     "report": {
       "version": 1,
-      "scope": "核验时间：2026 年 10 月 8 日 02:55 UTC。适用读者：维护 Mooncake KV 传输、推理服务和 GPU 集群的工程团队。 原文日期保留 #4437 首次公开的 2026-10-01；10 月 8 日为合并和本站核验日期。仅阅读公开固定源码与测试，实验/验收计划未执行。",
+      "scope": "核验时间：2026 年 10 月 8 日 02:55 UTC。适用读者：维护 Mooncake KV 传输、推理服务和 GPU 集群的工程团队。 原文日期保留 #4437 首次公开的 2026-10-01；10 月 8 日为合并和本站核验日期。仅阅读公开固定源码与测试，实验/验收计划未执行。 2026-10-09 增补 #4234 固定提交 b7595de3fab45a580e4ee8819c2a2940d43183cd 与 #4209 社区现场的证据边界。保留此前全部九章、图表和验证项；45/45 是作者 rebase 前结果，本站未运行。",
       "sections": [
         {
           "id": "conclusion",
@@ -7428,6 +7487,16 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "以下机制结论来自固定提交源码；实验及上线标准是本文提出的验证方案，均未在本次核验中实际执行。未获得 H20、真实 RDMA 网络或推理框架集成的测试结果。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [
+                18,
+                19
+              ],
+              "text": "10 月 9 日增补：#4234 处理空闲 TCP lane 的对端关闭检测；它与前文 RDMA 标识所有权、握手 SIGPIPE 分属不同边界。源码合入不等于正式 wheel 已包含，连接可重建也不等于本次业务请求已恢复。",
+              "title": "增补：空闲 TCP 连接边界"
             }
           ]
         },
@@ -7551,6 +7620,28 @@
                 8
               ],
               "text": "逐文件核对：稳定标签 slice.h、稳定标签 common.h、候选标签 slice.h、候选标签 common.h。发布订阅源最近列出 v0.3.14-rc1（2026-09-07），没有提供包含今天提交的新发布证明；这不是对全部分发渠道的穷尽检查。发布记录"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                18
+              ],
+              "text": "#4234 于 2026-10-08 07:26:20 UTC 合入，固定提交 b7595de3fab45a580e4ee8819c2a2940d43183cd；PR 首次公开于 9 月 19 日。本文原始发布日期和此前历史均保留。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                21
+              ],
+              "text": "#4209 报告 vLLM 0.29.0、H20/A100、TCP 1P1D 在空闲后队列拒绝，消费侧停于 WAITING_FOR_REMOTE_KVS，并提出 CLOSED group 残留猜测。这是社区现场与分析，未被 #4234 作者复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "区分三种身份：本地描述符仍打开、远端连接仍活着、连接组允许接收新工作。peek 只针对第一种不能证明第二种的问题；它不自动覆盖连接组退休、准入拒绝与上层请求回收。"
             }
           ]
         },
@@ -7964,6 +8055,203 @@
                   }
                 ]
               }
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                19
+              ],
+              "text": "固定代码在复用 IDLE lane 前做非阻塞 Asio receive(message_peek)。只有 received=0 且 would_block/try_again 才继续；否则重置 socket、置 DISCONNECTED、清 last_connect_round 并 continue。后续 pump 轮次按既有状态与预算处理重连。",
+              "title": "增补机制：复用前探测，不消费字节"
+            },
+            {
+              "type": "diagram",
+              "title": "空闲 TCP lane：探测、丢弃与后续 pump 重连",
+              "caption": "原创条件图，只描绘空闲 lane 的复用检查。would_block/try_again、EOF/错误及异常字节分开；丢弃连接后由后续 pump 轮次处理，受既有重试和组状态约束，不保证本次请求成功，更不证明原 CLOSED group 猜测。",
+              "basis": "inference",
+              "sourceIndices": [
+                19
+              ],
+              "nodes": [
+                {
+                  "id": "idle-work",
+                  "label": "空闲 lane 且队列有工作",
+                  "detail": "进入 runGroupPump 的 OPEN group 内；lane 为 IDLE，有待发工作时才检查。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "空闲 lane",
+                  "subtitle": "有待发工作",
+                  "tone": "control"
+                },
+                {
+                  "id": "peek",
+                  "label": "非阻塞 Asio peek",
+                  "detail": "本地 is_open 不证明对端未关闭；message_peek 不消费字节。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "peek 检查",
+                  "subtitle": "不消费字节",
+                  "tone": "communication"
+                },
+                {
+                  "id": "would-block",
+                  "label": "无字节且 would_block/try_again",
+                  "detail": "仅这一组合允许继续复用，不能把无数据写成传输完成。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "暂时无数据",
+                  "subtitle": "would_block / try_again",
+                  "tone": "communication"
+                },
+                {
+                  "id": "peer-closed",
+                  "label": "EOF 或其他错误",
+                  "detail": "失效 socket 不能继续复用；包括不存在或本地已关闭。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "EOF / 错误",
+                  "subtitle": "丢弃失效连接",
+                  "tone": "danger"
+                },
+                {
+                  "id": "unexpected-byte",
+                  "label": "peek 读到字节",
+                  "detail": "received != 0 同样进入丢弃路径，不在这里推测协议根因。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "发现字节",
+                  "subtitle": "同样不复用",
+                  "tone": "danger"
+                },
+                {
+                  "id": "reuse",
+                  "label": "继续原复用路径",
+                  "detail": "该检查只允许后续分配与写入继续；传输完成状态另核对。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "允许复用",
+                  "subtitle": "完成仍待核对",
+                  "tone": "communication"
+                },
+                {
+                  "id": "disconnect",
+                  "label": "重置 socket 与 lane 状态",
+                  "detail": "socket.reset，置 DISCONNECTED，并清 last_connect_round；当前循环 continue。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "丢弃与断连",
+                  "subtitle": "重置连接轮次",
+                  "tone": "control"
+                },
+                {
+                  "id": "next-pump",
+                  "label": "后续 pump 轮次尝试重连",
+                  "detail": "重连仍受组状态、冷却、重试预算及后续轮次约束，非无条件即时恢复。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "后续 pump",
+                  "subtitle": "条件性重连",
+                  "tone": "communication"
+                },
+                {
+                  "id": "request-result",
+                  "label": "当前请求成功仍需验证",
+                  "detail": "丢弃和具备重连机会不等于数据完成、vLLM 请求退出等待或原 issue 根因解决。",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "业务结果待验",
+                  "subtitle": "不作成功保证",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "idle-work",
+                  "to": "peek",
+                  "label": "复用前检查"
+                },
+                {
+                  "from": "peek",
+                  "to": "would-block",
+                  "label": "无数据且暂不可读",
+                  "shortLabel": "暂不可读"
+                },
+                {
+                  "from": "peek",
+                  "to": "peer-closed",
+                  "label": "EOF 或其他错误",
+                  "shortLabel": "EOF / 错误"
+                },
+                {
+                  "from": "peek",
+                  "to": "unexpected-byte",
+                  "label": "received 不为零",
+                  "shortLabel": "读到字节"
+                },
+                {
+                  "from": "would-block",
+                  "to": "reuse",
+                  "label": "保持 lane 可复用",
+                  "shortLabel": "允许复用"
+                },
+                {
+                  "from": "peer-closed",
+                  "to": "disconnect",
+                  "label": "丢弃失效连接",
+                  "shortLabel": "丢弃 socket"
+                },
+                {
+                  "from": "unexpected-byte",
+                  "to": "disconnect",
+                  "label": "同样重置连接",
+                  "shortLabel": "同样重置"
+                },
+                {
+                  "from": "disconnect",
+                  "to": "next-pump",
+                  "label": "后续轮次再尝试",
+                  "shortLabel": "后续轮次"
+                }
+              ],
+              "presentation": {
+                "kind": "tcp-idle-probe",
+                "panels": [
+                  {
+                    "title": "复用前条件",
+                    "tone": "control",
+                    "nodeIds": [
+                      "idle-work",
+                      "peek"
+                    ]
+                  },
+                  {
+                    "title": "三种探测结果",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "would-block",
+                      "peer-closed",
+                      "unexpected-byte"
+                    ]
+                  },
+                  {
+                    "title": "条件性后续路径",
+                    "tone": "control",
+                    "nodeIds": [
+                      "reuse",
+                      "disconnect",
+                      "next-pump"
+                    ]
+                  },
+                  {
+                    "title": "独立业务边界",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "request-result"
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
@@ -8059,6 +8347,62 @@
                 16
               ],
               "text": "这是带额外补丁的作者实验，不能用作当前主干的实测指标。固定 socket 测试、#4463 实验讨论"
+            },
+            {
+              "type": "table",
+              "caption": "10 月 9 日增补证据；此前证据表原样保留",
+              "columns": [
+                "证据",
+                "实际覆盖",
+                "不能证明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "固定合并与 TCP lane",
+                    "空闲复用前探测、断连和后续重连入口",
+                    "任何稳定 wheel 已包含或当前请求必成功"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    18,
+                    19
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定回归用例",
+                    "主动关闭空闲对端，再检查第二次写入与新连接",
+                    "本站已运行测试或原 H20/A100 现场已复现"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    20
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者实验说明",
+                    "RTX 5090 rebase 前 45/45；作者称 rebase 未改相关文件，旧代码回归失败",
+                    "最终产物的独立运行结果或原 issue 根因已证实"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    17
+                  ]
+                },
+                {
+                  "cells": [
+                    "#4209 社区现场",
+                    "空闲后拒绝及 CLOSED group 猜测",
+                    "该猜测成为已确认根因"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    21
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -8083,6 +8427,12 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "握手失败更可见之后，错误日志量也可能变化。应按目标与错误类型聚合，并保留速率限制，避免一次故障让日志吞吐成为新的瓶颈。部署策略上，优先做单组 canary，保留可回滚镜像和精确依赖清单。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "强制 TCP 的空闲连接试验与 RDMA 所有权试验应独立。peek 不等于心跳、不提供统一恢复秒数，也不完成上层请求账本。连续请求正常只能作为对照，不能替代主动关闭对端与空闲后重入的故障检查。"
             }
           ]
         },
@@ -8246,6 +8596,20 @@
                   }
                 ]
               }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "新增可反驳假设：故障来自复用对端已关闭的空闲 TCP socket。需要同时记录 lane/socket 状态、peek 结果、丢弃时点、后续 pump 与新连接、提交结果和 vLLM 请求状态。若 group 已 CLOSED 或工作在 lane 之前被拒绝，应转向组退休与准入路径，不能用本修复替代根因分析。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                22
+              ],
+              "text": "#4451 本轮公开状态仍为 open、merged=false；发送停滞的时限边界没有因 #4234 的空闲重连而自动闭合。"
             }
           ]
         },
@@ -8346,6 +8710,78 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "E1 与 E3 应设计能使未修复版本失败的对照，否则通过结果的信息量很低。E4 不能借用接收超时配置作为完成条件。E6 的数据校验必须独立于“传输返回成功”，以免把控制面状态恢复误当作 KV 数据正确。"
+            },
+            {
+              "type": "table",
+              "caption": "空闲 TCP 增补矩阵；全部尚未执行",
+              "columns": [
+                "场景",
+                "对照与操作",
+                "必须记录",
+                "验证问题"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "构建身份",
+                    "旧代码与固定修复构建；记录 TE、vLLM、wheel/镜像身份",
+                    "完整 SHA、digest、编译选项与 TCP 配置",
+                    "实际产物是否包含修复？"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "连续请求",
+                    "强制 TCP 连续发送，保持其他条件一致",
+                    "传输完成率、拒绝、请求状态",
+                    "建立无空闲基线，不能代替故障场景。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "空闲 5 秒",
+                    "首请求后空闲 5 秒，再提交相同负载",
+                    "lane/group 状态、peek、队列拒绝、重连、WAITING_FOR_REMOTE_KVS",
+                    "与社区现象是否同形？不得预设根因。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "空闲 90 秒",
+                    "首请求后空闲 90 秒，再请求",
+                    "传输与请求完成、连接组演变和恢复时序",
+                    "90 秒仅是观察点，不是恢复承诺。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "对端主动关闭",
+                    "第一笔完成后主动关闭空闲连接，再提交",
+                    "socket 丢弃、新连接、传输完成率和有界退出",
+                    "局部回归是否在实际构建与连接器成立？"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20/A100 1P1D",
+                    "隔离环境复核上述场景；RDMA 另设独立对照",
+                    "硬件、拓扑、group/lane/请求账本、SLO",
+                    "原现场是否可复现？资源与错误退出是否闭合？"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
             }
           ]
         },
@@ -8423,6 +8859,44 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "可接受的最终记录应同时包含成功与失败样本、机器配置、软件清单、注入脚本和时间线。若只取得单元测试结果，阶段结论应停留在相应边界，不提前授予生产就绪判断。"
+            },
+            {
+              "type": "table",
+              "caption": "空闲重连的独立验收；尚未执行",
+              "columns": [
+                "检查",
+                "预定义门槛",
+                "失败处理"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "局部安全",
+                    "失效 socket 不继续复用；有效 lane 不误丢；后续重连符合预算",
+                    "保留 peek 与状态时间线，回到已验证构建。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据与业务",
+                    "传输完成及接收端数据一致；WAITING_FOR_REMOTE_KVS 在既定成功或错误协议内有界退出",
+                    "连接建立不是通过条件；保留请求账本。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "原 issue 边界",
+                    "能独立重现并定位原 group/准入现象，才讨论其根因",
+                    "未复现继续标未知，不以 RTX 5090 回归替代。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
             }
           ]
         },
@@ -8463,6 +8937,15 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "本报告没有将未发布主干变更包装为稳定版能力，也没有将作者的局部测试外推为生产集群恢复保证。后续最有价值的证据是同一构建在明确故障模型下，能否同时满足安全、时限、数据正确和业务 SLO 四项要求。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                17,
+                21
+              ],
+              "text": "#4234 只建立一处空闲 lane 复用检查。原 H20/A100 现场与 CLOSED group 猜测仍未复现，正式 wheel 包含关系未核实，H20/A100 1P1D、RDMA 对照和传输停滞均待执行。45/45 属作者 rebase 前结果；本站没有做这些实验。"
             }
           ]
         }
