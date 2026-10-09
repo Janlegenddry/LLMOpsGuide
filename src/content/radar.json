@@ -1,6 +1,984 @@
 [
   {
     "schemaVersion": 1,
+    "id": "vllm-pause-async-kv-drain",
+    "kind": "analysis",
+    "title": "vLLM pause(wait)：排空边界覆盖已占 KV 的等待请求",
+    "summary": "vLLM #60572 修复暂停排空漏计异步 KV 等待请求。已占块者继续完成，未占块的排队请求等待恢复；上游测试先用输出证明在途，不是生产 API 的前置要求。修复已合入 main，v0.31.0 固定源码仍为旧逻辑。本文独立验收资源、暂停与恢复，不承诺网络故障下的排空时限。",
+    "publishedAt": "2026-10-08",
+    "reviewedAt": "2026-10-09",
+    "topics": [
+      "vLLM",
+      "KV Cache",
+      "服务调度",
+      "PD 分离",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM #60572 作者研究",
+        "url": "https://github.com/vllm-project/vllm/pull/60572",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub PR #60572 作者",
+          "status": "attributed",
+          "note": "已读取 PR 正文与最终 diff；旧 HTTP 500、CPU 回归和分布式测试族结果均为作者报告，本站未运行。先前 #59993 提供引擎修复，本 PR 另合并测试竞态修订。"
+        },
+        "publishedAt": "2026-10-08",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "vLLM 固定合并提交",
+        "url": "https://github.com/vllm-project/vllm/commit/7816afdb259dbb18f9e98d11b05194dd3446d0fa",
+        "publishedAt": "2026-10-08",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "最终 scheduler",
+        "url": "https://github.com/vllm-project/vllm/blob/7816afdb259dbb18f9e98d11b05194dd3446d0fa/vllm/v1/core/sched/scheduler.py",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "最终 pause 接口",
+        "url": "https://github.com/vllm-project/vllm/blob/7816afdb259dbb18f9e98d11b05194dd3446d0fa/vllm/v1/core/sched/interface.py",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "最终 CPU 回归",
+        "url": "https://github.com/vllm-project/vllm/blob/7816afdb259dbb18f9e98d11b05194dd3446d0fa/tests/v1/core/test_scheduler.py",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "最终分布式 pause 测试",
+        "url": "https://github.com/vllm-project/vllm/blob/7816afdb259dbb18f9e98d11b05194dd3446d0fa/tests/v1/distributed/test_async_llm_dp.py",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "v0.31.0 固定 scheduler",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/core/sched/scheduler.py",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "vLLM v0.31.0 稳定发布",
+        "url": "https://github.com/vllm-project/vllm/releases/tag/v0.31.0",
+        "publishedAt": "2026-10-05",
+        "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "vLLM #60572 官方合入记录",
+        "url": "https://github.com/vllm-project/vllm/pull/60572",
+        "publishedAt": "2026-10-08",
+        "accessedAt": "2026-10-09"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "固定提交同时更新 PAUSED_NEW 的持块等待计数和调度准入；v0.31.0 固定 scheduler 缺少本修订。",
+        "sourceIndices": [
+          1,
+          2,
+          6
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "完成时限、网络故障收尾、真实连接器与跨 rank 暂停仍需独立验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "暂停时哪些请求已经持有 KV，哪些仍在普通 waiting？",
+      "排空计数与准许进展的集合是否一致？",
+      "缓存操作、空闲流式会话、队列恢复和维护时限是否分别验收？"
+    ],
+    "related": [
+      {
+        "title": "vLLM v0.31 运维解读",
+        "path": "/radar/vllm-v0-31-operations/"
+      },
+      {
+        "title": "异步 KV 清零与复用",
+        "path": "/radar/vllm-async-kv-zeroing/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-10-09 公开资料核查；研究稿核对截止 03:11 UTC，随后复核固定合并源码、稳定标签和回归用例。没有运行 CPU 测试、vLLM 实例、GPU/NPU 或生产故障注入。诊断方案、图和实验矩阵均为原创分析与待执行验证。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：暂停成功应由资源状态解释",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                6,
+                8
+              ],
+              "text": "#60572 于 2026 年 10 月 8 日 09:33:41 UTC 合入 main，固定提交为 7816afdb259dbb18f9e98d11b05194dd3446d0fa。v0.31.0 的 PAUSED_NEW 分支仍只返回 running 数量；用户镜像回补情况另查实际源码与构建身份。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次应优先检查使用异步 KV 连接器、并会调用 wait 模式暂停或休眠的服务。排空的完成条件应围绕已经承担的执行与资源责任建立；“当前没有 running 请求”只是一个调度状态，不能单独代表所有已占资源的工作已经处理完。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "也不能反过来要求暂停把所有已接收请求都跑完。还未取得资源的排队请求与已为异步加载取得 KV 块的请求是两种不同责任。修复后的正确边界，应同时证明该完成的工作继续进展、该留在队列的工作没有越过暂停门。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：接收、占块与运行并非一个时刻",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "服务端接受请求后，它可能先排队，再为远程 KV 加载分配块，待加载完成后才进入计算。在这个过程中，“等待”并不是资源状态的同义词：有的等待请求什么也没占用，有的已经让块池承担了保留责任。运维上若把二者混入一个 waiting 指标，排空时就很难解释为什么 running 已经归零而缓存操作仍然失败。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此建议用两个独立问题描述暂停：第一，是否还允许新工作进入；第二，暂停前已经获得资源的工作如何收尾。一次可靠的生命周期切换需要这两个问题的答案一致，而不是单纯把调度入口关闭。缓存重置、休眠和滚动维护尤其应把这一差别写进验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "作者报告旧排空遗漏可能使缓存重置失败、pause 或 sleep 返回 HTTP 500，调度器仍暂停。另一处测试超时来自入队后立即暂停、请求未开始的竞态；恢复前不输出在该情形符合语义。引擎修复承接 #59993，不能把本 PR 日期当首次发现日。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：计数与调度覆盖同一排空集合",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                3
+              ],
+              "text": "PAUSED_NEW 将 kv_holding_waiting 纳入未完成计数并扣除等待新输入的流式会话，同时允许从持块队列调度。普通 waiting 仅在 UNPAUSED 进入；PAUSED_ALL 阻止等待分支。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以用一个双向不变量理解它：若控制逻辑还在等待某类工作结束，就必须保留这类工作的进展路径；若某类工作仍持有排空相关资源，就不能先把控制侧计数置零。只修计数可能把过早返回变成长时间等待，只修调度则可能仍让控制层过早执行后续缓存操作。最终改动同时覆盖这两侧。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "空闲流式会话是第三种边界。它等待的是未来输入，不能凭空运行至结束。如果排空无限等待用户继续输入，维护流程就会被业务交互绑住。这里排除这类会话，只是在定义本次排空任务；不应由此推导它们没有任何资源、已经被删除，或会话状态在任意 reset 后都保持完整。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "同理，本修复没有创造网络完成事件。一个真实连接器如果永远不返回，调度器有正确计数也未必能够完成排空。超时、取消、失败回收和外部维护期限是需要另行验证的故障协议，不能从本次计数修复中得到保证。"
+            },
+            {
+              "type": "diagram",
+              "title": "pause(wait)：按资源责任分流与观测",
+              "caption": "原创分流与观测图，非性能时间线；箭头不代表无条件成功或固定时限。无进展的传输没有连向成功节点，空闲会话被排除不等于资源已清空。完成与 reset 仍是待验收状态。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3
+              ],
+              "nodes": [
+                {
+                  "id": "queued",
+                  "label": "未占块排队",
+                  "detail": "暂停前尚未取得 KV，保留在普通 waiting。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "未占块排队",
+                  "subtitle": "普通 waiting",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "queued-hold",
+                  "label": "暂停中继续排队",
+                  "detail": "不要求该请求在 paused 区间产生输出。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "暂停保留",
+                  "subtitle": "不要求输出",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "resumed",
+                  "label": "resume 后重新准入",
+                  "detail": "只有显式恢复后才继续；需核对队列完整性。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "显式恢复",
+                  "subtitle": "之后重新准入",
+                  "tone": "control"
+                },
+                {
+                  "id": "held",
+                  "label": "已占块等待 KV",
+                  "detail": "异步加载已承担资源责任，不因状态是 waiting 就消失。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "已占块等待",
+                  "subtitle": "KV 加载在途",
+                  "tone": "kv"
+                },
+                {
+                  "id": "drainable",
+                  "label": "仍计数且可调度",
+                  "detail": "PAUSED_NEW 同时保留计数和进展路径。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "计数与进展",
+                  "subtitle": "继续排空",
+                  "tone": "kv"
+                },
+                {
+                  "id": "finished",
+                  "label": "完成并释放请求引用",
+                  "detail": "加载完成后才可推进；引用收敛须实测，不表示驱动显存归零。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "完成待核对",
+                  "subtitle": "引用收敛另验",
+                  "tone": "compute"
+                },
+                {
+                  "id": "idle-stream",
+                  "label": "流式会话等待新输入",
+                  "detail": "没有未来输入就不能继续；不能绑住本次维护。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "空闲流式会话",
+                  "subtitle": "等待未来输入",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "excluded",
+                  "label": "不阻塞本次排空",
+                  "detail": "不表示会话已删除、全部资源归零或任意 reset 后状态仍完整。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "本次计数排除",
+                  "subtitle": "会话另行核对",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "inspect",
+                  "label": "检查排空条件",
+                  "detail": "观察 running、KV 等待和完成状态，不只看 HTTP。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "排空观测",
+                  "subtitle": "责任集合核对",
+                  "tone": "control"
+                },
+                {
+                  "id": "reset",
+                  "label": "验证后续缓存操作",
+                  "detail": "独立检查 reset 结果与残留引用，尚未验收。",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "缓存操作待验",
+                  "subtitle": "结果与引用核对",
+                  "tone": "kv"
+                },
+                {
+                  "id": "signal",
+                  "label": "暂停控制响应",
+                  "detail": "控制结果不能单独替代资源和恢复验收。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "控制响应",
+                  "subtitle": "不替代资源验收",
+                  "tone": "control"
+                },
+                {
+                  "id": "stuck",
+                  "label": "加载无进展",
+                  "detail": "需要连接器超时、失败、取消与维护期限策略，本补丁未创造完成事件。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "传输无进展",
+                  "subtitle": "故障策略另验",
+                  "tone": "danger"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "queued",
+                  "to": "queued-hold",
+                  "label": "暂停保留"
+                },
+                {
+                  "from": "queued-hold",
+                  "to": "resumed",
+                  "label": "显式恢复"
+                },
+                {
+                  "from": "held",
+                  "to": "drainable",
+                  "label": "计数及调度"
+                },
+                {
+                  "from": "drainable",
+                  "to": "finished",
+                  "label": "加载完成后推进",
+                  "shortLabel": "完成后推进"
+                },
+                {
+                  "from": "drainable",
+                  "to": "stuck",
+                  "label": "若外部传输不结束",
+                  "shortLabel": "传输不结束"
+                },
+                {
+                  "from": "finished",
+                  "to": "inspect",
+                  "label": "提交完成证据",
+                  "shortLabel": "完成证据"
+                },
+                {
+                  "from": "idle-stream",
+                  "to": "excluded",
+                  "label": "排空计数排除",
+                  "shortLabel": "计数排除"
+                },
+                {
+                  "from": "excluded",
+                  "to": "inspect",
+                  "label": "排除未来输入等待",
+                  "shortLabel": "排除未来输入"
+                },
+                {
+                  "from": "inspect",
+                  "to": "reset",
+                  "label": "后续操作另验收",
+                  "shortLabel": "另验缓存操作"
+                },
+                {
+                  "from": "inspect",
+                  "to": "signal",
+                  "label": "控制结果"
+                }
+              ],
+              "presentation": {
+                "kind": "pause-kv-drain",
+                "panels": [
+                  {
+                    "title": "普通队列",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "queued",
+                      "queued-hold",
+                      "resumed"
+                    ]
+                  },
+                  {
+                    "title": "持块在途",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "held",
+                      "drainable",
+                      "finished"
+                    ]
+                  },
+                  {
+                    "title": "空闲流式",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "idle-stream",
+                      "excluded"
+                    ]
+                  },
+                  {
+                    "title": "控制与资源观测",
+                    "tone": "control",
+                    "nodeIds": [
+                      "inspect",
+                      "reset",
+                      "signal"
+                    ]
+                  },
+                  {
+                    "title": "独立故障边界",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "stuck"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "diagram",
+              "title": "测试同步：先证明在途，再观察排空",
+              "caption": "原创测试同步关系图。旧超时仅在 pause 先到、请求仍排队时成立。首个输出是上游测试的同步条件，不是生产 pause API 的前置要求。",
+              "basis": "inference",
+              "sourceIndices": [
+                5
+              ],
+              "nodes": [
+                {
+                  "id": "old-enqueue",
+                  "label": "旧测试立即入队",
+                  "detail": "测试未证明请求已经调度或持有资源。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "入队",
+                  "subtitle": "未证明已启动",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "old-pause",
+                  "label": "立即 pause(wait)",
+                  "detail": "如果 pause 先被处理，请求仍在普通 waiting 中。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "立即暂停",
+                  "subtitle": "竞态条件",
+                  "tone": "control"
+                },
+                {
+                  "id": "old-timeout",
+                  "label": "测试等待输出超时",
+                  "detail": "仅当请求仍排队；暂停期间没有输出符合语义，不是此情形的引擎故障。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "条件性超时",
+                  "subtitle": "请求尚未在途",
+                  "tone": "danger"
+                },
+                {
+                  "id": "new-enqueue",
+                  "label": "修订测试入队",
+                  "detail": "准备一个用于观察排空的请求。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "测试入队",
+                  "subtitle": "准备观察",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "first-output",
+                  "label": "观察首个输出",
+                  "detail": "只用于证明此测试已经有在途工作。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "观察首输出",
+                  "subtitle": "仅测试同步",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-pause",
+                  "label": "再请求 wait 暂停",
+                  "detail": "产品仍允许任意时刻调用 pause；没有新增生产前置条件。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "测试再暂停",
+                  "subtitle": "API 语义不变",
+                  "tone": "control"
+                },
+                {
+                  "id": "wait-finish",
+                  "label": "等待已在途请求结束",
+                  "detail": "验证暂停排空行为，而不是等待尚未启动的队列请求。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "观察完成",
+                  "subtitle": "在途排空测试",
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-enqueue",
+                  "to": "old-pause",
+                  "label": "未等待启动",
+                  "shortLabel": "立即调用"
+                },
+                {
+                  "from": "old-pause",
+                  "to": "old-timeout",
+                  "label": "若暂停先到且仍排队",
+                  "shortLabel": "若仍排队"
+                },
+                {
+                  "from": "new-enqueue",
+                  "to": "first-output",
+                  "label": "证明测试请求已启动",
+                  "shortLabel": "等待启动证据"
+                },
+                {
+                  "from": "first-output",
+                  "to": "new-pause",
+                  "label": "测试同步后调用",
+                  "shortLabel": "测试同步"
+                },
+                {
+                  "from": "new-pause",
+                  "to": "wait-finish",
+                  "label": "等待在途请求结束",
+                  "shortLabel": "观察在途结束"
+                }
+              ],
+              "presentation": {
+                "kind": "test-start-barrier",
+                "panels": [
+                  {
+                    "title": "旧测试竞态",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-enqueue",
+                      "old-pause",
+                      "old-timeout"
+                    ]
+                  },
+                  {
+                    "title": "修订测试同步",
+                    "tone": "control",
+                    "nodeIds": [
+                      "new-enqueue",
+                      "first-output",
+                      "new-pause",
+                      "wait-finish"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：三类验证证据不可互相替代",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "代码覆盖与证据边界",
+              "columns": [
+                "对象",
+                "已核对内容",
+                "证据边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合并与固定标签",
+                    "main 已合并，v0.31.0 旧分支仍可见",
+                    "不证明用户镜像或厂商 backport 内容"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "scheduler 与 pause 接口",
+                    "持块等待进入计数和进展路径",
+                    "不证明真实连接器必有完成事件"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "CPU 回归源码",
+                    "两个加载时序、排队保留与恢复、空闲会话排除",
+                    "不等于网络、GPU 或 NPU 故障演练"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "分布式测试修订",
+                    "先收到输出，再请求 wait 暂停",
+                    "不改变产品 API 可随时调用的语义"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者实验结果",
+                    "作者报告新增 CPU 用例和 pause 测试族通过",
+                    "本站未执行，不据此宣布所有硬件通过"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "最终 CPU 用例覆盖加载在途和完成通知已到但未再调度两个时点；要求持块请求结束、reset 成功、普通排队请求保留并在 resume 后启动。另一个用例核对等待后续输入的会话不使排空计数非零。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "分布式用例用首个输出证明测试中已有在途请求，再观察其完成；修订的是试验起点，不新增产品调用前提。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：更完整的排空可能暴露真实等待成本",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原先过早判空的系统可能返回得很快；修复后等待真正需要收尾的工作，是语义纠正，不能按暂停耗时变长直接判断性能回退。应拆解控制调用耗时、远程传输等待、剩余计算以及缓存操作成本，再判断哪个环节超过维护预算。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "另一方面，保持队列中的新请求不启动是暂停隔离的一部分。验收若只要求“所有请求最后有输出”，就可能奖励一个错误实现：它绕过暂停门继续接流。因此输出完成率要与请求是否已经持块、何时允许恢复共同解释。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "H20 只提供硬件上下文，不能替代具体连接器、KV 配置、DP 布局及运行版本证据。NPU 即使使用 vLLM 相关代码，也需要确认集成版本和实际调度路径；不能把上游 main 修复描述成 vLLM-Ascend 稳定版已交付。此报告没有量化任何硬件上的恢复时延或吞吐收益。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "pause(wait)、全部暂停以及不同休眠路径的目的不相同。实验应保留 mode 与后续动作，避免把一种模式的结果当成其他模式的服务承诺。不能为了让排空测试通过，就取消所有未结束请求或删除普通等待队列；那改变了任务语义。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：原创故障假设与诊断证据",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "假设均待以部署证据反驳",
+              "columns": [
+                "假设",
+                "需要的观测",
+                "反证与处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "过早判空",
+                    "pause 前后 running、KV-holding waiting、请求状态与块引用记录；控制响应与 reset 错误时序",
+                    "若没有异步持块请求，不优先归因本修复。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正确计数但外部加载不结束",
+                    "连接器完成/失败通知、传输耗时、调度迭代是否继续",
+                    "区分调度失去进展与网络未完成，不能重复 pause 代替诊断。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "测试没有在途工作",
+                    "请求接收、首次调度、取得 KV、首次输出四个事件",
+                    "请求还在普通队列时没有输出符合预期，调整试验同步点。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "暂停门被绕过",
+                    "给持块请求和普通队列请求分别加测试标识，检查 paused 区间的 token 调度",
+                    "普通队列提前开始是隔离失败，即使总吞吐正常。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复后丢队列或重复",
+                    "resume 后逐请求记录状态、结束原因、输出序列",
+                    "只看新请求能通不足以确认旧队列完整。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "表面资源不回落",
+                    "分开查看请求引用、块池可复用量与驱动层显存",
+                    "缓存池保留显存不等于请求泄漏；先统一指标口径。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可采用一条最小事件链作为排查骨架：请求被接受 → KV 分配 → 异步完成通知 → 计算结束 → 引用回收 → 缓存操作结果。每个事件只说明自己的阶段，不能用后一个日志缺失来推测前一个必然失败。这样也便于比较 pause 到达不同阶段时的行为。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：时序优先的待执行矩阵",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "全部场景为待执行方案",
+              "columns": [
+                "场景",
+                "注入时点",
+                "必留证据",
+                "预期判定"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "普通排队",
+                    "入队后、取得 KV 之前暂停",
+                    "队列状态与调度输出",
+                    "暂停可完成，该请求不被要求输出，resume 后再运行。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "异步加载中",
+                    "已取得块但完成通知尚未到",
+                    "KV 所有权、通知时间和 scheduler 进展",
+                    "保留排空责任，收到有效完成后继续运行。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "加载刚完成",
+                    "通知已到但请求尚未重新调度",
+                    "通知、入运行队列及完成时序",
+                    "不能遗漏这个窄窗口。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "混合队列",
+                    "一个持块请求和一个普通等待请求同时存在",
+                    "每个请求的身份与调度 token",
+                    "只推进需排空者，另一个留待恢复。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "流式会话空闲",
+                    "会话等待更多输入",
+                    "会话状态、排空结果、后续合法输入行为",
+                    "不以未来输入无限阻塞；会话后续行为另行核对。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "外部传输停滞",
+                    "隔离环境延迟或阻断完成事件",
+                    "连接器 timeout/error、资源与调用耗时",
+                    "验证失败处置，不预设补丁可自行恢复。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "多 worker/DP",
+                    "暂停时各 rank 处于不同上述阶段",
+                    "逐 rank 计数与全局控制结果",
+                    "防止只验一个已空闲 worker。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "连续生命周期",
+                    "多次 pause、reset、resume，保留混合队列",
+                    "请求账本、块引用与错误率",
+                    "不丢请求、不重复输出、不积累无法解释的占用。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "实验应分别固定代码版本、镜像、连接器、模型、并行布局与 pause mode。先在一个变量可控的最小配置中确认语义，再加入 DP 和真实网络。故障注入需在隔离环境；生产现象分析先用已有日志，不靠中断线上连接制造证明。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：成功、排空和恢复分开记账",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "尚未执行的验收口径",
+              "columns": [
+                "项目",
+                "预定义门槛",
+                "失败处理"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "运行源码含本补丁或可审计等价修复，构建与配置可追踪",
+                    "未证明则不归因补丁效果。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "排空集合",
+                    "持块在途请求全部有明确收尾，普通队列未越过暂停门",
+                    "任一违反即阻止放量。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "缓存操作",
+                    "reset 返回成功，相关请求不残留异常 KV 引用",
+                    "保存状态与最小复现；不靠重启抹除证据后宣布通过。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "流式边界",
+                    "空闲会话不永久阻塞维护，后续行为符合当前产品语义",
+                    "单独记录兼容性失败，不能只看 drain 返回。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复进展",
+                    "暂停前普通等待请求在恢复后继续，输出与结束原因可核对",
+                    "回退已验证基线并保留请求账本。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "时间边界",
+                    "在预先确定的维护预算内完成或按既定错误协议退出",
+                    "不发布统一秒数；连接器故障超预算须有独立处置。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务质量",
+                    "相同负载下错误率、TTFT/TPOT 与既有 SLO 相容",
+                    "不以平均暂停速度抵销失败请求或尾延迟。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "核心通过口径是责任闭合，而不是“HTTP 不报错”或“显存下降到零”。池化系统常保留显存，应该检查哪些块可再次安全使用；控制接口成功也需要用请求状态和后续缓存操作交叉核对。所有阈值应在实验前固定，避免看到结果后移动门槛。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：尚不能下的结论",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本站没有执行 CPU、分布式或真实 KV 连接器测试，作者报告不能替代独立复现。H20、Ascend、用户实际镜像、厂商 backport、特定连接器故障与跨 rank 暂停行为均未验证。固定稳定标签缺少修复不等于所有使用该标签的负载都会失败；需要异步持块等待与暂停时序同时成立。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本次修复不保证所有传输都在有限时间内结束，不定义全局故障恢复协议，也不证明整个缓存子系统在其他操作下正确。未来稳定版包含关系应按实际固定源码更新；不能仅凭发布时间晚于合并时间断言已包含。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "dynamo-v1-5-1-operations",
     "kind": "analysis",
     "title": "Dynamo v1.5.1 运维解读",
