@@ -8194,9 +8194,9 @@
     "id": "mooncake-rdma-failure-containment",
     "kind": "analysis",
     "title": "Mooncake 异步元数据与握手写入的故障边界",
-    "summary": "两项修复于 10 月 8 日合入 main：在途 slice 拥有标识副本，握手写入抑制 SIGPIPE。稳定与候选标签未包含；发送时限、KV 数据正确和业务恢复仍须独立验证，无本站 GPU 实测。 10 月 9 日补充空闲 TCP lane 的 peek 与后续重连边界；不宣布原 H20/A100 现场根因已解决。",
+    "summary": "两项修复于 10 月 8 日合入 main：在途 slice 拥有标识副本，握手写入抑制 SIGPIPE。稳定与候选标签未包含；发送时限、KV 数据正确和业务恢复仍须独立验证，无本站 GPU 实测。 10 月 9 日补充空闲 TCP lane 的 peek 与后续重连边界；不宣布原 H20/A100 现场根因已解决。 10 月 10 日增补：#4453 为 pending-notify 设置条目上限，并明确最旧通知丢弃取舍；不能据此保证 RSS 或可靠投递。",
     "publishedAt": "2026-10-01",
-    "reviewedAt": "2026-10-09",
+    "reviewedAt": "2026-10-10",
     "topics": [
       "GPU 通信",
       "KV Cache",
@@ -8356,6 +8356,51 @@
         "url": "https://github.com/kvcache-ai/Mooncake/pull/4451",
         "publishedAt": "2026-10-02",
         "accessedAt": "2026-10-09"
+      },
+      {
+        "title": "Mooncake #4453 合入及公开 CI",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4453",
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "Mooncake #4453 固定合并提交",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/38ee4194bfd136f544871b79c36f1553c93f6522",
+        "publishedAt": "2026-10-10",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "最终 pending-notify 队列源码",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/38ee4194bfd136f544871b79c36f1553c93f6522/mooncake-transfer-engine/src/transfer_metadata.cpp",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "Mooncake #4451 当日开放状态",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4451",
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "Mooncake 公开 release 列表",
+        "url": "https://github.com/kvcache-ai/Mooncake/releases",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "Mooncake #4453 作者研究",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4453",
+        "review": {
+          "category": "community",
+          "publisher": "Mooncake PR #4453 作者",
+          "status": "attributed",
+          "note": "已读取作者说明：本地 macOS 只做语法、格式与 pre-commit 检查，没有构建运行完整 CTest。复选框不是测试执行证据；另核对固定合并提交公开 CI，CI Gate 与 Python 3.12 CTest 显示 failure。本站未执行通知流量或引擎实验。"
+        },
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "固定真实套接字有界队列回归源码",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/38ee4194bfd136f544871b79c36f1553c93f6522/mooncake-transfer-engine/tests/transfer_metadata_test.cpp",
+        "accessedAt": "2026-10-10"
       }
     ],
     "claims": [
@@ -8401,6 +8446,24 @@
         "status": "pending",
         "text": "本次请求恢复、原 issue 根因和 wheel 包含仍待核验。",
         "sourceIndices": []
+      },
+      {
+        "status": "confirmed",
+        "text": "#4453 已合并，为 pending-notify 增加条目数上限及最旧项丢弃。",
+        "sourceIndices": [
+          23,
+          24,
+          25
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "该机制不提供全进程 RSS 上限或可靠投递保证；相关 CI、实际制品和业务结果仍需各自核查。",
+        "sourceIndices": [
+          23,
+          26,
+          27
+        ]
       }
     ],
     "questions": [
@@ -8424,7 +8487,7 @@
     ],
     "report": {
       "version": 1,
-      "scope": "核验时间：2026 年 10 月 8 日 02:55 UTC。适用读者：维护 Mooncake KV 传输、推理服务和 GPU 集群的工程团队。 原文日期保留 #4437 首次公开的 2026-10-01；10 月 8 日为合并和本站核验日期。仅阅读公开固定源码与测试，实验/验收计划未执行。 2026-10-09 增补 #4234 固定提交 b7595de3fab45a580e4ee8819c2a2940d43183cd 与 #4209 社区现场的证据边界。保留此前全部九章、图表和验证项；45/45 是作者 rebase 前结果，本站未运行。",
+      "scope": "核验时间：2026 年 10 月 8 日 02:55 UTC。适用读者：维护 Mooncake KV 传输、推理服务和 GPU 集群的工程团队。 原文日期保留 #4437 首次公开的 2026-10-01；10 月 8 日为合并和本站核验日期。仅阅读公开固定源码与测试，实验/验收计划未执行。 2026-10-09 增补 #4234 固定提交 b7595de3fab45a580e4ee8819c2a2940d43183cd 与 #4209 社区现场的证据边界。保留此前全部九章、图表和验证项；45/45 是作者 rebase 前结果，本站未运行。 10 月 10 日局部增补通知队列上限与公开 CI 边界；此前正文及来源完整保留。新增实验均未执行。",
       "sections": [
         {
           "id": "conclusion",
@@ -8462,6 +8525,12 @@
               ],
               "text": "10 月 9 日增补：#4234 处理空闲 TCP lane 的对端关闭检测；它与前文 RDMA 标识所有权、握手 SIGPIPE 分属不同边界。源码合入不等于正式 wheel 已包含，连接可重建也不等于本次业务请求已恢复。",
               "title": "增补：空闲 TCP 连接边界"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "10 月 10 日局部增补：通知队列条目上限是新的内存风险边界；它与前文 RDMA 标识所有权、握手 SIGPIPE、空闲 TCP 重连分开记账。它引入通知丢失取舍，不代表可靠投递或业务恢复。"
             }
           ]
         },
@@ -9217,6 +9286,22 @@
                   }
                 ]
               }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                23,
+                24,
+                25
+              ],
+              "text": "10 月 10 日 02:44 UTC，#4453 已合并，固定提交 38ee4194bfd136f544871b79c36f1553c93f6522 为 handshake pending-notify 队列设置上限。默认 1024，配置范围 1 至 1M；队列满时丢弃最旧未排空通知，为新通知让位，日志按每 1000 次限流。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "该上限约束队列条目数，不是整个进程 RSS 的硬上限；它引入通知丢失取舍，并不保证通知可靠投递。"
             }
           ]
         },
@@ -9368,6 +9453,75 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "table",
+              "caption": "10 月 10 日追加：有界通知队列的证据边界",
+              "columns": [
+                "证据",
+                "已核对内容",
+                "不能据此声称"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#4453 固定提交",
+                    "设置条目上限并在满队列时丢弃最旧未排空项。",
+                    "整个进程 RSS 有硬上限、所有通知可靠送达。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    23,
+                    24,
+                    25
+                  ]
+                },
+                {
+                  "cells": [
+                    "新增回归源码",
+                    "加入真实套接字的有界队列测试，断言保留数量、最旧项丢弃和幸存顺序。",
+                    "本站独立复现，或单个源码测试已在所有平台通过。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    29
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者本地工作",
+                    "作者说明 macOS 本地仅语法、格式与 pre-commit 检查，未构建完整 CTest。",
+                    "PR 复选框替代测试执行证据。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    28
+                  ]
+                },
+                {
+                  "cells": [
+                    "合并提交公开 CI",
+                    "本次独立读取中 CI Gate 与 Python 3.12 CTest 为 failure，另有 wheel job cancelled。",
+                    "全套 CI 已通过，或未读失败原因就归因于队列改动。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    23
+                  ]
+                },
+                {
+                  "cells": [
+                    "关联提案与发布目录",
+                    "#4451 仍 open；release 列表最新条目为 9 月 7 日 v0.3.14-rc1。",
+                    "stalled-peer 隔离已合并，或这些新提交已进入稳定 wheel。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    26,
+                    27
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -9398,6 +9552,12 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "强制 TCP 的空闲连接试验与 RDMA 所有权试验应独立。peek 不等于心跳、不提供统一恢复秒数，也不完成上层请求账本。连续请求正常只能作为对照，不能替代主动关闭对端与空闲后重入的故障检查。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "有界队列以保留近期通知换取丢弃较旧未消费项。建议把队列长度、丢弃数、消费进度和业务关联结果分开观察；条目数下降、日志限流与 RSS 回落都不能单独证明通知没有丢失。"
             }
           ]
         },
@@ -9575,6 +9735,12 @@
                 22
               ],
               "text": "#4451 本轮公开状态仍为 open、merged=false；发送停滞的时限边界没有因 #4234 的空闲重连而自动闭合。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "追加原创假设：消费滞后使 pending-notify 触顶，近期通知仍可进入，但较旧工作可能失去通知见证。先核对上限配置、队列占用、丢弃与 drain 次序及对应业务状态，使用合法合成事件与内部标识，不发布或复现公开 PoC 流量。"
             }
           ]
         },
@@ -9747,6 +9913,44 @@
                   "sourceIndices": []
                 }
               ]
+            },
+            {
+              "type": "table",
+              "caption": "10 月 10 日追加：待执行通知队列验证",
+              "columns": [
+                "场景",
+                "隔离设计",
+                "独立观测"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "配置边界",
+                    "可销毁本地测试环境中检查默认、合法边界与无效配置处理；不对生产发流量。",
+                    "实际 cap、警告、构建身份；不借用 PR 复选框。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "有界队列与 drain",
+                    "以合法合成事件覆盖未触顶、触顶和消费后再进入；采用固定回归的可控设计。",
+                    "队列条目、最旧项丢弃、幸存顺序及正常 drain。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "业务与资源",
+                    "将条目上限、通知消费与业务结果分别记账，观察压力回落；不构造攻击性流量。",
+                    "丢弃数、消费进展、RSS/allocator 与业务完成或超时，避免把 cap 当内存硬限。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
             }
           ]
         },
@@ -9862,6 +10066,44 @@
                   "sourceIndices": []
                 }
               ]
+            },
+            {
+              "type": "table",
+              "caption": "10 月 10 日追加：未执行的验收口径",
+              "columns": [
+                "边界",
+                "建议口径",
+                "失败处理"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "队列机制",
+                    "固定构建中条目上限、最旧项丢弃与消费顺序符合代码契约。",
+                    "保留最小合法反例，先处理配置或构建漂移。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "业务证据",
+                    "丢弃可观测，业务账本能解释通知缺口；不要求上限自身保证可靠投递。",
+                    "按预定义超时与恢复方案处理，不能凭队列有界宣布恢复。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源与发布",
+                    "资源观测、相关 CI 与实际 wheel 包含各自留下证据。",
+                    "继续隔离验证，不将失败 CI 或未确认制品写成上线通过。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
             }
           ]
         },
@@ -9911,6 +10153,15 @@
                 21
               ],
               "text": "#4234 只建立一处空闲 lane 复用检查。原 H20/A100 现场与 CLOSED group 猜测仍未复现，正式 wheel 包含关系未核实，H20/A100 1P1D、RDMA 对照和传输停滞均待执行。45/45 属作者 rebase 前结果；本站没有做这些实验。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                26,
+                27
+              ],
+              "text": "#4451 的 stalled-peer daemon 隔离仍未合并，也没有确认这批新提交已经进入稳定 wheel。队列上限与通知可靠性、全进程资源、真实业务恢复分别待验；本次没有运行上游 CTest、GPU、通知流量或故障注入。"
             }
           ]
         }
