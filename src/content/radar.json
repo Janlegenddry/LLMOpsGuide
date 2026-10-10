@@ -14056,6 +14056,836 @@
   },
   {
     "schemaVersion": 1,
+    "id": "vllm-nixl-receive-layout",
+    "kind": "analysis",
+    "title": "vLLM NIXL：传输完成之后，KV 布局仍须验收",
+    "summary": "vLLM #58860 修复不同 P/D 块大小下的接收重排、尾部清零与分组处理，并收紧跨布局握手。修复已进入 main，v0.31.0 固定源码仍含旧逻辑。块配对与最后一个 prompt token 的关联修复尚未合并，因此本文把局部正确性、端到端一致性和部署范围分别验收，不宣称 H20 或 Ascend 已验证。",
+    "publishedAt": "2026-09-26",
+    "reviewedAt": "2026-10-10",
+    "topics": [
+      "vLLM",
+      "KV Cache",
+      "PD 分离",
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM #58860 作者研究",
+        "url": "https://github.com/vllm-project/vllm/pull/58860",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM PR #58860 作者",
+          "status": "attributed",
+          "note": "已读取 PR 的问题、修订和 GB10 试验范围。Qwen 部分配置匹配、Gemma 单补丁仍有差异均为作者报告；额外应用开放关联补丁的结果不归给 #58860。本站没有执行 CPU、GPU 或分布式测试。"
+        },
+        "publishedAt": "2026-09-26",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "vLLM #58860 固定合并提交",
+        "url": "https://github.com/vllm-project/vllm/commit/83ed0c7c0944e9d124589d8fa3f82a019343a726",
+        "publishedAt": "2026-10-09",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "最终接收布局 utils",
+        "url": "https://github.com/vllm-project/vllm/blob/83ed0c7c0944e9d124589d8fa3f82a019343a726/vllm/distributed/kv_transfer/kv_connector/utils.py",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "最终 NIXL base_worker",
+        "url": "https://github.com/vllm-project/vllm/blob/83ed0c7c0944e9d124589d8fa3f82a019343a726/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "最终 CPU 回归源码",
+        "url": "https://github.com/vllm-project/vllm/blob/83ed0c7c0944e9d124589d8fa3f82a019343a726/tests/v1/kv_connector/unit/test_nixl_connector_hma.py",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "v0.31.0 固定 utils",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/distributed/kv_transfer/kv_connector/utils.py",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "v0.31.0 固定 base_worker",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "vLLM v0.31.0 稳定发布",
+        "url": "https://github.com/vllm-project/vllm/releases/tag/v0.31.0",
+        "publishedAt": "2026-10-05",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "vLLM #59746 开放块配对提案",
+        "url": "https://github.com/vllm-project/vllm/pull/59746",
+        "publishedAt": "2026-10-02",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "vLLM #59330 开放 prompt 尾 token 提案",
+        "url": "https://github.com/vllm-project/vllm/pull/59330",
+        "publishedAt": "2026-09-30",
+        "accessedAt": "2026-10-10"
+      },
+      {
+        "title": "vLLM #58860 官方合入日期",
+        "url": "https://github.com/vllm-project/vllm/pull/58860",
+        "publishedAt": "2026-09-26",
+        "accessedAt": "2026-10-10"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#58860 于 10 月 9 日合入 main；原 PR 首发为 9 月 26 日，v0.31.0 固定源码仍是旧接收逻辑。",
+        "sourceIndices": [
+          1,
+          5,
+          6,
+          10
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "传输完成、组内布局正确和端到端一致性是不同证据门槛。",
+        "sourceIndices": [
+          2,
+          3
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "#59746 与 #59330 的边界修复尚未合入，实际平台和镜像仍待验。",
+        "sourceIndices": [
+          8,
+          9
+        ]
+      }
+    ],
+    "questions": [
+      "两侧 CLI、cache-spec、kernel 与 effective transfer 四项块几何是否都已记录？",
+      "别名分组、部分尾段与 ratio=1 跨布局是否逐元素正确？",
+      "局部通过之后，token 配对、prompt 回退和请求生命周期能否通过独立参考？"
+    ],
+    "related": [
+      {
+        "title": "异步 KV 清零边界",
+        "path": "/radar/vllm-async-kv-zeroing/"
+      },
+      {
+        "title": "Mooncake 故障边界",
+        "path": "/radar/mooncake-rdma-failure-containment/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "基于公开 PR、固定合并源码、稳定标签和 2026-10-10 的关联 PR 状态复核。原稿状态审阅于 02:56 UTC，本次独立读取时间保存在本地证据。只执行本站内容与图形校验，没有执行上游 CPU、GPU、NPU 或跨节点实验；作者 GB10 结果明确归因。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：把“字节到了”与“语义正确”分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                5,
+                6,
+                7,
+                10
+              ],
+              "text": "2026-10-09 11:30:12 UTC，#58860 合入 main，固定提交为 83ed0c7c0944e9d124589d8fa3f82a019343a726。它修复 NIXL 接收端的布局后处理；截至本次检查，最新稳定发布仍为 v0.31.0。直接检查该标签源码，仍能看到旧的维度置换和尾部索引。不能把合入消息当作稳定镜像包含证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文建议：已经使用不同 P/D 有效传输块大小、跨布局接收或混合 attention 分组的团队，先核对实际镜像内代码，再决定是否建立补丁验证分支。没有触发这些路径的部署，不应为了一个相关标题直接全量切换到 main。最重要的上线门槛是重建同一请求的逻辑 KV，不是 NIXL 返回成功、HTTP 200 或吞吐上涨。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8,
+                9
+              ],
+              "text": "另有两个关联 PR 尚处开放状态：#59746 处理块序列的 token 对齐，#59330 处理最后一个 prompt token 的回退边界。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因而，本次补丁不是一个“所有 P/D 错误均已解决”的升级包。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：一个 KV 块有三套坐标",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下是本文的原创诊断模型。接收问题至少包含三套坐标：业务上的 token 位置、张量上的 head/token 维度、物理内存里的字节次序。传输系统可能把每个字节都准确送达，却无法替上层判断这些字节最终属于哪个 head、哪个逻辑 token。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里的大小比较指连接器实际使用的有效传输块大小，不能仅由启动命令的 --block-size 推算。当 P 的有效传输块小于 D 时，一个 D 传输块可能装入多个 P 子块。此时只校验总字节数，会遗漏子块顺序；只校验 shape，会遗漏 stride；只校验某个头上的值，会遗漏头间互换。混合模型还要增加第四项：这个块属于哪一个 transfer group。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这也是为什么同质配置的健康检查不足以覆盖异构配置。P=D 的有效传输块大小、单一分组、全部有效的满块，恰好会隐藏多个边界。诊断应从容易暴露错误的非对称条件出发，但每次只改变一项，避免把布局问题、token 配对问题和模型数值差异混为一谈。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：局部后处理必须尊重逻辑轴和物理次序",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "固定 utils 源码删除了把 attention view 再假设成旧布局的额外 permute；重组按子块、head、token 的关系完成。跨布局分支先还原内存次序，再解释远端 head-major 子块，覆盖 ratio=1 的布局转换。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "既有几何同步路径也必须纳入审查：固定 base_worker 的 _sync_block_size_with_kernel 根据 attention backend 选择共同兼容的 kernel block size；必要时以逻辑块/内核块比扩展 num_blocks，并把连接器 block_size 改为内核块大小。命令行请求值、cache-spec 的分配块大小和最终传输粒度未必一致。这是解读本补丁的前置上下文，#58860 没有修改该函数，不能声称它修复了几何选择。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "固定 base_worker 将分组编号随待处理块携带，只访问该组的层视图；未传输尾段按 token 轴清零。对跨布局开关，仅接受远端 LBHNC 到本地 LBNHC 的指定组合；不支持的布局在握手阶段拒绝。token-major 接收不再无条件重组。"
+            },
+            {
+              "type": "diagram",
+              "title": "接收的三个独立门槛",
+              "caption": "原创责任分层图，不是时间或速度承诺。传输成功不等于组内布局正确，局部正确也不等于端到端通过；末节点只提交验收证据。拒绝组合与开放的配对/回退边界没有自动成功或回退边。四项块几何必须按字段与阶段分别记录。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3,
+                8,
+                9
+              ],
+              "nodes": [
+                {
+                  "id": "receive-config",
+                  "label": "握手配置与四层块几何",
+                  "detail": "输入两侧实测有效传输块大小、缓存布局和分组信息；另记录 CLI 请求值、cache-spec 分配粒度与已选内核粒度，不能将它们混为一项。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "握手与块几何",
+                  "tone": "control"
+                },
+                {
+                  "id": "received-range",
+                  "label": "实际接收范围与子块",
+                  "detail": "确认实际接收到哪些 token 范围和子块，不以返回成功代替范围证明。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "接收范围",
+                  "tone": "communication"
+                },
+                {
+                  "id": "group-transform",
+                  "label": "组内后处理",
+                  "detail": "仅对对应组的层视图执行所需重排，记录 group、block 和逻辑范围。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "组内重排",
+                  "tone": "compute"
+                },
+                {
+                  "id": "valid-and-tail",
+                  "label": "有效区与尾段",
+                  "detail": "有效 token 保留；未覆盖区域按约定清理，不能误清有效区或非目标组。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "有效区与尾段",
+                  "tone": "kv"
+                },
+                {
+                  "id": "receive-e2e",
+                  "label": "端到端核对待验",
+                  "detail": "与固定参考比较 token、logprob 和结束原因；此门尚未执行，没有通过承诺。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "端到端待验",
+                  "tone": "control"
+                },
+                {
+                  "id": "receive-rejected",
+                  "label": "不支持组合明确拒绝",
+                  "detail": "跨布局握手不支持的方向退出，不能画成自动成功回退。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "拒绝组合",
+                  "tone": "danger"
+                },
+                {
+                  "id": "pairing-unresolved",
+                  "label": "关联边界仍待验证",
+                  "detail": "块配对或 prompt 末尾回退不正确时，即使局部布局正确也不能签收端到端；关联 PR 仍开放。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "配对与回退待验",
+                  "tone": "danger"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "receive-config",
+                  "to": "receive-rejected",
+                  "label": "不支持的组合退出",
+                  "shortLabel": "不支持组合"
+                },
+                {
+                  "from": "receive-config",
+                  "to": "received-range",
+                  "label": "仅在支持的组合下进入传输",
+                  "shortLabel": "支持组合"
+                },
+                {
+                  "from": "received-range",
+                  "to": "group-transform",
+                  "label": "使用已知接收范围",
+                  "shortLabel": "已知范围"
+                },
+                {
+                  "from": "group-transform",
+                  "to": "valid-and-tail",
+                  "label": "局部转换完成后核对范围",
+                  "shortLabel": "局部转换"
+                },
+                {
+                  "from": "valid-and-tail",
+                  "to": "receive-e2e",
+                  "label": "提交独立验收证据，不表示通过",
+                  "shortLabel": "提交验收证据"
+                },
+                {
+                  "from": "received-range",
+                  "to": "pairing-unresolved",
+                  "label": "范围或配对尚未成立",
+                  "shortLabel": "配对尚不成立"
+                }
+              ],
+              "presentation": {
+                "kind": "receive-layout-boundaries",
+                "panels": [
+                  {
+                    "title": "配置准入",
+                    "tone": "control",
+                    "nodeIds": [
+                      "receive-config"
+                    ]
+                  },
+                  {
+                    "title": "传输证据",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "received-range"
+                    ]
+                  },
+                  {
+                    "title": "局部布局",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "group-transform"
+                    ]
+                  },
+                  {
+                    "title": "范围安全",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "valid-and-tail"
+                    ]
+                  },
+                  {
+                    "title": "独立验收",
+                    "tone": "control",
+                    "nodeIds": [
+                      "receive-e2e"
+                    ]
+                  },
+                  {
+                    "title": "独立退出与缺口",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "receive-rejected",
+                      "pairing-unresolved"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创推论：同一个缓存指针被不同分组引用，并不意味着每个分组都可以遍历所有视图。测试必须同时记录组编号、块编号和逻辑范围。否则，在指针层面看似节省内存的别名，可能在控制层面变成重复处理。也不能把“第二次处理后又碰巧恢复”当作正确性保证。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码、作者实验与本站判断分层",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "完整证据与证明边界",
+              "columns": [
+                "证据",
+                "已确认内容",
+                "不能证明什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合入记录与固定提交",
+                    "main 已接收该补丁，日期可复核",
+                    "任意发布包、厂商镜像自动包含"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    10
+                  ]
+                },
+                {
+                  "cells": [
+                    "utils 固定源码",
+                    "重排逻辑和跨布局处理改变",
+                    "网络真实传输、所有模型数值一致"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "base_worker 固定源码",
+                    "分组、尾部轴、握手限制改变",
+                    "关联 token 配对算法已完整修复"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "CPU 回归源码",
+                    "使用不同 head/token 值；涵盖少 head、别名分组、部分尾段",
+                    "本站执行通过；H20 或 NPU 覆盖"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "PR 作者 GB10 实验",
+                    "作者报告部分 Qwen 配置修复后匹配；Gemma 单补丁仍有剩余差异",
+                    "独立复现、跨硬件推广、吞吐收益"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "稳定标签源码",
+                    "本次修订尚未体现在标签对应文件",
+                    "下游镜像没有自行 backport"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "开放关联 PR",
+                    "存在尚未合入的边界修复工作",
+                    "一定会按当前方案进入下一版"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    8,
+                    9
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本站只完成公开材料与固定源码核查，没有运行这些 CPU、GPU 或分布式测试。PR 作者的实验是调查线索，不是本文的硬件验证结果。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：失败显式化值得保留，但要量化代价",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下为原创工程分析。握手拒绝将一部分问题提前暴露，运维体验可能从“偶尔输出异常”变为“某些实例不能互通”。这可能降低表面可用容量，却更容易隔离不可交付的计算。评估时应统计拒绝原因和受影响实例，而不是把所有拒绝压成同一个错误率。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "同样，兼容性开关应该附带明确方向。允许 A→B 不代表允许 B→A；允许相同块大小的跨布局，也不代表任意块比例都安全。应把连接器组合当作版本化协议条目管理，每个条目分别记录 CLI 请求块大小、cache-spec 物理分配块大小、backend 选定内核块大小、连接器有效传输块大小，以及各组 token→块映射；同时保存布局、TP、attention backend、分组结构和代码 SHA。不同代码层对 logical/physical 的命名可能不同，应以所属字段与阶段标注，不能用一个笼统“block size”覆盖全部。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "没有证据支持这次修复必然提升吞吐。重排次数可能减少，但端到端成本还取决于搬运、网络、调度与额外测试开销。生产选择应先通过正确性，再测 P50/P99 TTFT、TPOT、错误率与缓存占用。不能用平均速度抵销低概率错误 token。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：原创故障假设与判别证据",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "待验证故障假设",
+              "columns": [
+                "待验证假设",
+                "预期症状",
+                "优先取证",
+                "排除方法"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "H1：接收字节被错误解释",
+                    "请求成功但稳定地偏离同模型参考",
+                    "首个分歧 token、head/token 哨兵值、shape/stride",
+                    "固定所有条件，仅切换有效传输粒度相同的对照"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H2：尾段污染只在请求增长后暴露",
+                    "初始几个 token 正常，后续出现异常或 NaN",
+                    "有效 token 覆盖区、尾段哨兵、首次访问位置",
+                    "改变 prompt 余数并强制缓存复用"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H3：分组别名导致重复转换",
+                    "单组通过，混合组或别名配置失败",
+                    "group→layer→tensor pointer→block 的映射",
+                    "对比别名与独立存储，保持内容一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H4：剩余问题属于 token 配对",
+                    "局部张量测试通过，特定长度端到端不一致",
+                    "逻辑 token 起止、各组 token 映射、P/D 有效传输块列表、窗口回退",
+                    "不把 #59746/#59330 的效果记到 #58860"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H5：运行包未包含补丁",
+                    "配置符合条件但症状仍完全相同",
+                    "容器 digest、文件哈希、源码片段",
+                    "与固定 SHA 构建比对，避免仅查看版本字符串"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这些是假设，不是已经确认的生产事故。采样应优先使用合成输入和内部请求 ID，避免在调试日志写入真实用户 prompt 或 KV 内容。需要真实负载时，先明确数据权限和保留期限。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先局部不变量，再跨节点链路",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下全部为待执行计划。建议实验前冻结模型权重、tokenizer、镜像 digest、驱动、NIXL 版本、采样参数与参考输出。先从两侧运行时与握手数据建立块几何账本：requested CLI、cache-spec allocation、selected kernel、effective transfer 四项大小，以及每组 token 到块的映射。下表 ratio 定义为 D/P 有效传输块大小之比；CLI 比值只用于描述输入配置，不能直接作为实验标签。"
+            },
+            {
+              "type": "table",
+              "caption": "完整待执行实验矩阵",
+              "columns": [
+                "阶段",
+                "变量",
+                "关键检查",
+                "为何值得做"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "A：CPU 合成缓存",
+                    "按有效传输粒度建模 ratio=1/2/4；head 数小于、等于、大于 ratio",
+                    "每个 head/token 的唯一哨兵准确归位",
+                    "避免全 1 输入掩盖置换"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "B：尾部边界",
+                    "0、1、ratio−1、ratio 个有效子块；末块部分覆盖",
+                    "有效区不丢，尾段为预期值，邻块不变",
+                    "单独识别清理范围错误"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "C：分组/别名",
+                    "两 attention 组；独立与别名存储",
+                    "只处理所属组的目标块",
+                    "捕捉跨组重复处理"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "D：握手",
+                    "同布局；允许方向；不支持方向",
+                    "明确接受/拒绝，拒绝后存活实例仍服务",
+                    "检查失败隔离，不伪造自动回退"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E：端到端",
+                    "实际有效传输粒度相同的参考与 P 小/D 大；prompt 跨块、窗口临界长度",
+                    "token、logprob、结束原因与参考比较",
+                    "找到局部通过但语义失败的范围"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "F：生命周期",
+                    "prefix hit/miss、缓存复用、取消后新请求",
+                    "无跨请求残留，错误请求不污染后续",
+                    "防止一次成功样本替代长期安全"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "G：性能",
+                    "仅使用已通过正确性的组合",
+                    "P99 TTFT/TPOT、吞吐、显存、拒绝比例",
+                    "把代价和收益放到同一负载口径"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "A/B/C 可帮助快速定位，但不能代替 E/F。第一轮使用 eager 模式减少图捕获干扰，通过后再按真实图模式重跑。跨机器传输、TP 非对称、网络故障应在基本布局链路通过后逐项增加；不要首轮同时开启全部复杂功能。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：各层通过必须留下不同证据",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预定义验收口径",
+              "columns": [
+                "验收层",
+                "建议通过口径",
+                "不通过后的动作"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "代码身份与几何",
+                    "每个节点记录固定 SHA/镜像 digest；核对四项块大小、分组映射与目标逻辑",
+                    "停止扩大灰度，先处理版本漂移"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "局部布局",
+                    "合成哨兵逐元素匹配，非目标块与非目标组不变",
+                    "保留最小反例，不进入性能比较"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "范围安全",
+                    "有效 token 未被清理，未覆盖尾段满足预期",
+                    "检查 token 覆盖定义与清理时序"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "兼容边界",
+                    "不支持组合可解释地拒绝，服务其余路径保持可用",
+                    "修订路由和配置白名单"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "端到端",
+                    "固定参考下无未解释的 token 分歧；数值容差事先约定",
+                    "区分重排、配对、回退与模型本身差异"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期",
+                    "缓存复用与取消后的新请求仍满足相同口径",
+                    "缩小部署范围，继续定位状态残留"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务质量",
+                    "在既定 SLO 内，且不牺牲正确率",
+                    "回退已验证组合，保留故障证据"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "逐元素一致适用于哨兵重排测试；跨硬件模型输出不应随意强求所有浮点结果 bitwise 相同。若不能证明执行完全确定，应预先定义数值比较方式，并解释离散 token 分歧，不能测试后通过放宽容差来“验收”。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：不把局部合并写成平台承诺",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本站未验证 H20、Ascend、跨节点 RDMA、所有 attention backend 或实际生产镜像。本文只把 H20 视为需要独立执行同一验收流程的潜在目标；Ascend 使用自身平台路径，不能从 NVIDIA/GB10 的结果推出 NPU 可用性。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8,
+                9
+              ],
+              "text": "#59746 和 #59330 截至复核仍开放。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                8,
+                9
+              ],
+              "text": "应持续关注它们的最终代码与稳定发布包含关系，但不能预写合并结论。若某一具体模型同时依赖这些边界，短期保留已验证的同构 P/D 组合可能比叠加多个未发布修复更可控；这是一项待团队实测的选择，不是保证安全的通用配置。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下一轮真正有价值的增量证据是：固定目标环境的最小反例、完整实验矩阵结果、关联 PR 的最终状态、以及稳定镜像内的代码身份证明。单个 PR 又增加一次赞同评论、单次 HTTP 成功或版本号变大，都不足以改写上线结论。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                10
+              ],
+              "text": "本 PR 首次发表为 2026-09-26T21:28:57Z，合入事件为 2026-10-09T11:30:12Z；commit committer 时间为 11:30:11Z，相差一秒，本文使用合并时间。记录及第一来源使用 9 月 26 日原始发布日期，10 月 10 日为复核日。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "h20-serving-slo",
     "kind": "analysis",
     "title": "从 271 tok/s 到可交付服务：H20 推理优化的工程读法",
