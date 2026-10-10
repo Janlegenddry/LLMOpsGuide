@@ -1,0 +1,451 @@
+[
+  {
+    "type": "diagram",
+    "title": "发布到运行的五道证据门",
+    "caption": "原创证据与部署关系图，不是吞吐流水线或实测结果。正式交付、依赖选中、平台准入、状态正确与服务 SLO 各需独立证据；上游固定快照不代表用户镜像，main 合并时间不建立标签包含关系。待验门为空心，箭头只表示证据前提。",
+    "basis": "inference",
+    "sourceIndices": [
+      0,
+      2,
+      3,
+      9,
+      10
+    ],
+    "nodes": [
+      {
+        "id": "artifact-release",
+        "label": "正式 release 制品",
+        "detail": "用版本、标签和制品身份确认正式交付，不能直接证明当前实例使用了它。",
+        "column": 0,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "正式交付"
+      },
+      {
+        "id": "dependency-selected",
+        "label": "依赖真正选中",
+        "detail": "从目标实例的安装与制品记录确认依赖身份；上游 pin 只是被检查的快照。",
+        "column": 1,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "依赖选中"
+      },
+      {
+        "id": "platform-admitted",
+        "label": "架构、模型与后端准入",
+        "detail": "按实际 GPU、模型、精度、shape 和接口核对能否进入目标分支。",
+        "column": 2,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "平台准入"
+      },
+      {
+        "id": "state-correct",
+        "label": "状态正确性待验",
+        "detail": "使用独立参考和有针对性的输入变化验证正确性，安装成功不能代替此门。",
+        "column": 3,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "状态待验"
+      },
+      {
+        "id": "service-slo",
+        "label": "服务 SLO 待验",
+        "detail": "在目标负载与预定义服务门槛下比较；局部实验不能自动签收生产。",
+        "column": 0,
+        "row": 1,
+        "tone": "control",
+        "shortLabel": "SLO 待验"
+      },
+      {
+        "id": "upstream-pin",
+        "label": "所查框架仍 pin 0.7.0.post1",
+        "detail": "vLLM 与 SGLang 的指定固定提交仍选旧依赖；这不是用户部署身份。",
+        "column": 1,
+        "row": 1,
+        "tone": "neutral",
+        "shortLabel": "固定 pin 快照"
+      },
+      {
+        "id": "main-excluded",
+        "label": "#5161 不在 v0.7.1 标签",
+        "detail": "按固定标签核对包含关系，不能由合并早于 release 推导特性已交付。",
+        "column": 2,
+        "row": 1,
+        "tone": "neutral",
+        "shortLabel": "main 与 tag"
+      }
+    ],
+    "edges": [
+      {
+        "from": "artifact-release",
+        "to": "dependency-selected",
+        "label": "交付身份是选择依据",
+        "shortLabel": "核对选择"
+      },
+      {
+        "from": "dependency-selected",
+        "to": "platform-admitted",
+        "label": "已安装还须核对准入",
+        "shortLabel": "核对准入"
+      },
+      {
+        "from": "platform-admitted",
+        "to": "state-correct",
+        "label": "可达分支仍须正确性验证",
+        "shortLabel": "正确性待验"
+      },
+      {
+        "from": "state-correct",
+        "to": "service-slo",
+        "label": "正确性证据先于服务验收",
+        "shortLabel": "服务待验"
+      }
+    ],
+    "presentation": {
+      "kind": "artifact-admission-gates",
+      "panels": [
+        {
+          "title": "五类证据",
+          "tone": "control",
+          "nodeIds": [
+            "artifact-release",
+            "dependency-selected",
+            "platform-admitted",
+            "state-correct",
+            "service-slo"
+          ]
+        },
+        {
+          "title": "平行版本边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "upstream-pin",
+            "main-excluded"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "图状态验收的三个独立见证",
+    "caption": "原创且未执行的验证设计，不是 GPU 测量。三组各只改变一个输入维度，独立比较 eager/reference 与 replay 输出；寿命规则详见机制章节。这里不绘制 destroy→replay，也不暗示捕获图会执行 Python 参数检查。",
+    "basis": "inference",
+    "sourceIndices": [
+      4
+    ],
+    "nodes": [
+      {
+        "id": "rewrite-activations",
+        "label": "只改 activations",
+        "detail": "保持其他条件不变，在注册存储内更新激活内容。",
+        "column": 0,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "只改激活"
+      },
+      {
+        "id": "rewrite-route-ids",
+        "label": "只改 routing IDs",
+        "detail": "独立构造路由 ID 变化，避免仅改激活掩盖路由不更新。",
+        "column": 1,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "只改路由 ID"
+      },
+      {
+        "id": "rewrite-route-weights",
+        "label": "只改 routing weights",
+        "detail": "独立构造权重变化，使该路径有自己的输出见证。",
+        "column": 2,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "只改路由权重"
+      },
+      {
+        "id": "compare-activations",
+        "label": "激活变化的参考比较",
+        "detail": "分别获得 eager/reference 与 replay 输出，按预定义数值方式比较。",
+        "column": 3,
+        "row": 0,
+        "tone": "compute",
+        "shortLabel": "激活参考比较"
+      },
+      {
+        "id": "compare-route-ids",
+        "label": "路由变化的参考比较",
+        "detail": "独立记录预期路由与输出，不借用其他分支的通过结果。",
+        "column": 0,
+        "row": 1,
+        "tone": "compute",
+        "shortLabel": "路由参考比较"
+      },
+      {
+        "id": "compare-route-weights",
+        "label": "权重变化的参考比较",
+        "detail": "独立比较输出对权重改写的响应，不能只检查无异常返回。",
+        "column": 1,
+        "row": 1,
+        "tone": "compute",
+        "shortLabel": "权重参考比较"
+      },
+      {
+        "id": "correctness-observation",
+        "label": "正确性决策待验",
+        "detail": "汇集三份独立证据；任一缺失都不能宣布全部输入更新正确。",
+        "column": 2,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "正确性待验"
+      },
+      {
+        "id": "lifetime-reference",
+        "label": "寿命约束另见机制章节",
+        "detail": "按已解释的合法生命周期设计实验；此注释不创造实现路径或结果。",
+        "column": 3,
+        "row": 1,
+        "tone": "neutral",
+        "shortLabel": "寿命规则参照"
+      }
+    ],
+    "edges": [
+      {
+        "from": "rewrite-activations",
+        "to": "compare-activations",
+        "label": "独立激活变化与参考",
+        "shortLabel": "激活见证"
+      },
+      {
+        "from": "rewrite-route-ids",
+        "to": "compare-route-ids",
+        "label": "独立路由变化与参考",
+        "shortLabel": "路由见证"
+      },
+      {
+        "from": "rewrite-route-weights",
+        "to": "compare-route-weights",
+        "label": "独立权重变化与参考",
+        "shortLabel": "权重见证"
+      },
+      {
+        "from": "compare-activations",
+        "to": "correctness-observation",
+        "label": "提交激活比较证据",
+        "shortLabel": "激活证据"
+      },
+      {
+        "from": "compare-route-ids",
+        "to": "correctness-observation",
+        "label": "提交路由比较证据",
+        "shortLabel": "路由证据"
+      },
+      {
+        "from": "compare-route-weights",
+        "to": "correctness-observation",
+        "label": "提交权重比较证据",
+        "shortLabel": "权重证据"
+      }
+    ],
+    "presentation": {
+      "kind": "graph-input-witnesses",
+      "panels": [
+        {
+          "title": "独立输入改写",
+          "tone": "control",
+          "nodeIds": [
+            "rewrite-activations",
+            "rewrite-route-ids",
+            "rewrite-route-weights"
+          ]
+        },
+        {
+          "title": "逐支比较",
+          "tone": "compute",
+          "nodeIds": [
+            "compare-activations",
+            "compare-route-ids",
+            "compare-route-weights"
+          ]
+        },
+        {
+          "title": "观测汇集",
+          "tone": "kv",
+          "nodeIds": [
+            "correctness-observation"
+          ]
+        },
+        {
+          "title": "设计边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "lifetime-reference"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "接收的三个独立门槛",
+    "caption": "原创责任分层图，不是时间或速度承诺。传输成功不等于组内布局正确，局部正确也不等于端到端通过；末节点只提交验收证据。拒绝组合与开放的配对/回退边界没有自动成功或回退边。四项块几何必须按字段与阶段分别记录。",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3,
+      8,
+      9
+    ],
+    "nodes": [
+      {
+        "id": "receive-config",
+        "label": "握手配置与四层块几何",
+        "detail": "输入两侧实测有效传输块大小、缓存布局和分组信息；另记录 CLI 请求值、cache-spec 分配粒度与已选内核粒度，不能将它们混为一项。",
+        "column": 0,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "握手与块几何"
+      },
+      {
+        "id": "received-range",
+        "label": "实际接收范围与子块",
+        "detail": "确认实际接收到哪些 token 范围和子块，不以返回成功代替范围证明。",
+        "column": 1,
+        "row": 0,
+        "tone": "communication",
+        "shortLabel": "接收范围"
+      },
+      {
+        "id": "group-transform",
+        "label": "组内后处理",
+        "detail": "仅对对应组的层视图执行所需重排，记录 group、block 和逻辑范围。",
+        "column": 2,
+        "row": 0,
+        "tone": "compute",
+        "shortLabel": "组内重排"
+      },
+      {
+        "id": "valid-and-tail",
+        "label": "有效区与尾段",
+        "detail": "有效 token 保留；未覆盖区域按约定清理，不能误清有效区或非目标组。",
+        "column": 3,
+        "row": 0,
+        "tone": "kv",
+        "shortLabel": "有效区与尾段"
+      },
+      {
+        "id": "receive-e2e",
+        "label": "端到端核对待验",
+        "detail": "与固定参考比较 token、logprob 和结束原因；此门尚未执行，没有通过承诺。",
+        "column": 0,
+        "row": 1,
+        "tone": "control",
+        "shortLabel": "端到端待验"
+      },
+      {
+        "id": "receive-rejected",
+        "label": "不支持组合明确拒绝",
+        "detail": "跨布局握手不支持的方向退出，不能画成自动成功回退。",
+        "column": 1,
+        "row": 1,
+        "tone": "danger",
+        "shortLabel": "拒绝组合"
+      },
+      {
+        "id": "pairing-unresolved",
+        "label": "关联边界仍待验证",
+        "detail": "块配对或 prompt 末尾回退不正确时，即使局部布局正确也不能签收端到端；关联 PR 仍开放。",
+        "column": 2,
+        "row": 1,
+        "tone": "danger",
+        "shortLabel": "配对与回退待验"
+      }
+    ],
+    "edges": [
+      {
+        "from": "receive-config",
+        "to": "receive-rejected",
+        "label": "不支持的组合退出",
+        "shortLabel": "不支持组合"
+      },
+      {
+        "from": "receive-config",
+        "to": "received-range",
+        "label": "仅在支持的组合下进入传输",
+        "shortLabel": "支持组合"
+      },
+      {
+        "from": "received-range",
+        "to": "group-transform",
+        "label": "使用已知接收范围",
+        "shortLabel": "已知范围"
+      },
+      {
+        "from": "group-transform",
+        "to": "valid-and-tail",
+        "label": "局部转换完成后核对范围",
+        "shortLabel": "局部转换"
+      },
+      {
+        "from": "valid-and-tail",
+        "to": "receive-e2e",
+        "label": "提交独立验收证据，不表示通过",
+        "shortLabel": "提交验收证据"
+      },
+      {
+        "from": "received-range",
+        "to": "pairing-unresolved",
+        "label": "范围或配对尚未成立",
+        "shortLabel": "配对尚不成立"
+      }
+    ],
+    "presentation": {
+      "kind": "receive-layout-boundaries",
+      "panels": [
+        {
+          "title": "配置准入",
+          "tone": "control",
+          "nodeIds": [
+            "receive-config"
+          ]
+        },
+        {
+          "title": "传输证据",
+          "tone": "communication",
+          "nodeIds": [
+            "received-range"
+          ]
+        },
+        {
+          "title": "局部布局",
+          "tone": "compute",
+          "nodeIds": [
+            "group-transform"
+          ]
+        },
+        {
+          "title": "范围安全",
+          "tone": "kv",
+          "nodeIds": [
+            "valid-and-tail"
+          ]
+        },
+        {
+          "title": "独立验收",
+          "tone": "control",
+          "nodeIds": [
+            "receive-e2e"
+          ]
+        },
+        {
+          "title": "独立退出与缺口",
+          "tone": "danger",
+          "nodeIds": [
+            "receive-rejected",
+            "pairing-unresolved"
+          ]
+        }
+      ]
+    }
+  }
+]

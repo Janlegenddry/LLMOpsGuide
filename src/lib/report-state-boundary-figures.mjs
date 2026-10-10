@@ -6,12 +6,23 @@ const layouts = {
   'pause-kv-drain': [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[1,3],[2,3],[0,3],[2,2]],
   'test-start-barrier': [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[1,3]],
   'tcp-idle-probe': [[0,0],[0,1],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2],[2,3]],
+  'artifact-admission-gates': [[0,1],[1,1],[2,1],[3,1],[4,1],[0,3],[1,3]],
+  'graph-input-witnesses': [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,1],[2,3]],
+  'receive-layout-boundaries': [[0,1],[1,1],[2,1],[3,1],[4,1],[0,3],[2,3]],
 };
 const headings = {
   'graph-buffer-identity': '对象拥有设备张量；CUDA graph 固化设备地址',
   'pause-kv-drain': '分开排空、队列与流式会话',
   'test-start-barrier': '首输出仅用于测试同步',
   'tcp-idle-probe': 'peek 结果与后续重连分开',
+  'artifact-admission-gates': '交付、选中、准入与验收逐项核对',
+  'graph-input-witnesses': '三种输入变化各有独立参考',
+  'receive-layout-boundaries': '传输、布局与端到端分开验收',
+};
+const futureRoles = {
+  'artifact-admission-gates': [1, 2, 3, 4],
+  'graph-input-witnesses': [0, 1, 2, 3, 4, 5, 6],
+  'receive-layout-boundaries': [4],
 };
 export function renderStateBoundaryFigure(diagram, { compact, id, canvas }) {
   const kind=diagram.presentation.kind, layout=layouts[kind];
@@ -23,6 +34,10 @@ export function renderStateBoundaryFigure(diagram, { compact, id, canvas }) {
   // actual references and branches (including references pointing backwards).
   const order=all.map((node,i)=>({node,index:i,level:layout[i][0],col:layout[i][1]}))
     .sort((a,b)=>a.level-b.level||a.col-b.col);
+  if(compact&&kind==='graph-input-witnesses'){
+    const paired=[0,3,1,4,2,5,6,7];
+    order.sort((a,b)=>paired.indexOf(a.index)-paired.indexOf(b.index));
+  }
   const places=compact?order.map((p,i)=>({...p,level:i,col:0})):order;
   const positions=new Map(),rows=new Map();let top=kind==='graph-buffer-identity'&&!compact?82:56;
   const levels=Math.max(...places.map(p=>p.level))+1;
@@ -41,14 +56,18 @@ export function renderStateBoundaryFigure(diagram, { compact, id, canvas }) {
   for(const p of positions.values()){
     const group=groups.get(p.node.id),node={...p.node,subtitle:[p.node.subtitle,group.title].filter(Boolean).join(' · ')};
     const start=c.parts.length;c.card(node,p.x,p.y,p.w,p.h);
-    if(['finished','reset','request-result'].includes(p.node.id)){
+    if(['finished','reset','request-result'].includes(p.node.id)||futureRoles[kind]?.includes(p.index)){
       // A future observation is visibly unfilled, never a passed gate.
       c.parts[start]=c.parts[start].replace(/fill="[^"]+"/,'fill="#fff"').replace('stroke-width="1.5"','stroke-width="1.5" stroke-dasharray="5 4"');
     }
   }
   for(const e of diagram.edges){
     const a=positions.get(e.from),b=positions.get(e.to),y=rows.get(e);
-    const left=compact?12:a.x-14,right=compact?308:b.x+b.w+14;
+    // Keep independent witness branches off a shared rail. On mobile each
+    // input sits next to its comparison; their convergence uses an outer rail.
+    const witness=kind==='graph-input-witnesses',converging=witness&&a.index>=3;
+    const gutter=witness?10:14;
+    const left=compact?(converging?8:12):a.x-gutter,right=compact?(converging?312:308):b.x+b.w+gutter;
     const points=[[a.x-3,a.y+a.h/2],[left,a.y+a.h/2],[left,y],[right,y],[right,b.y+b.h/2],[b.x+b.w+3,b.y+b.h/2]];
     const label=e.shortLabel||e.label,labelPoint=[a.x+a.w/2,y-8];
     const tone=a.node.tone==='danger'||b.node.tone==='danger'?'danger':b.node.tone||'control';
