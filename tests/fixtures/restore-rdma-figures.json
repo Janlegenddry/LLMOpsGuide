@@ -1,0 +1,972 @@
+[
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "title": "状态归约：同序请求前提下的共同拒绝",
+    "caption": "原创教学示意，非实测。上方主场景假定两个rank的transport均已Success，且归约数组请求身份和顺序一致。MIN只统一对应槽位值，不证明队列身份，也不证明全部远端DMA已停止。下方本地旁路不是跨rank安全栅栏；A已Success且restore FAILED、B仍Transferring的组合另列E3待验。图中没有Failed到页释放的安全保证。",
+    "nodes": [
+      {
+        "id": "same-ids",
+        "label": "请求身份与顺序一致",
+        "detail": "这是解释归约结果的前提，不表示MIN实现了身份校验。必须另有有序request ID证据。",
+        "column": 0,
+        "row": 0,
+        "tone": "neutral",
+        "shortLabel": "同序请求"
+      },
+      {
+        "id": "a-state",
+        "label": "A：传输成功、恢复就绪",
+        "detail": "教学主场景：rank A的transport Success，restore READY。",
+        "column": 0,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "A 已就绪"
+      },
+      {
+        "id": "a-gate",
+        "label": "A gate：Success",
+        "detail": "本地gate维持Success；它只描述本rank输入状态。",
+        "column": 1,
+        "row": 1,
+        "tone": "control",
+        "shortLabel": "A 成功票"
+      },
+      {
+        "id": "b-state",
+        "label": "B：传输成功、恢复失败",
+        "detail": "教学主场景：rank B的transport Success，restore FAILED。",
+        "column": 0,
+        "row": 2,
+        "tone": "danger",
+        "shortLabel": "B 恢复失败"
+      },
+      {
+        "id": "b-gate",
+        "label": "B gate：Failed",
+        "detail": "本地gate把传输Success结合恢复FAILED转为Failed。",
+        "column": 1,
+        "row": 2,
+        "tone": "danger",
+        "shortLabel": "B 失败票"
+      },
+      {
+        "id": "min",
+        "label": "既有 MIN poll",
+        "detail": "按数组槽位归约；在同序同身份前提下，对应请求获得相同结果。",
+        "column": 2,
+        "row": 1,
+        "tone": "communication",
+        "shortLabel": "MIN 归约"
+      },
+      {
+        "id": "reject",
+        "label": "同一请求共同拒绝",
+        "detail": "仅在同序同身份前提下解释为同一请求的共同失败控制决策。这里不画free，也不证明远端写已停止。",
+        "column": 3,
+        "row": 1,
+        "tone": "danger",
+        "shortLabel": "共同拒绝"
+      },
+      {
+        "id": "local-inflight",
+        "label": "本地传输未终态、恢复失败",
+        "detail": "独立本地分支：transport仍WaitingForInput或Transferring。",
+        "column": 0,
+        "row": 3,
+        "tone": "kv",
+        "shortLabel": "本地仍在途"
+      },
+      {
+        "id": "local-gate",
+        "label": "本地gate保留传输状态",
+        "detail": "本rank gate不以本地恢复失败覆盖未终态transport。",
+        "column": 1,
+        "row": 3,
+        "tone": "control",
+        "shortLabel": "本地不抢断"
+      },
+      {
+        "id": "local-retain",
+        "label": "本地poll保持未终态",
+        "detail": "不能从这个局部结果推导其他rank的失败不会经MIN传播。",
+        "column": 2,
+        "row": 3,
+        "tone": "kv",
+        "shortLabel": "仍报未终态"
+      },
+      {
+        "id": "dma-boundary",
+        "label": "跨rank写停止仍待验证",
+        "detail": "A成功传输后投Failed而B仍传输时，MIN仍可传播Failed。清理/远端最后写/页复用需E3另验，无默认成功边。",
+        "column": 3,
+        "row": 3,
+        "tone": "neutral",
+        "shortLabel": "DMA 待验"
+      }
+    ],
+    "edges": [
+      {
+        "from": "same-ids",
+        "to": "min",
+        "label": "解释结果所需前提"
+      },
+      {
+        "from": "a-state",
+        "to": "a-gate",
+        "label": "本地状态组合"
+      },
+      {
+        "from": "b-state",
+        "to": "b-gate",
+        "label": "本地状态组合"
+      },
+      {
+        "from": "a-gate",
+        "to": "min",
+        "label": "对应槽位投票"
+      },
+      {
+        "from": "b-gate",
+        "to": "min",
+        "label": "对应槽位投票"
+      },
+      {
+        "from": "min",
+        "to": "reject",
+        "label": "在身份顺序一致前提下"
+      },
+      {
+        "from": "local-inflight",
+        "to": "local-gate",
+        "label": "独立本地分支"
+      },
+      {
+        "from": "local-gate",
+        "to": "local-retain",
+        "label": "不覆盖本地未终态"
+      }
+    ],
+    "presentation": {
+      "kind": "restore-consensus",
+      "panels": [
+        {
+          "title": "归约前提",
+          "tone": "neutral",
+          "nodeIds": [
+            "same-ids"
+          ]
+        },
+        {
+          "title": "Rank A",
+          "tone": "kv",
+          "nodeIds": [
+            "a-state",
+            "a-gate"
+          ]
+        },
+        {
+          "title": "Rank B",
+          "tone": "danger",
+          "nodeIds": [
+            "b-state",
+            "b-gate"
+          ]
+        },
+        {
+          "title": "共同控制结果",
+          "tone": "communication",
+          "nodeIds": [
+            "min",
+            "reject"
+          ]
+        },
+        {
+          "title": "独立本地在途分支",
+          "tone": "kv",
+          "nodeIds": [
+            "local-inflight",
+            "local-gate",
+            "local-retain"
+          ]
+        },
+        {
+          "title": "独立验证边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "dma-boundary"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      1,
+      4
+    ],
+    "title": "预算账本：未共同结算的失败不能提前释放额度",
+    "caption": "原创数字教学示例，非显存测量、非耗时或占比图。A的原始余量已包含真实分配的扣减；B未分配成功，故额外保留3000-token预留，使本例有效预算一致。实际分配器还有其他扣减项。右侧退休条件与预算扣减是独立关系，只有归约数组请求身份和顺序一致，才谈得上同一请求共同退休；图不把预算相同当作全系统同步证明。",
+    "nodes": [
+      {
+        "id": "a-raw",
+        "label": "A 原始预算：5,000",
+        "detail": "本例中A已真实分配3000-token恢复空间；5000是分配后的可用预算。",
+        "column": 0,
+        "row": 0,
+        "tone": "kv",
+        "shortLabel": "A 余量 5000"
+      },
+      {
+        "id": "a-adjust",
+        "label": "A 额外预留扣减：0",
+        "detail": "A已取得restore lock，不能再重复扣减同一笔恢复额度。",
+        "column": 1,
+        "row": 0,
+        "tone": "control",
+        "shortLabel": "不重复扣减"
+      },
+      {
+        "id": "a-effective",
+        "label": "A 有效预算：5,000",
+        "detail": "本例用于该轮admission的预算，尚非所有rank或所有分配器的一般结论。",
+        "column": 2,
+        "row": 0,
+        "tone": "kv",
+        "shortLabel": "A 有效 5000"
+      },
+      {
+        "id": "b-raw",
+        "label": "B 原始预算：8,000",
+        "detail": "本例中B恢复分配失败，原始预算比A多3000。",
+        "column": 0,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "B 余量 8000"
+      },
+      {
+        "id": "b-adjust",
+        "label": "B 保留恢复预留：3,000",
+        "detail": "FAILED但未取得restore lock、仍在transfer queue中，继续扣减该笔未结算额度。",
+        "column": 1,
+        "row": 1,
+        "tone": "control",
+        "shortLabel": "仍扣 3000"
+      },
+      {
+        "id": "b-effective",
+        "label": "B 有效预算：5,000",
+        "detail": "本例8000减3000；防止B在共同退休前提前花掉恢复额度。",
+        "column": 2,
+        "row": 1,
+        "tone": "kv",
+        "shortLabel": "B 有效 5000"
+      },
+      {
+        "id": "queued",
+        "label": "仍排队且未获恢复锁",
+        "detail": "独立生命周期条件：状态FAILED本身不让未获锁请求提前退出恢复预留计算。",
+        "column": 0,
+        "row": 3,
+        "tone": "control",
+        "shortLabel": "保留未结算账"
+      },
+      {
+        "id": "retired",
+        "label": "共同移出队列后结算",
+        "detail": "共同移出以前提同序同身份为条件；移出后该请求不再出现在此队列的预留求和中。不是固定时限保证。",
+        "column": 2,
+        "row": 3,
+        "tone": "control",
+        "shortLabel": "共同退休再结算"
+      },
+      {
+        "id": "budget-boundary",
+        "label": "预算只是一个不变量",
+        "detail": "状态一致、队列身份一致、页生命周期与有界恢复仍须分别验收。数字不代表GPU实测。",
+        "column": 3,
+        "row": 2,
+        "tone": "neutral",
+        "shortLabel": "独立安全边界"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a-raw",
+        "to": "a-adjust",
+        "label": "已分配计入原始余量"
+      },
+      {
+        "from": "a-adjust",
+        "to": "a-effective",
+        "label": "5000 − 0"
+      },
+      {
+        "from": "b-raw",
+        "to": "b-adjust",
+        "label": "未取得restore lock"
+      },
+      {
+        "from": "b-adjust",
+        "to": "b-effective",
+        "label": "8000 − 3000"
+      },
+      {
+        "from": "queued",
+        "to": "retired",
+        "label": "同序请求共同移出后；非计时保证"
+      }
+    ],
+    "presentation": {
+      "kind": "restore-budget-ledger",
+      "panels": [
+        {
+          "title": "A：真实分配已记账",
+          "tone": "kv",
+          "nodeIds": [
+            "a-raw",
+            "a-adjust",
+            "a-effective"
+          ]
+        },
+        {
+          "title": "B：失败预留继续记账",
+          "tone": "control",
+          "nodeIds": [
+            "b-raw",
+            "b-adjust",
+            "b-effective"
+          ]
+        },
+        {
+          "title": "独立生命周期条件",
+          "tone": "control",
+          "nodeIds": [
+            "queued",
+            "retired"
+          ]
+        },
+        {
+          "title": "独立验收边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "budget-boundary"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [],
+    "title": "一条五项链：一个CQE只结算自己的FIFO前缀",
+    "caption": "原创教学示意，非实测。interval=3，max_wr至少6。W3为周期信号，W5为链尾信号；只展示CQE(W3)到来时的处理，不表示跨QP全局顺序或耗时比例。",
+    "nodes": [
+      {
+        "id": "w1",
+        "label": "W1：无信号",
+        "detail": "五项单链的第一项；仍扣一份发送/CQ额度。",
+        "column": 0,
+        "row": 0,
+        "shortLabel": "W1",
+        "tone": "communication"
+      },
+      {
+        "id": "w2",
+        "label": "W2：无信号",
+        "detail": "第二项，仍扣一份额度。",
+        "column": 1,
+        "row": 0,
+        "shortLabel": "W2",
+        "tone": "communication"
+      },
+      {
+        "id": "w3",
+        "label": "W3：周期信号",
+        "detail": "interval=3、max_wr至少6，因此第三项带信号。",
+        "column": 2,
+        "row": 0,
+        "shortLabel": "W3信号",
+        "tone": "communication"
+      },
+      {
+        "id": "w4",
+        "label": "W4：无信号",
+        "detail": "第四项，本次CQE(W3)不覆盖。",
+        "column": 3,
+        "row": 0,
+        "shortLabel": "W4",
+        "tone": "communication"
+      },
+      {
+        "id": "w5",
+        "label": "W5：链尾信号",
+        "detail": "同一post_send链的最后一项，必须带信号；完成属于后续处理。",
+        "column": 0,
+        "row": 1,
+        "shortLabel": "W5信号",
+        "tone": "communication"
+      },
+      {
+        "id": "cqe3",
+        "label": "成功 CQE(W3)",
+        "detail": "当前只讨论这个CQE；不另造W1/W2成功CQE。",
+        "column": 1,
+        "row": 1,
+        "shortLabel": "CQE W3",
+        "tone": "communication"
+      },
+      {
+        "id": "retire",
+        "label": "退休 W1/W2/W3",
+        "detail": "取出FIFO前缀；三项本次尝试完成处理。",
+        "column": 2,
+        "row": 1,
+        "shortLabel": "退休前三项",
+        "tone": "control"
+      },
+      {
+        "id": "quota",
+        "label": "释放三份额度",
+        "detail": "账本按退休WR数量扣减，不按一个硬件CQE扣减。",
+        "column": 3,
+        "row": 1,
+        "shortLabel": "归还3份",
+        "tone": "control"
+      },
+      {
+        "id": "tail",
+        "label": "保留 W4/W5",
+        "detail": "后缀继续等待各自可用完成证据；不因W3成功提前释放。",
+        "column": 0,
+        "row": 2,
+        "shortLabel": "尾部保留",
+        "tone": "kv"
+      },
+      {
+        "id": "capacity",
+        "label": "全部五项均占额度",
+        "detail": "教学示意，不是实测占用；成功CQE压缩不降低失败路径容量责任。",
+        "column": 1,
+        "row": 2,
+        "shortLabel": "逐WR计账",
+        "tone": "neutral"
+      }
+    ],
+    "edges": [
+      {
+        "from": "w1",
+        "to": "w2",
+        "label": "同QP提交次序"
+      },
+      {
+        "from": "w2",
+        "to": "w3",
+        "label": "同QP提交次序"
+      },
+      {
+        "from": "w3",
+        "to": "w4",
+        "label": "同QP提交次序"
+      },
+      {
+        "from": "w4",
+        "to": "w5",
+        "label": "同链尾部"
+      },
+      {
+        "from": "w3",
+        "to": "cqe3",
+        "label": "本次观察到成功完成"
+      },
+      {
+        "from": "cqe3",
+        "to": "retire",
+        "label": "覆盖至W3的前缀"
+      },
+      {
+        "from": "retire",
+        "to": "quota",
+        "label": "按三项而非一个CQE扣减"
+      },
+      {
+        "from": "w4",
+        "to": "tail",
+        "label": "仍在FIFO"
+      },
+      {
+        "from": "w5",
+        "to": "tail",
+        "label": "链尾完成尚未处理"
+      }
+    ],
+    "presentation": {
+      "kind": "rdma-retirement",
+      "panels": [
+        {
+          "title": "同QP的一条post_send链",
+          "tone": "communication",
+          "nodeIds": [
+            "w1",
+            "w2",
+            "w3",
+            "w4",
+            "w5"
+          ]
+        },
+        {
+          "title": "本次完成与软件结算",
+          "tone": "control",
+          "nodeIds": [
+            "cqe3",
+            "retire",
+            "quota"
+          ]
+        },
+        {
+          "title": "后缀保留",
+          "tone": "kv",
+          "nodeIds": [
+            "tail"
+          ]
+        },
+        {
+          "title": "独立容量约束",
+          "tone": "neutral",
+          "nodeIds": [
+            "capacity"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [],
+    "title": "链中提交失败：退休一次尝试，不提前决定请求终态",
+    "caption": "原创教学示意，非实测。interval=3，max_wr至少6，W1/W2均无信号且已经在途，W3是未成功提交的链尾信号项。flush之后可能重试，只有耗尽等终止条件才导致最终失败。等待flush及最终验收节点须空心显示。",
+    "nodes": [
+      {
+        "id": "chain",
+        "label": "拟提交 W1/W2/W3",
+        "detail": "同一教学链，W3原本是链尾信号项。",
+        "column": 0,
+        "row": 0,
+        "shortLabel": "拟提交链",
+        "tone": "communication"
+      },
+      {
+        "id": "failure",
+        "label": "post_send在W3处失败",
+        "detail": "示例中W1/W2已提交、W3未提交；不把API失败等同整链未执行。",
+        "column": 1,
+        "row": 0,
+        "shortLabel": "部分失败",
+        "tone": "danger"
+      },
+      {
+        "id": "posted",
+        "label": "已提交 W1/W2",
+        "detail": "没有成功提交的链尾信号可以依赖。",
+        "column": 0,
+        "row": 1,
+        "shortLabel": "在途前缀",
+        "tone": "communication"
+      },
+      {
+        "id": "fifo",
+        "label": "FIFO保存在途项",
+        "detail": "只保存已经成功提交的前缀。",
+        "column": 1,
+        "row": 1,
+        "shortLabel": "入FIFO",
+        "tone": "kv"
+      },
+      {
+        "id": "destroy",
+        "label": "请求销毁端点",
+        "detail": "按源码启动端点销毁流程，不意味着请求立即终态失败。",
+        "column": 2,
+        "row": 1,
+        "shortLabel": "销毁请求",
+        "tone": "control"
+      },
+      {
+        "id": "flush",
+        "label": "等待provider flush CQE",
+        "detail": "依赖provider对无信号失败/flush项产生CQE；本站未做provider探针。",
+        "column": 3,
+        "row": 1,
+        "shortLabel": "等待flush",
+        "tone": "danger"
+      },
+      {
+        "id": "attempt",
+        "label": "本次尝试按flush处理",
+        "detail": "退休与本次尝试状态处理；与请求最终结局分开。",
+        "column": 0,
+        "row": 2,
+        "shortLabel": "尝试退休",
+        "tone": "control"
+      },
+      {
+        "id": "retry",
+        "label": "重试允许时重新分派",
+        "detail": "固定源码检查shouldRetrySlice；不表示所有错误都自动恢复。",
+        "column": 1,
+        "row": 2,
+        "shortLabel": "有界重试",
+        "tone": "control"
+      },
+      {
+        "id": "failed",
+        "label": "重试耗尽后失败",
+        "detail": "不能把flush本身画成请求直接终态失败。",
+        "column": 2,
+        "row": 2,
+        "shortLabel": "耗尽失败",
+        "tone": "danger"
+      },
+      {
+        "id": "unposted",
+        "label": "未提交 W3进入失败列表",
+        "detail": "与硬件在途分支分开，不能宣称执行成功。",
+        "column": 3,
+        "row": 2,
+        "shortLabel": "未提交项",
+        "tone": "danger"
+      },
+      {
+        "id": "verify",
+        "label": "最终状态与资源归零待验",
+        "detail": "空心观测门：核对请求终态、重复结算、数据与资源回收。",
+        "column": 0,
+        "row": 3,
+        "shortLabel": "待验收",
+        "tone": "neutral"
+      }
+    ],
+    "edges": [
+      {
+        "from": "chain",
+        "to": "failure",
+        "label": "在W3提交处出现失败"
+      },
+      {
+        "from": "failure",
+        "to": "posted",
+        "label": "已提交前缀"
+      },
+      {
+        "from": "posted",
+        "to": "fifo",
+        "label": "保存等待结算"
+      },
+      {
+        "from": "fifo",
+        "to": "destroy",
+        "label": "该条件下启动销毁"
+      },
+      {
+        "from": "destroy",
+        "to": "flush",
+        "label": "等待provider完成证据"
+      },
+      {
+        "from": "flush",
+        "to": "attempt",
+        "label": "收到实际flush CQE后处理"
+      },
+      {
+        "from": "attempt",
+        "to": "retry",
+        "label": "重试允许"
+      },
+      {
+        "from": "attempt",
+        "to": "failed",
+        "label": "重试耗尽"
+      },
+      {
+        "from": "failure",
+        "to": "unposted",
+        "label": "未提交尾项单独处理"
+      },
+      {
+        "from": "retry",
+        "to": "verify",
+        "label": "后续结果仍待验证"
+      },
+      {
+        "from": "failed",
+        "to": "verify",
+        "label": "核对终态及清理"
+      }
+    ],
+    "presentation": {
+      "kind": "rdma-partial-post",
+      "panels": [
+        {
+          "title": "一次部分提交",
+          "tone": "danger",
+          "nodeIds": [
+            "chain",
+            "failure"
+          ]
+        },
+        {
+          "title": "已提交前缀的本次尝试",
+          "tone": "communication",
+          "nodeIds": [
+            "posted",
+            "fifo",
+            "destroy",
+            "flush",
+            "attempt"
+          ]
+        },
+        {
+          "title": "请求后续分支",
+          "tone": "control",
+          "nodeIds": [
+            "retry",
+            "failed"
+          ]
+        },
+        {
+          "title": "独立未提交项",
+          "tone": "danger",
+          "nodeIds": [
+            "unposted"
+          ]
+        },
+        {
+          "title": "实机验收未执行",
+          "tone": "neutral",
+          "nodeIds": [
+            "verify"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3,
+      4
+    ],
+    "title": "存储故障之后：数据完成量与控制通知分别结算",
+    "caption": "原创控制逻辑示意，非时延图。读失败后保留已完成前缀，后续逐批ACK继续；最终completed_req不能代替中间批次消息。写确认只代表操作交回，不能推导全量持久化。跨rank身份顺序和后端最后访问/缓冲复用边界仍待验。 completed_tokens仅累计成功返回批次，失败批次是否部分落盘须另验。",
+    "nodes": [
+      {
+        "id": "read",
+        "label": "读取操作：逐批处理",
+        "shortLabel": "读取操作：逐批处理",
+        "detail": "存储对象读取；图不表示后端实际时延",
+        "column": 0,
+        "row": 0,
+        "tone": "kv"
+      },
+      {
+        "id": "read-error",
+        "label": "某批发生异常",
+        "shortLabel": "某批发生异常",
+        "detail": "当前批新增有效命中为0，先前累计完成前缀保留",
+        "column": 1,
+        "row": 0,
+        "tone": "danger"
+      },
+      {
+        "id": "batch-acks",
+        "label": "剩余批次仍逐批通知",
+        "shortLabel": "剩余批次仍逐批通知",
+        "detail": "后续ACK重复之前累计完成量，不能把中途失败画成整操作清零",
+        "column": 2,
+        "row": 0,
+        "tone": "communication"
+      },
+      {
+        "id": "read-final",
+        "label": "finally最终操作通知",
+        "shortLabel": "finally最终操作通知",
+        "detail": "completed_req是独立终结消息，不能取代中间batch ACK",
+        "column": 3,
+        "row": 0,
+        "tone": "control"
+      },
+      {
+        "id": "read-next",
+        "label": "继续下一健康操作",
+        "shortLabel": "继续下一健康操作",
+        "detail": "仅表示工作循环可继续，不保证后端可用或有固定完成时限",
+        "column": 0,
+        "row": 1,
+        "tone": "kv"
+      },
+      {
+        "id": "write",
+        "label": "备份操作",
+        "shortLabel": "备份操作",
+        "detail": "写入可能已有部分成功批次",
+        "column": 1,
+        "row": 1,
+        "tone": "kv"
+      },
+      {
+        "id": "write-error",
+        "label": "捕获备份异常",
+        "shortLabel": "捕获备份异常",
+        "detail": "记录失败，保留completed_tokens已确认批次计数；不证明失败批次完全未写入",
+        "column": 2,
+        "row": 1,
+        "tone": "danger"
+      },
+      {
+        "id": "write-ack",
+        "label": "交回操作确认",
+        "shortLabel": "交回操作确认",
+        "detail": "表示本次操作已交回，不表示所有对象写成功",
+        "column": 3,
+        "row": 1,
+        "tone": "communication"
+      },
+      {
+        "id": "control",
+        "label": "控制侧消费确认",
+        "shortLabel": "控制侧消费确认",
+        "detail": "正常同步排空需要rank身份顺序和归约配对",
+        "column": 0,
+        "row": 2,
+        "tone": "control"
+      },
+      {
+        "id": "release",
+        "label": "结算锁或staging",
+        "shortLabel": "结算锁或staging",
+        "detail": "buffer模式finish_storage_write_ack；其他路径解除host锁",
+        "column": 1,
+        "row": 2,
+        "tone": "kv"
+      },
+      {
+        "id": "data-fact",
+        "label": "已确认完成量",
+        "shortLabel": "已确认完成量",
+        "detail": "completed_tokens记录成功返回的完整批次；失败批次可能已部分落盘，须独立对象核验，不是精确持久化字节数",
+        "column": 2,
+        "row": 2,
+        "tone": "neutral"
+      },
+      {
+        "id": "boundary",
+        "label": "连接器与rank边界待验",
+        "shortLabel": "连接器与rank边界待验",
+        "detail": "配对一致性、后端最后访问和资源重用关系需实机验证；不是图中已证明的安全栅栏",
+        "column": 3,
+        "row": 2,
+        "tone": "neutral"
+      }
+    ],
+    "edges": [
+      {
+        "from": "read",
+        "to": "read-error",
+        "label": "异常场景"
+      },
+      {
+        "from": "read-error",
+        "to": "batch-acks",
+        "label": "保留累计前缀"
+      },
+      {
+        "from": "batch-acks",
+        "to": "read-final",
+        "label": "逐批通知结束后"
+      },
+      {
+        "from": "read-final",
+        "to": "read-next",
+        "label": "所示已捕获异常路径继续"
+      },
+      {
+        "from": "write",
+        "to": "write-error",
+        "label": "异常场景"
+      },
+      {
+        "from": "write-error",
+        "to": "write-ack",
+        "label": "记录并返回"
+      },
+      {
+        "from": "write-ack",
+        "to": "control",
+        "label": "排空确认队列"
+      },
+      {
+        "from": "control",
+        "to": "release",
+        "label": "按模式结算资源"
+      },
+      {
+        "from": "write-error",
+        "to": "data-fact",
+        "label": "保留已确认批次计数"
+      }
+    ],
+    "presentation": {
+      "kind": "storage-worker-liveness",
+      "panels": [
+        {
+          "title": "读路径：逐批通知与最终通知分开",
+          "tone": "kv",
+          "nodeIds": [
+            "read",
+            "read-error",
+            "batch-acks",
+            "read-final",
+            "read-next"
+          ]
+        },
+        {
+          "title": "写路径：确认与资源结算",
+          "tone": "control",
+          "nodeIds": [
+            "write",
+            "write-error",
+            "write-ack",
+            "control",
+            "release"
+          ]
+        },
+        {
+          "title": "独立确认计数边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "data-fact"
+          ]
+        },
+        {
+          "title": "待验证边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "boundary"
+          ]
+        }
+      ]
+    }
+  }
+]
