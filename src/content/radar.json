@@ -1,6 +1,827 @@
 [
   {
     "schemaVersion": 1,
+    "id": "sglang-hicache-storage-worker-liveness",
+    "kind": "analysis",
+    "title": "SGLang HiCache：存储异常之后，谁来交回完成通知",
+    "summary": "#43550于10月11日合入main，让HiCache存储失败继续走完通知与资源结算。区分逐批ACK、最终通知和实际写入量；解读后台工作活性、跨rank配对及H20隔离验收边界。",
+    "publishedAt": "2026-10-10",
+    "reviewedAt": "2026-10-12",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang #43550：创建、合入与作者实验",
+        "url": "https://github.com/sgl-project/sglang/pull/43550",
+        "publishedAt": "2026-10-10",
+        "accessedAt": "2026-10-12"
+      },
+      {
+        "title": "固定合并提交与父提交",
+        "url": "https://github.com/sgl-project/sglang/commit/ef3e5c83c5255690abe2bafb08a128beaed1edc6",
+        "publishedAt": "2026-10-11",
+        "accessedAt": "2026-10-12"
+      },
+      {
+        "title": "固定源码：CacheController查询、读写与通知",
+        "url": "https://github.com/sgl-project/sglang/blob/ef3e5c83c5255690abe2bafb08a128beaed1edc6/python/sglang/srt/managers/cache_controller.py",
+        "accessedAt": "2026-10-12"
+      },
+      {
+        "title": "固定源码：Hybrid sidecar与备份工作",
+        "url": "https://github.com/sgl-project/sglang/blob/ef3e5c83c5255690abe2bafb08a128beaed1edc6/python/sglang/srt/mem_cache/hybrid_cache/hybrid_cache_controller.py",
+        "accessedAt": "2026-10-12"
+      },
+      {
+        "title": "固定源码：UnifiedRadixCache确认消费与资源结算",
+        "url": "https://github.com/sgl-project/sglang/blob/ef3e5c83c5255690abe2bafb08a128beaed1edc6/python/sglang/srt/mem_cache/unified_radix_cache.py",
+        "accessedAt": "2026-10-12"
+      },
+      {
+        "title": "固定测试：Hybrid sidecar错误覆盖",
+        "url": "https://github.com/sgl-project/sglang/blob/ef3e5c83c5255690abe2bafb08a128beaed1edc6/test/registered/unit/mem_cache/test_hybrid_pool_assembler.py",
+        "accessedAt": "2026-10-12"
+      },
+      {
+        "title": "SGLang官方发布feed",
+        "url": "https://github.com/sgl-project/sglang/releases.atom",
+        "accessedAt": "2026-10-12"
+      },
+      {
+        "title": "SGLang #43562：独立的PD恢复共识问题",
+        "url": "https://github.com/sgl-project/sglang/pull/43562",
+        "publishedAt": "2026-10-10",
+        "accessedAt": "2026-10-12"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "PR #43550于2026-10-11 14:26:57 UTC合入main，固定提交ef3e5c83c5255690abe2bafb08a128beaed1edc6；提交时间为14:26:56 UTC。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "固定源码的窄异常处理路径继续生成控制通知；备份确认消费与数据写入成功量具有不同含义。",
+        "sourceIndices": [
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "H20、真实存储后端、跨rank配对、持续故障和缓冲区安全重用均未由本次CPU方法检查验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "失败之后第一个健康操作能否在约定SLO内完成？",
+      "逐批ACK与最终通知是否仍按相同操作、批次在各rank配对？",
+      "确认消费、实际写入量与资源回收是否被分别记录？"
+    ],
+    "related": [
+      {
+        "title": "Unified Radix Cache：命中边界",
+        "path": "/radar/unified-radix-cache/"
+      },
+      {
+        "title": "SGLang v0.5.21运维基线",
+        "path": "/radar/sglang-v0-5-21/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "研究窗口2026-10-11 02:44 UTC至2026-10-12 02:46 UTC。公开PR、固定提交源码及正式release feed；完成自写mock下的隔离CPU方法检查，未运行完整SGLang、真实线程/存储/GPU/集合通信。H20为后续实验目标，Ascend910不继承结论。main合入不是正式发布。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "先确认下一项工作还能完成",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "SGLang #43550 于 2026-10-10 11:53:10 UTC 创建，10 月 11 日 14:26:57 UTC 合入 main，提交为 ef3e5c83c5255690abe2bafb08a128beaed1edc6；直接父提交为 11bfd868ac36c0d5c7089c3f1a65ed575feb5540。该修订让若干 HiCache 存储异常走完失败处理，而不是从工作线程逃逸。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "值得关注的是可用性的第二跳：某次缓存读取失败并不罕见；危险在于它是否让后续健康请求也失去完成路径。对使用 HiCache L3 的 H20 服务，本次应优先安排隔离故障演练，而非因 main 合入立即改线上镜像。未启用外部缓存存储的实例不应仅凭本文更换配置。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                7
+              ],
+              "text": "应与 #43562 分开理解：前者讨论 PD decode 的恢复状态及准入预留怎样共同结算；本篇讨论存储后台工作如何在异常后继续产出协议所需的完成通知。二者都可能表现为等待或集合通信卡住，但不能互相替代。修了后台线程，不等于修了 decode 准入；修了 decode 投票，也不保证存储线程永远存活。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "本轮公开 release feed 首项仍为 v0.5.21；没有证据把本次 main 合入写成新正式版本已交付。部署前应检查镜像实际源码，而不只比较版本字符串。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "缓存失败通常可重算，通知丢失却会拖住别人",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "外部缓存是一项可选加速：拿不到缓存时，理想退化是用更多计算完成同一个推理请求。后台线程则承担另一种责任：它必须告诉控制侧，这项工作究竟结束了没有。数据路径的“没命中”和控制路径的“没有消息”是不同状态。前者可以推动调度继续；后者可能让所有人继续等待。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "作者报告在单 rank H200、文件后端上注入截断读和写异常：旧路径之后的工作停滞，新路径能继续处理健康预取或交回备份确认。它提供了明确的局部验证线索，不是 H20、TP/PP 或真实网络存储的结果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可把缓存操作拆成三份账：数据有没有拿到；操作是否已退休；哪些资源可以回收。线上只统计命中率会漏掉第二、三份账。即使 HTTP 最终超时，真正的第一处故障也可能是后台线程早已退出，而不是模型计算或网络设备先出问题。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创例子：甲请求读一个坏对象，乙请求随后读一个健康对象。若甲只被记为未命中，乙仍能前进；若甲使负责两者的线程退出，乙甚至不会尝试读盘。此时增加乙的超时或把并发降到一半都不解决缺失的执行者。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "失败也有协议，确认也有不同含义",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "固定控制器源码中，查询异常转为零命中；主数据传输异常将本批命中置零，但剩余批次仍生成 ACK。备份包装器记录异常后返回，外层继续入确认队列。它不是重启已死线程的监护器，也未在此新增后端熔断。旧实现外层 finally 仍发送 completed_req；这条最终通知不能替代缺失的中间批次 ACK，所以不能描述为旧实现完全没有消息。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "Hybrid sidecar 读取异常保留空命中结果并发送通知；相关读操作还有前置处理不在新增异常捕获范围内。因此不能宣传为“任何缓存异常都不再杀线程”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "固定的 UnifiedRadixCache 消费备份确认时，buffer 模式释放 staging；其他路径解除记录中的 host 锁。正常队列排空数量经 MIN 归约，且备份统计读取 completed_tokens。确认到达不等价于所有数据成功持久化。这里的 completed_tokens 只累计成功返回的完整批次；失败批次可能已有部分写入，真实持久化对象须独立核验，不能把该计数当作精确落盘字节数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最有用的设计区分是：完成通知负责收回控制权，成功计数负责描述得到多少数据。失败时没有通知，会泄漏等待关系；失败时把通知伪装成全量成功，会污染数据事实。运维的任务是同时核对这两个维度。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "多 rank 环境还多一个配对条件。每个 rank 发出三次 ACK，不自动证明三次都对应相同请求和批次。集合通信通常按执行顺序配对，而不是替你校验业务身份。因此实验必须记录 request、operation 和 batch 序号，不能只看队列长度一致。"
+            },
+            {
+              "type": "diagram",
+              "title": "存储故障之后：数据完成量与控制通知分别结算",
+              "caption": "原创控制逻辑示意，非时延图。读失败后保留已完成前缀，后续逐批ACK继续；最终completed_req不能代替中间批次消息。写确认只代表操作交回，不能推导全量持久化。跨rank身份顺序和后端最后访问/缓冲复用边界仍待验。 completed_tokens仅累计成功返回批次，失败批次是否部分落盘须另验。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3,
+                4
+              ],
+              "nodes": [
+                {
+                  "id": "read",
+                  "label": "读取操作：逐批处理",
+                  "detail": "存储对象读取；图不表示后端实际时延",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "读取操作：逐批处理",
+                  "tone": "kv"
+                },
+                {
+                  "id": "read-error",
+                  "label": "某批发生异常",
+                  "detail": "当前批新增有效命中为0，先前累计完成前缀保留",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "某批发生异常",
+                  "tone": "danger"
+                },
+                {
+                  "id": "batch-acks",
+                  "label": "剩余批次仍逐批通知",
+                  "detail": "后续ACK重复之前累计完成量，不能把中途失败画成整操作清零",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "剩余批次仍逐批通知",
+                  "tone": "communication"
+                },
+                {
+                  "id": "read-final",
+                  "label": "finally最终操作通知",
+                  "detail": "completed_req是独立终结消息，不能取代中间batch ACK",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "finally最终操作通知",
+                  "tone": "control"
+                },
+                {
+                  "id": "read-next",
+                  "label": "继续下一健康操作",
+                  "detail": "仅表示工作循环可继续，不保证后端可用或有固定完成时限",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "继续下一健康操作",
+                  "tone": "kv"
+                },
+                {
+                  "id": "write",
+                  "label": "备份操作",
+                  "detail": "写入可能已有部分成功批次",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "备份操作",
+                  "tone": "kv"
+                },
+                {
+                  "id": "write-error",
+                  "label": "捕获备份异常",
+                  "detail": "记录失败，保留completed_tokens已确认批次计数；不证明失败批次完全未写入",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "捕获备份异常",
+                  "tone": "danger"
+                },
+                {
+                  "id": "write-ack",
+                  "label": "交回操作确认",
+                  "detail": "表示本次操作已交回，不表示所有对象写成功",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "交回操作确认",
+                  "tone": "communication"
+                },
+                {
+                  "id": "control",
+                  "label": "控制侧消费确认",
+                  "detail": "正常同步排空需要rank身份顺序和归约配对",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "控制侧消费确认",
+                  "tone": "control"
+                },
+                {
+                  "id": "release",
+                  "label": "结算锁或staging",
+                  "detail": "buffer模式finish_storage_write_ack；其他路径解除host锁",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "结算锁或staging",
+                  "tone": "kv"
+                },
+                {
+                  "id": "data-fact",
+                  "label": "已确认完成量",
+                  "detail": "completed_tokens记录成功返回的完整批次；失败批次可能已部分落盘，须独立对象核验，不是精确持久化字节数",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "已确认完成量",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "boundary",
+                  "label": "连接器与rank边界待验",
+                  "detail": "配对一致性、后端最后访问和资源重用关系需实机验证；不是图中已证明的安全栅栏",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "连接器与rank边界待验",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "read",
+                  "to": "read-error",
+                  "label": "异常场景"
+                },
+                {
+                  "from": "read-error",
+                  "to": "batch-acks",
+                  "label": "保留累计前缀"
+                },
+                {
+                  "from": "batch-acks",
+                  "to": "read-final",
+                  "label": "逐批通知结束后"
+                },
+                {
+                  "from": "read-final",
+                  "to": "read-next",
+                  "label": "所示已捕获异常路径继续"
+                },
+                {
+                  "from": "write",
+                  "to": "write-error",
+                  "label": "异常场景"
+                },
+                {
+                  "from": "write-error",
+                  "to": "write-ack",
+                  "label": "记录并返回"
+                },
+                {
+                  "from": "write-ack",
+                  "to": "control",
+                  "label": "排空确认队列"
+                },
+                {
+                  "from": "control",
+                  "to": "release",
+                  "label": "按模式结算资源"
+                },
+                {
+                  "from": "write-error",
+                  "to": "data-fact",
+                  "label": "保留已确认批次计数"
+                }
+              ],
+              "presentation": {
+                "kind": "storage-worker-liveness",
+                "panels": [
+                  {
+                    "title": "读路径：逐批通知与最终通知分开",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "read",
+                      "read-error",
+                      "batch-acks",
+                      "read-final",
+                      "read-next"
+                    ]
+                  },
+                  {
+                    "title": "写路径：确认与资源结算",
+                    "tone": "control",
+                    "nodeIds": [
+                      "write",
+                      "write-error",
+                      "write-ack",
+                      "control",
+                      "release"
+                    ]
+                  },
+                  {
+                    "title": "独立确认计数边界",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "data-fact"
+                    ]
+                  },
+                  {
+                    "title": "待验证边界",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "boundary"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "已证实的窄事实，以及仍缺的一半",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "本次提交改变的 sidecar 单元测试仅保留 unified-memory 场景的失败转 miss 检查；它不能当作新增非 unified、多 rank 故障覆盖。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本轮抽取固定源码中三个方法，以自写对象和队列作隔离 CPU 检查，没有 import 完整 SGLang。五页、每批两页的读异常产生三条零完成量通知；随后健康操作的累计通知为 8、16、20 token。另一次仅在中间批次失败的检查产生 8、8、8，证实先前完成前缀得以保留。备份序列中第一项抛异常，三项仍依序确认，实际完成量为 0、8、8。此结果证明所抽取方法在这些输入下的语义，不能证明真实线程、NIXL/Mooncake、GPU 或集合通信正确。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "证据要分层使用：PR 时间线证明变更身份；固定源码证明具体控制路径；作者实验提供有限硬件场景；本次方法检查帮助排除对局部逻辑的误读。四类证据都不能替代同生产拓扑下的持续负载和故障演练。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本轮未运行仓库完整测试，也未复跑 PR CI。页面显示若干测试分组成功不应概括成“CI 全绿”。如果没有拿到失败组的明确原因，就既不能断言是补丁回归，也不能断言无关。"
+            },
+            {
+              "type": "table",
+              "caption": "证据分层：局部可执行语义与真实服务验证不能互换",
+              "columns": [
+                "证据",
+                "核对结果",
+                "支持边界",
+                "仍不支持"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "官方原文/提交",
+                    "PR mergedTime为10月11日14:26:57 UTC；固定SHA和父提交核对",
+                    "main变更身份",
+                    "正式发行或部署镜像包含"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定源码",
+                    "窄范围捕获、逐批通知、确认消费",
+                    "所查控制流和资源结算逻辑",
+                    "所有后端、线程及跨rank时序"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    3,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "仓库测试",
+                    "sidecar错误测试保留unified场景",
+                    "存在该狭窄回归检查",
+                    "非unified和真实TP已覆盖"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者报告",
+                    "单rank H200文件后端注入读写异常后继续",
+                    "作者报告的有限拓扑",
+                    "H20、Ascend或生产复现"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "原创隔离方法检查",
+                    "修订读失败ACK为[0,0,0]；后续健康为[8,16,20]；备份确认量[0,8,8]；中间批次失败为[8,8,8]",
+                    "自写mock下抽取方法语义",
+                    "真实线程/存储/GPU/集合通信"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "原创父方法对照",
+                    "非unified读异常逃逸，方法内batch ACK数为0",
+                    "局部方法差异；不含外层finally",
+                    "旧实现完全没有completed_req消息"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "不让线程退出，可能把故障转换成更贵的推理",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "把读取失败作为未命中处理，通常会增加重算。对用户可能表现为 TTFT 上升，对系统可能表现为 prefill 压力增加；若只看最终成功率，缓存后端持续失败会被掩盖。验收必须同时有成功率和代价上限。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "写失败后交回资源，避免把有限 host 空间永久锁住，但下次请求可能无法享受预期的存储命中。不能把备份确认计数用于推导持久化吞吐，应将尝试量、实际成功量、失败量和资源释放分别计量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "错误日志也会成为负载。若后端长时间故障，每次尝试都记录堆栈，服务可能在“线程活着”的同时消耗大量日志 I/O。不要凭空声称补丁包含限流或熔断；应该在隔离测试中测量持续失败时的日志速率与重试放大，再决定是否需要外围保护。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "还有一个可靠性边界：抛异常不总意味着后端已停止写缓冲区。如果某插件在异步工作未退出时就返回错误，立即复用同一块 staging 可能造成竞态。这是拟验证的连接器契约问题，不是本文已发现的现存漏洞，也不是从该补丁本身就能推导的事实。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "不建议为验证本补丁而同时打开新缓存层、切换模型、改变 page size 和升级通信库。变量过多会让收益与回归都无法归因。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "把第一次失联的位置记录下来",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议观测采用操作级时间线：入队 → 后端开始 → 返回/异常 → 本地 ACK 入队 → 归约/排空 → 锁与页释放 → 下一项健康工作完成。各阶段记录匿名 operation ID、rank、路径类别、批次序号和资源 generation，避免在日志里输出真实提示词或缓存内容。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "三个原创诊断假设："
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "1. 执行者退出：某次异常之后不再出现同线程后续操作开始。它与“仍在执行但后端很慢”不同。检查线程活性、队列年龄、最后开始/完成时刻，别只看瞬时队列深度。\n2. 通知配对失败：worker 仍工作，本地队列却出现不同操作顺序或缺少中间批次。即使队列总长相同，也应先核对身份序列，再分析集合通信等待。\n3. 资源结算缺口：操作已确认，host 锁或 staging 使用量却没有恢复。应检查确认消费路径和 operation ID 的对应关系，而不是把它再次归为后端读写失败。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "区分控制面确认与数据面成功后，可设置两类面板：完成路径面板看队列年龄、线程活性、未退休操作及资源债务；数据路径面板看读写成功量、miss、失败类别、重算代价和延迟。指标名称是本文建议，未声称框架已直接提供。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "只有上述证据指向本变更覆盖的路径，才适合评估定向摘取。若现场是进程退出、C 扩展崩溃、通信 timeout 或 sidecar 前置处理报错，本次异常捕获未必适用。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "把单次失败与持续故障分开验",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下均为拟议隔离实验，不是已执行结果。固定模型、权重、种子、请求集、TP/PP、page size、后端版本及启动参数。对照父提交与修订提交，必要时保留生产基线作为第三组。"
+            },
+            {
+              "type": "table",
+              "caption": "E0–E8预定义实验：均未执行",
+              "columns": [
+                "实验",
+                "完整方法与观察点",
+                "状态"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "E0，产物身份",
+                    "导出完整镜像 digest、源码 SHA、依赖和实际启动命令。验证确实走目标存储路径；仅看到 HiCache 参数存在并不够。停止条件是无法确定执行路径，此时先补观测，不继续注入。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E1，查询异常",
+                    "让一个确定操作的 exists/query 返回异常，随后提交可证实存在的健康对象。观察所有参与 rank 的命中结论、请求退出等待的时刻和后续工作是否被执行。先单 rank，再生产 TP；不要把单 rank 成功外推到多 rank。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E2，分批读取失败",
+                    "在首批、中间批、末批各注入一次错误。记录累计有效长度、每一条 ACK 的身份、批次和顺序，并与无故障对照比较。前面成功的前缀是否仍可用应按实际代码与对象校验确认，不凭总请求成功猜测。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E3，Hybrid sidecar 失败",
+                    "KV 正常时仅使一类 sidecar 失败，检查该组件的有效性与后续重算路径。分别检查 unified 与非 unified 配置，不把当前单元测试覆盖范围扩大。若目标模型没有 sidecar，就标为不适用。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E4，备份抛异常与显式失败返回",
+                    "两种后端行为分别测；在部分批次成功后失败时，核对实际落盘对象、完成计数、确认消费和资源回收。测试过程使用一次性对象命名空间，不删除或污染线上缓存。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E5，资源压力",
+                    "将 host staging 推近预设高水位，在一项写失败后继续发送健康负载。重点是可回收资源是否恢复、是否发生重用竞态、是否仍有有界进展。把资源峰值和恢复时间写进记录，而不是只截图线程存活。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E6，多 rank 非对称故障",
+                    "只在一个 rank 注入错误，其余 rank 正常；分别制造不同后端返回速度。核对操作顺序、同批集合通信次数及最终共同可用前缀。任何请求身份错配都判失败，即使没有立即崩溃。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E7，持续不可用与恢复",
+                    "后端持续失败一段事先约定的窗口，再恢复。观察重算放大、p95/p99、日志速率、队列债务是否持续增长，恢复后旧债是否清空。不得因工作线程仍活着就宣告通过。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E8，正确性与缓存收益",
+                    "对同一请求集比较缓存关闭、无故障缓存、故障恢复后的输出；确定性场景检查 token，非确定性场景采用预设质量指标。吞吐收益另以相同硬件预算和负载报告，不能将少做工作算作优化。",
+                    "待执行；隔离环境，保留对照与trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "通过标准要同时覆盖安全与进展",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "绝对门槛：错误操作不会伪报全量写入；没有读到错误缓存内容；不会在后端仍访问时复用缓冲；无跨请求污染；跨 rank 操作与批次身份保持配对。出现任一项即停止候选推广并保留 trace。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "进展门槛：单次故障之后，后续健康操作在预设时间内完成；失败工作能退休；资源债务回到无故障波动范围；恢复后无持续队列积压。时间阈值应来自该团队服务 SLO 与基线，而不是本文任意给出毫秒数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "成本门槛：对照报告最终成功率、首尝试成功率、TTFT、TPOT、尾延迟、成功请求吞吐、重算量、host 峰值和日志量。若重试或重算把错误隐藏起来，应判为“功能恢复但成本未通过”，不能用一个绿色总状态结束评估。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "灰度应从隔离环境进入小比例同构实例，保留可一键回退的原镜像与参数；回退不应依赖坏缓存恰好恢复。发布说明只写确实完成的拓扑和后端测试，其他组合列待验。"
+            },
+            {
+              "type": "table",
+              "caption": "预定义验收门：本轮未做硬件或服务验收",
+              "columns": [
+                "验收维度",
+                "通过条件",
+                "证据/状态"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "数据事实",
+                    "不得把失败ACK当全量持久化；输出与缓存内容符合预设正确性门",
+                    "对象校验、完成量和输出；待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源安全",
+                    "后端不再访问之后才可复用缓冲，锁/staging债务回归稳态",
+                    "generation及最后访问/回收时间线；待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "跨rank配对",
+                    "操作及批次身份顺序一致，非仅队列长度相同",
+                    "有序operation/batch轨迹；待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障后进展",
+                    "下一健康操作在预先约定SLO内完成，失败操作可退休",
+                    "首尝试与重算/重试后结果分开；待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "持续故障成本",
+                    "重算、日志和资源使用不失控；恢复后积压清空",
+                    "延迟分位、成功吞吐、队列年龄与host峰值；待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "边界、未选择项与后续判断",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "尚缺：H20 实机、生产 TP/PP、Mooncake/NIXL 后端、持续故障、完整 Hybrid 模型与资源重用时序验证。没有任何证据允许将本篇写成 Ascend 910 修复或收益保证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对本主题最有价值的下一步不是再找一张吞吐图，而是把一次故障之后第一个健康请求的整条时间线补齐。只要这条链仍有无法解释的空白，就不能判断“异常被接住”是否真的成为“服务恢复”。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-pd-hicache-restore-consensus",
     "kind": "analysis",
     "title": "SGLang PD + HiCache：一次恢复失败，为什么需要同时结算状态与预算",
