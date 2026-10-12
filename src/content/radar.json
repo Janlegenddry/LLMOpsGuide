@@ -1959,6 +1959,1062 @@
   },
   {
     "schemaVersion": 1,
+    "id": "mooncake-rdma-sparse-completion",
+    "kind": "analysis",
+    "title": "Mooncake RDMA 稀疏完成通知：省下 CQE，不省掉结算责任",
+    "summary": "#4542已在10月10日合入main。以同机H20作者实验为入口，解释classic RDMA的信号间隔、FIFO退休与最坏CQ容量责任；跨机P/D、实际产物和故障恢复均待验证。",
+    "publishedAt": "2026-10-09",
+    "reviewedAt": "2026-10-11",
+    "topics": [
+      "GPU 通信",
+      "故障分析",
+      "SGLang"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Mooncake #4542 · 原文与合入状态",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4542",
+        "publishedAt": "2026-10-09",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake #4542 · 固定合并提交",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/559f83cb73eb870d208a8d4f333b1a24ee992f26",
+        "publishedAt": "2026-10-10",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake #4542 · 作者同机 H20 实验",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4542",
+        "review": {
+          "category": "community",
+          "publisher": "Mooncake PR #4542 作者",
+          "status": "attributed",
+          "note": "核对作者的 classic tebench 同机 H20/mlx5、VRAM READ 大批次结果和未覆盖测试。submit/wait/BW保留原口径，没有独立复现，不能外推跨机P/D或服务TTFT。"
+        },
+        "publishedAt": "2026-10-09",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake · 固定信号周期与每QP FIFO",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/559f83cb73eb870d208a8d4f333b1a24ee992f26/mooncake-transfer-engine/include/transport/rdma_transport/rdma_posted_fifo.h",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake · 固定 RDMA 提交与端点源码",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/559f83cb73eb870d208a8d4f333b1a24ee992f26/mooncake-transfer-engine/src/transport/rdma_transport/rdma_endpoint.cpp",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake · 固定完成处理与重试源码",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/559f83cb73eb870d208a8d4f333b1a24ee992f26/mooncake-transfer-engine/src/transport/rdma_transport/worker_pool.cpp",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake · 固定无硬件 FIFO 测试",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/559f83cb73eb870d208a8d4f333b1a24ee992f26/mooncake-transfer-engine/tests/rdma_posted_fifo_test.cpp",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake #4542 · 公开检查页",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4542/checks",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake · 发布列表",
+        "url": "https://github.com/kvcache-ai/Mooncake/releases",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "PyPI · Mooncake 发布元数据",
+        "url": "https://pypi.org/pypi/mooncake-transfer-engine/json",
+        "review": {
+          "category": "community",
+          "publisher": "PyPI · mooncake-transfer-engine 发布元数据",
+          "status": "attributed",
+          "note": "只读取包索引JSON，当前version为0.3.13.post1；没有安装wheel，也没有确认用户容器或nightly包含关系。"
+        },
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake · 固定 Transfer Engine 设计文档",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/559f83cb73eb870d208a8d4f333b1a24ee992f26/docs/source/design/transfer-engine/index.md",
+        "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "NVIDIA · RDMA 编程手册",
+        "url": "https://docs.nvidia.com/rdma-aware-networks-programming-user-manual-1-7.pdf",
+        "review": {
+          "category": "paper",
+          "publisher": "NVIDIA · RDMA Aware Networks Programming User Manual",
+          "status": "attributed",
+          "note": "NVIDIA公开技术手册，非实验报告。原研究于10月11日查阅；Mac执行复核另存10月12日审计。已读取PDF第53页（文件页序52）的ibv_poll_cq说明：持续轮询、CQ overrun与IBV_EVENT_CQ_ERR。未登记的精确PDF路径按现有显式引用机制归因，不将资料来源或同行评审状态升级为provider认证。",
+          "peerReview": "unknown"
+        },
+        "accessedAt": "2026-10-11"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#4542原文10月9日创建，10月10日合入main，固定提交559f83cb；不是正式发布声明。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "固定代码采用稀疏硬件通知、每QP FIFO批量退休，仍按全部已提交WR计入CQ容量。",
+        "sourceIndices": [
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "目标制品包含、provider错误语义、跨节点与SGLang服务收益尚未验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际部署使用classic还是TENT，加载制品是否包含固定提交？",
+      "失败或flush的无信号WR是否产生预期CQE并仅结算一次？",
+      "目标负载的正确性、资源、故障时限与服务SLO是否同时通过？"
+    ],
+    "related": [
+      {
+        "title": "Mooncake 异步元数据与握手故障边界",
+        "path": "/radar/mooncake-rdma-failure-containment/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "资料事件窗口2026-10-10 03:00至2026-10-11 02:44 UTC；公开源码和页面查阅于10月11日。仅公开研究，未安装制品、未运行任何GPU/RDMA/provider或服务实机实验。PR首发10月9日，窗口内新事件是合入。固定源码559f83cb73eb870d208a8d4f333b1a24ee992f26；机制图为原创非实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先守住结算边界，再尝试减少通知",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "Mooncake #4542 创建于 2026-10-09 12:45:52 UTC，2026-10-10 14:57:11 UTC 合入 main。固定合并提交为 559f83cb73eb870d208a8d4f333b1a24ee992f26。它为 classic RdmaTransport 增加 MC_RDMA_SIGNAL_INTERVAL；默认 1 保留逐 WR 通知，较大值为显式开启。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对 H20 运维，这是值得隔离试验的传输完成路径优化，尚不足以构成全量升级理由。判断顺序应是：实例究竟使用 classic 还是 TENT；部署产物是否包含该提交；真实 provider 的错误完成语义是否满足条件；最后才比较等待和服务收益。GPU 型号相同只满足了平台描述的一部分。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本站没有证明它改善跨机 P/D KV 交接、TTFT、尾延迟或 SLO 内 goodput。可回滚基线是同一固定构建、参数为 1 的路径，而不是随时间漂移的 main。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：大量小 WR 会把瓶颈推向完成处理",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                2
+              ],
+              "text": "作者在同机 H20、mlx5_bond_0、GPU0→GPU1 VRAM READ、classic tebench 下，使用 4 KiB×207,360、单线程。优化配置为 MC_MAX_WR=4096、interval=32。表中数字是作者测量，非本站复现："
+            },
+            {
+              "type": "table",
+              "caption": "作者同机 H20 整批传输结果，非本站复现",
+              "columns": [
+                "指标",
+                "origin/main",
+                "PR 构建"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "submit p50",
+                    "33.7 ms",
+                    "34.2 ms"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "wait p50",
+                    "875.9 ms",
+                    "77.9 ms"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者报告 BW",
+                    "1.00 GB/s",
+                    "5.99 GB/s"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这些值描述一个极大传输批次，不是单 token、单层或单请求的耗时。submit 与 wait 的边界也不能替代完整业务请求计时。尤其不能把两个 p50 相加、再反推作者的 BW，因为分位数不可相加，吞吐与延迟可能采用不同聚合方式。应保留原指标名，后续复测同时记录完整 batch 墙钟和明确的有效字节数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "该负载提供了一个可检验假设：链路尚有余量时，CPU 处理大量完成记录可能限制进展。若服务实际每批只产生少量 WR，或瓶颈是网络拥塞、GPU 计算、调度排队，减少通知不一定带来同等级收益。不要把“同为 H20”当作负载相同。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：少量硬件通知，仍逐项完成软件结算",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "信号间隔取 min(interval, max_wr/2)，并保证每次 post_send 链的最后一个 WR 带信号。FIFO 按 QP 保存提交顺序；收到某个完成项时，只取出从队首到该项的前缀，后缀保持在队列中。半 SQ 上限用于分批释放发送槽；链尾信号才避免整链全为无信号项。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "提交路径按所有已提交 WR 扣 CQ 额度，而非仅统计带信号项。部分 post_send 失败时，仅已成功提交的前缀进入 FIFO；启用 FIFO 且存在该前缀时，端点进入销毁流程。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "poll 路径把一个硬件完成展开为多个软件完成。当前项保留硬件状态；它前面的项在当前状态为 WR_FLUSH_ERR 时也标 flush，否则标 success。CQ outstanding 按实际退休 WR 数量扣减，不按本次 poll 出来的 CQE 数量扣减。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下两幅图分别解释正常完成和部分提交失败，不表示 P/D 数据流或实测时序。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "图 A：同一 QP 的一条五项 post_send 教学链 W1–W5，interval=3，max_wr 至少 6。\n- 提交轨：W1 无信号 → W2 无信号 → W3 周期信号 → W4 无信号 → W5 链尾信号；五项全部占用发送/CQ账本额度。\n- 硬件通知轨：此刻收到成功 CQE(W3)，只画本次处理的一条通知，不画 W1/W2 成功 CQE；W5 的链尾完成通知属于后续处理。\n- 软件退休轨：FIFO 前缀 W1/W2/W3 → 三项软件结算 → 释放三份额度。\n- 独立边界：W4/W5 留在 FIFO；W3 的完成不授权退休它们。\n- 注意：箭头表达单 QP 提交和结算关系，不表达跨 QP 全局顺序或硬件时间比例。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "图 B：部分提交失败的教学链，interval=3，max_wr至少6，W1/W2均无信号。\n- 拟提交 W1、W2、W3（W3原本是链尾信号）；post_send 在 W3 处失败。\n- 已提交 W1/W2 → FIFO 保存 → 端点销毁请求 → 等待 provider 的 flush CQE → 本次尝试退休并按 flush 状态处理 → 有界重试或重试耗尽后失败；FIFO 退休不等于整个请求已经终态失败。\n- 未提交 W3 → 失败列表；不得与已提交分支混画成硬件执行成功。\n- flush 证据、请求最终状态及资源最终归零画为空心验收节点，表明没有本站硬件验证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "中心不变量可表述为：每个真正进入硬件的 WR，必须有唯一的软件结算归属；通知合并不能变成生命周期合并。一个成功 CQE 可以在限定顺序下作为前缀完成的证据，但错误路径仍可能为许多先前不带信号的 WR 生成完成记录。成功路径省通知，并不意味着失败路径的通知峰值也按同一倍数减少。"
+            },
+            {
+              "type": "diagram",
+              "title": "一条五项链：一个CQE只结算自己的FIFO前缀",
+              "caption": "原创教学示意，非实测。interval=3，max_wr至少6。W3为周期信号，W5为链尾信号；只展示CQE(W3)到来时的处理，不表示跨QP全局顺序或耗时比例。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "w1",
+                  "label": "W1：无信号",
+                  "detail": "五项单链的第一项；仍扣一份发送/CQ额度。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "W1",
+                  "tone": "communication"
+                },
+                {
+                  "id": "w2",
+                  "label": "W2：无信号",
+                  "detail": "第二项，仍扣一份额度。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "W2",
+                  "tone": "communication"
+                },
+                {
+                  "id": "w3",
+                  "label": "W3：周期信号",
+                  "detail": "interval=3、max_wr至少6，因此第三项带信号。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "W3信号",
+                  "tone": "communication"
+                },
+                {
+                  "id": "w4",
+                  "label": "W4：无信号",
+                  "detail": "第四项，本次CQE(W3)不覆盖。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "W4",
+                  "tone": "communication"
+                },
+                {
+                  "id": "w5",
+                  "label": "W5：链尾信号",
+                  "detail": "同一post_send链的最后一项，必须带信号；完成属于后续处理。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "W5信号",
+                  "tone": "communication"
+                },
+                {
+                  "id": "cqe3",
+                  "label": "成功 CQE(W3)",
+                  "detail": "当前只讨论这个CQE；不另造W1/W2成功CQE。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "CQE W3",
+                  "tone": "communication"
+                },
+                {
+                  "id": "retire",
+                  "label": "退休 W1/W2/W3",
+                  "detail": "取出FIFO前缀；三项本次尝试完成处理。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "退休前三项",
+                  "tone": "control"
+                },
+                {
+                  "id": "quota",
+                  "label": "释放三份额度",
+                  "detail": "账本按退休WR数量扣减，不按一个硬件CQE扣减。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "归还3份",
+                  "tone": "control"
+                },
+                {
+                  "id": "tail",
+                  "label": "保留 W4/W5",
+                  "detail": "后缀继续等待各自可用完成证据；不因W3成功提前释放。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "尾部保留",
+                  "tone": "kv"
+                },
+                {
+                  "id": "capacity",
+                  "label": "全部五项均占额度",
+                  "detail": "教学示意，不是实测占用；成功CQE压缩不降低失败路径容量责任。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "逐WR计账",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "w1",
+                  "to": "w2",
+                  "label": "同QP提交次序"
+                },
+                {
+                  "from": "w2",
+                  "to": "w3",
+                  "label": "同QP提交次序"
+                },
+                {
+                  "from": "w3",
+                  "to": "w4",
+                  "label": "同QP提交次序"
+                },
+                {
+                  "from": "w4",
+                  "to": "w5",
+                  "label": "同链尾部"
+                },
+                {
+                  "from": "w3",
+                  "to": "cqe3",
+                  "label": "本次观察到成功完成"
+                },
+                {
+                  "from": "cqe3",
+                  "to": "retire",
+                  "label": "覆盖至W3的前缀"
+                },
+                {
+                  "from": "retire",
+                  "to": "quota",
+                  "label": "按三项而非一个CQE扣减"
+                },
+                {
+                  "from": "w4",
+                  "to": "tail",
+                  "label": "仍在FIFO"
+                },
+                {
+                  "from": "w5",
+                  "to": "tail",
+                  "label": "链尾完成尚未处理"
+                }
+              ],
+              "presentation": {
+                "kind": "rdma-retirement",
+                "panels": [
+                  {
+                    "title": "同QP的一条post_send链",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "w1",
+                      "w2",
+                      "w3",
+                      "w4",
+                      "w5"
+                    ]
+                  },
+                  {
+                    "title": "本次完成与软件结算",
+                    "tone": "control",
+                    "nodeIds": [
+                      "cqe3",
+                      "retire",
+                      "quota"
+                    ]
+                  },
+                  {
+                    "title": "后缀保留",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "tail"
+                    ]
+                  },
+                  {
+                    "title": "独立容量约束",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "capacity"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "diagram",
+              "title": "链中提交失败：退休一次尝试，不提前决定请求终态",
+              "caption": "原创教学示意，非实测。interval=3，max_wr至少6，W1/W2均无信号且已经在途，W3是未成功提交的链尾信号项。flush之后可能重试，只有耗尽等终止条件才导致最终失败。等待flush及最终验收节点须空心显示。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "chain",
+                  "label": "拟提交 W1/W2/W3",
+                  "detail": "同一教学链，W3原本是链尾信号项。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "拟提交链",
+                  "tone": "communication"
+                },
+                {
+                  "id": "failure",
+                  "label": "post_send在W3处失败",
+                  "detail": "示例中W1/W2已提交、W3未提交；不把API失败等同整链未执行。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "部分失败",
+                  "tone": "danger"
+                },
+                {
+                  "id": "posted",
+                  "label": "已提交 W1/W2",
+                  "detail": "没有成功提交的链尾信号可以依赖。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "在途前缀",
+                  "tone": "communication"
+                },
+                {
+                  "id": "fifo",
+                  "label": "FIFO保存在途项",
+                  "detail": "只保存已经成功提交的前缀。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "入FIFO",
+                  "tone": "kv"
+                },
+                {
+                  "id": "destroy",
+                  "label": "请求销毁端点",
+                  "detail": "按源码启动端点销毁流程，不意味着请求立即终态失败。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "销毁请求",
+                  "tone": "control"
+                },
+                {
+                  "id": "flush",
+                  "label": "等待provider flush CQE",
+                  "detail": "依赖provider对无信号失败/flush项产生CQE；本站未做provider探针。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "等待flush",
+                  "tone": "danger"
+                },
+                {
+                  "id": "attempt",
+                  "label": "本次尝试按flush处理",
+                  "detail": "退休与本次尝试状态处理；与请求最终结局分开。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "尝试退休",
+                  "tone": "control"
+                },
+                {
+                  "id": "retry",
+                  "label": "重试允许时重新分派",
+                  "detail": "固定源码检查shouldRetrySlice；不表示所有错误都自动恢复。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "有界重试",
+                  "tone": "control"
+                },
+                {
+                  "id": "failed",
+                  "label": "重试耗尽后失败",
+                  "detail": "不能把flush本身画成请求直接终态失败。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "耗尽失败",
+                  "tone": "danger"
+                },
+                {
+                  "id": "unposted",
+                  "label": "未提交 W3进入失败列表",
+                  "detail": "与硬件在途分支分开，不能宣称执行成功。",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "未提交项",
+                  "tone": "danger"
+                },
+                {
+                  "id": "verify",
+                  "label": "最终状态与资源归零待验",
+                  "detail": "空心观测门：核对请求终态、重复结算、数据与资源回收。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "待验收",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "chain",
+                  "to": "failure",
+                  "label": "在W3提交处出现失败"
+                },
+                {
+                  "from": "failure",
+                  "to": "posted",
+                  "label": "已提交前缀"
+                },
+                {
+                  "from": "posted",
+                  "to": "fifo",
+                  "label": "保存等待结算"
+                },
+                {
+                  "from": "fifo",
+                  "to": "destroy",
+                  "label": "该条件下启动销毁"
+                },
+                {
+                  "from": "destroy",
+                  "to": "flush",
+                  "label": "等待provider完成证据"
+                },
+                {
+                  "from": "flush",
+                  "to": "attempt",
+                  "label": "收到实际flush CQE后处理"
+                },
+                {
+                  "from": "attempt",
+                  "to": "retry",
+                  "label": "重试允许"
+                },
+                {
+                  "from": "attempt",
+                  "to": "failed",
+                  "label": "重试耗尽"
+                },
+                {
+                  "from": "failure",
+                  "to": "unposted",
+                  "label": "未提交尾项单独处理"
+                },
+                {
+                  "from": "retry",
+                  "to": "verify",
+                  "label": "后续结果仍待验证"
+                },
+                {
+                  "from": "failed",
+                  "to": "verify",
+                  "label": "核对终态及清理"
+                }
+              ],
+              "presentation": {
+                "kind": "rdma-partial-post",
+                "panels": [
+                  {
+                    "title": "一次部分提交",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "chain",
+                      "failure"
+                    ]
+                  },
+                  {
+                    "title": "已提交前缀的本次尝试",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "posted",
+                      "fifo",
+                      "destroy",
+                      "flush",
+                      "attempt"
+                    ]
+                  },
+                  {
+                    "title": "请求后续分支",
+                    "tone": "control",
+                    "nodeIds": [
+                      "retry",
+                      "failed"
+                    ]
+                  },
+                  {
+                    "title": "独立未提交项",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "unposted"
+                    ]
+                  },
+                  {
+                    "title": "实机验收未执行",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "verify"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：合入、单元测试、集成与发布分开读",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "各证据层次的可支持与不可支持结论",
+              "columns": [
+                "层次",
+                "已核对内容",
+                "能支持什么",
+                "不能支持什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "官方",
+                    "PR 已合入，固定 SHA",
+                    "main 包含该改动",
+                    "安装包已含、现网已启用"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "官方",
+                    "固定源码信号、FIFO、计数与失败分支",
+                    "机制解释和代码审查入口",
+                    "RNIC实际错误/flush行为"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3,
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "官方",
+                    "测试文件覆盖信号周期、链尾、前缀、尾部保留、环境变量",
+                    "存在无硬件逻辑回归",
+                    "完整端点寿命、CQ压力与多线程集成"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "官方",
+                    "CI Gate、Python3.12单测成功；E2E Gate有失败；跨节点TE项跳过",
+                    "CI状态是混合结果",
+                    "全绿集成认证或确定根因"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "官方",
+                    "release列表稳定版0.3.13.post1，另有0.3.14-rc1预发布",
+                    "所查页面的发布状态",
+                    "用户wheel/container身份"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    8
+                  ]
+                },
+                {
+                  "cells": [
+                    "归因",
+                    "PyPI元数据当前version为0.3.13.post1",
+                    "包索引可见版本",
+                    "任意镜像、nightly或内部构建包含关系"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    9
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "SGLang 集成曾成功的单项不能证明此新分支被覆盖。需要用测试命令、环境变量、实际后端和分支命中证据建立连接；否则即使整个服务测试成功，也可能仍走默认 interval=1。反过来，E2E Gate 失败也不能直接归因为这一算法，需要具体失败日志。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本次只读取检查页状态，没有完成失败日志归因。该页还出现一轮 SGLang 集成取消、一轮成功，以及 Ascend/ROCm 失败。既不隐去失败，也不把非目标平台失败解释为 H20 回归。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：最有价值的是匹配瓶颈，不是把 N 调到最大",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                10
+              ],
+              "text": "该选项仅适用于 classic RdmaTransport。interval&gt;1 要求 provider 对失败/flush 的无信号 WR 仍产生 CQE；不满足应保持默认 1。无信号 WR 在相应 CQE到来前仍占用 SQ，较大间隔可能需要较大的 MC_MAX_WR。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                11
+              ],
+              "text": "NVIDIA RDMA 编程手册说明 CQ 应持续轮询；overrun 会使 CQ 停止并产生 CQ_ERR。这提供容量审视的通用背景，不构成对每个 provider 的认证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "更大 N 同时改变正常完成通知密度、额度释放节奏和故障结算依赖。短链因链尾总带信号，未必达到理想的 N 倍压缩。应用每次只有一个 WR 时，也不能因配置为32便预期32倍减少。每个 QP 的链长分布、实际信号比例和CPU忙碌点，比单独记录配置值更重要。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "该机制没有减少 payload 字节量，也没有合并逻辑KV块。它与增大消息、合并切片、调大SQ深度是不同干预变量。A/B若同时改后三者，就无法判断收益来自通知减少还是排队容量变化。测试应保留“仅改 max_wr”的对照，而不把作者最终配置直接复制成最佳实践。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产：用可证伪的故障假设替代空泛稳定性",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下均为原创诊断假设，不是已发现的现网故障。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "传输已经完成，任务却长期挂起。可能是错误路径未提供预期 CQE，或端点状态/账本未收敛。保存按QP的最后提交ID、信号标志、CQE状态、FIFO深度与端点状态；以安全隔离环境的故障注入建立证据，不先责怪网络带宽。",
+                "正常压力下更快，断链时CQ报错。检查是否有人依据平均CQE压缩率下调容量或提高并发，导致最坏完成风暴超过预算；对照全部在途WR与CQ额度，不只看成功CQE计数。",
+                "同一请求重复结束或资源提前释放。核对一个slice的提交、退休、重试和释放代次；仅比较指针地址可能把重用后的对象误认成同一任务。需追踪稳定逻辑ID与generation，这是一项建议的观测设计。",
+                "CPU轮询占用下降但P99 TTFT变差。检查小批任务是否被大批退休工作抢占、发送槽释放是否更突发，并分别记录服务排队与传输完成时间。通知减少不保证公平性提高。",
+                "参数已配置但结果无变化。先核对实际库路径、构建SHA、后端、配置日志和带信号比例；不要只用环境变量截图证明特性命中。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先复制语义，再复制成绩",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "全部为待执行方案，未在本站运行。"
+            },
+            {
+              "type": "table",
+              "caption": "待执行实验矩阵，全部实机测试未做",
+              "columns": [
+                "阶段",
+                "控制变量/矩阵",
+                "必须记录",
+                "停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份",
+                    "同一fixed SHA，classic；interval=1与候选值",
+                    "wheel/hash/容器摘要、加载库、NIC/provider/固件",
+                    "后端或分支不明"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "健康路径",
+                    "interval 1/8/32；max_wr固定与独立扫描；单/多QP",
+                    "CQE数、退休WR数、FIFO/SQ深度、数据校验",
+                    "任意丢失/重复结算或数据差异"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "批形状",
+                    "极大4KiB batch复现；真实小/中批；多线程",
+                    "有效字节、链长分布、submit/wait/batch墙钟",
+                    "控制变量无法保持"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "错误语义",
+                    "remote access错误、QP flush、链中post失败",
+                    "每WR预期/实际状态、后缀是否保留",
+                    "沉默挂起、提前释放或重复完成"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "容量与寿命",
+                    "CQ接近预算、反复建连销毁、并发重试",
+                    "CQ_ERR、在途账本、端点/内存数量",
+                    "资源不归零或长期增长"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "拓扑",
+                    "先同机mlx5，再目标跨机链路",
+                    "路由、无TCP回退、吞吐与错误分布",
+                    "实际传输路径改变"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "业务",
+                    "固定模型、SGLang版本、输入输出长度与并发",
+                    "TTFT/ITL分位数、超时率、SLO内goodput",
+                    "任一正确性或SLO门失败"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "故障注入需要隔离集群和明确回收手段。N=1与N&gt;1应使用同一批输入和故障时刻策略；先判明未提交、在途、已完成三类WR的期望结果，再启动测试。不能把“最终不挂”当作正确性，因为错误地提前报成功也可能让队列看似收敛。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：预先定义口径，避免由漂亮数字倒推标准",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预定义验收口径，全部待验证",
+              "columns": [
+                "验收门",
+                "建议口径与预定义规则",
+                "证据级别"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "数据",
+                    "健康路径逐字节校验；错误路径禁止将未完成数据报告为成功",
+                    "待验；零已观测错误仍须说明样本量"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "结算",
+                    "每个已提交WR一次且仅一次最终结算；未提交项单独对账",
+                    "待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源",
+                    "测试排空后FIFO、在途计数、端点与缓冲回到基线；稳定重复负载无单调增长",
+                    "待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障时限",
+                    "在实验前确定恢复/失败上界，并以整批与单任务分别计时",
+                    "待验；本文不给任意毫秒承诺"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "同配置重复测量，报告分布、样本量、CPU与有效吞吐；不以单个p50决定放量",
+                    "待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务",
+                    "对照现有正式SLO，正确性先行；性能收益不能抵消超时或坏结果",
+                    "待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回滚",
+                    "回到同一构建interval=1并重启/重建配置加载所需进程；验证命中默认路径",
+                    "待验；不承诺热切换"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最终推荐不是“达到作者5.99GB/s就通过”，而是“保持正确性与服务约束，在目标负载上证明可重复收益”。如果只是为复现极端批次而改动生产切片策略，则应另立实验，不能混入此优化的验收。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证与发布边界",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "真实H20节点的NIC型号、provider与版本、驱动固件、QP/CQ参数、目标传输方向；作者的mlx5结果不能替代实际provider探针。",
+                "目标SGLang版本是否加载该构建、是否使用classic、是否覆盖N&gt;1。本文没有读取用户私有环境或日志。",
+                "完整flush/teardown、partial-post、CQ admission的集成证据。PR作者明确列出的缺口不能被无硬件FIFO测试补足。",
+                "官方稳定制品是否包含该SHA及其后续修正。版本号、main README安装示例和标签日期都不能单独证明二进制包含关系。",
+                "检查页失败根因；本次只能确认状态，不能写“全部通过”或“算法导致失败”。",
+                "既有报告增补的Mooncake #4453属于异步元数据/握手故障边界；本文独立关注完成通知与账本，不复用它的CI结论。FlashInfer #6254、TENT #4515同窗合入但本稿不扩展为多主题拼盘。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-pause-async-kv-drain",
     "kind": "analysis",
     "title": "vLLM pause(wait)：排空边界覆盖已占 KV 的等待请求",
