@@ -3578,7 +3578,7 @@
               "sourceIndices": [
                 10
               ],
-              "text": "该选项仅适用于 classic RdmaTransport。interval&gt;1 要求 provider 对失败/flush 的无信号 WR 仍产生 CQE；不满足应保持默认 1。无信号 WR 在相应 CQE到来前仍占用 SQ，较大间隔可能需要较大的 MC_MAX_WR。"
+              "text": "该选项仅适用于 classic RdmaTransport。interval>1 要求 provider 对失败/flush 的无信号 WR 仍产生 CQE；不满足应保持默认 1。无信号 WR 在相应 CQE到来前仍占用 SQ，较大间隔可能需要较大的 MC_MAX_WR。"
             },
             {
               "type": "paragraph",
@@ -3722,7 +3722,7 @@
               "type": "paragraph",
               "basis": "inference",
               "sourceIndices": [],
-              "text": "故障注入需要隔离集群和明确回收手段。N=1与N&gt;1应使用同一批输入和故障时刻策略；先判明未提交、在途、已完成三类WR的期望结果，再启动测试。不能把“最终不挂”当作正确性，因为错误地提前报成功也可能让队列看似收敛。"
+              "text": "故障注入需要隔离集群和明确回收手段。N=1与N>1应使用同一批输入和故障时刻策略；先判明未提交、在途、已完成三类WR的期望结果，再启动测试。不能把“最终不挂”当作正确性，因为错误地提前报成功也可能让队列看似收敛。"
             }
           ]
         },
@@ -3822,7 +3822,7 @@
               "sourceIndices": [],
               "items": [
                 "真实H20节点的NIC型号、provider与版本、驱动固件、QP/CQ参数、目标传输方向；作者的mlx5结果不能替代实际provider探针。",
-                "目标SGLang版本是否加载该构建、是否使用classic、是否覆盖N&gt;1。本文没有读取用户私有环境或日志。",
+                "目标SGLang版本是否加载该构建、是否使用classic、是否覆盖N>1。本文没有读取用户私有环境或日志。",
                 "完整flush/teardown、partial-post、CQ admission的集成证据。PR作者明确列出的缺口不能被无硬件FIFO测试补足。",
                 "官方稳定制品是否包含该SHA及其后续修正。版本号、main README安装示例和标签日期都不能单独证明二进制包含关系。",
                 "检查页失败根因；本次只能确认状态，不能写“全部通过”或“算法导致失败”。",
