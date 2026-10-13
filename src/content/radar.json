@@ -18007,6 +18007,1121 @@
   },
   {
     "schemaVersion": 1,
+    "id": "vllm-ascend-receive-registration-lifetime",
+    "kind": "analysis",
+    "title": "vLLM Ascend：请求取消之后，接收登记为何仍须保留",
+    "summary": "#16461于10月12日合入main，修复AscendStore异步收取中取消先于完成时的KV结算缺口。拆解登记过滤与核心延迟释放，给出固定父提交对照和910验收边界；v0.30回移仍Open。",
+    "publishedAt": "2026-09-13",
+    "reviewedAt": "2026-10-13",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Ascend #16461：原始PR与主分支合入",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/16461",
+        "publishedAt": "2026-09-13",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定合入提交8194ece与直接父提交",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/8194eceae4a86366bea75309baa22fea4993da8a",
+        "publishedAt": "2026-10-12",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "v0.30.0回移 #18424 当前Open",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/18424",
+        "publishedAt": "2026-10-12",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定AscendStore scheduler源码",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/8194eceae4a86366bea75309baa22fea4993da8a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定AscendStore connector配置源码",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/8194eceae4a86366bea75309baa22fea4993da8a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/ascend_store_connector.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定AscendStore后端注册表",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/8194eceae4a86366bea75309baa22fea4993da8a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/__init__.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定vLLM核心scheduler生命周期源码",
+        "url": "https://github.com/vllm-project/vllm/blob/8cc9aa5ad350f6f80cf3bebb298d410803ff75a9/vllm/v1/core/sched/scheduler.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定worker接收完成过滤源码",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/8194eceae4a86366bea75309baa22fea4993da8a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定传输线程完成集合源码",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/8194eceae4a86366bea75309baa22fea4993da8a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定四类回归测试源码",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/8194eceae4a86366bea75309baa22fea4993da8a/tests/ut/distributed/ascend_store/test_pool_scheduler.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "原问题16460与CPU复现边界",
+        "url": "https://github.com/vllm-project/vllm-ascend/issues/16460",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM-Ascend issue #16460 作者 KeyanHu-git",
+          "status": "attributed",
+          "note": "已读取原issue的环境、复现方法和结果：作者使用注入接收完成事件及显式构造状态的CPU生命周期测试。14失败2通过与候选16通过均为作者报告；没有复跑其压缩包、完整模型、真实存储或设备DMA，也不证明910现场。本站另做的原方法隔离检查独立标注，不与作者实验合并。"
+        },
+        "publishedAt": "2026-09-13",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "作者后续CI结果留言 未独立逐job复核",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/16461#issuecomment-6118333886",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM-Ascend PR #16461 作者 KeyanHu-git",
+          "status": "attributed",
+          "note": "已核读2026-10-12的指定留言，作者称rebase后新CI的选定设备测试与最终gate通过。仅核验留言内容和作者身份，未逐job复核该次CI或独立运行设备测试；不能用此留言覆盖合入页面39/41检查摘要，也不推断910测试覆盖。"
+        },
+        "publishedAt": "2026-10-12",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "维护者服务器复现留言 未公开完整配置",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/16461#issuecomment-6119775054",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM-Ascend PR #16461 协作者 lizy124",
+          "status": "attributed",
+          "note": "已核读2026-10-12的指定留言及页面Collaborator标记。留言者称服务器上复现原问题并验证补丁有效；未公开足够硬件、模型、拓扑、命令及结果原文供独立复核。保留为署名社区验证陈述，不认定910实测或官方性能结论。"
+        },
+        "publishedAt": "2026-10-12",
+        "accessedAt": "2026-10-13"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#16461于2026-10-12 15:04:13 UTC合入main；固定提交8194eceae4a86366bea75309baa22fea4993da8a的提交时间为15:04:12 UTC。原PR创建于9月13日。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "固定源码将接收登记清理从请求结束移至接收完成输出；核心延迟释放与worker完成过滤具有独立职责。",
+        "sourceIndices": [
+          3,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "本次读取#18424回移状态为Open，不能写成v0.30正式发布已包含该修复。",
+        "sourceIndices": [
+          2
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "本文原方法与四原测试的隔离对照中，父版本三个测试方法失败，新版本四方法通过；不涵盖完整导入、真实块池、存储或设备DMA。",
+        "sourceIndices": []
+      },
+      {
+        "status": "pending",
+        "text": "910具体现场、所有后端与失败/超时终态仍待验证；没有H20或910性能收益结论。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际配置是否进入load_async且非layerwise接收登记路径？",
+      "取消命中了等待远端KV的窗口吗，还是生成之后才取消？",
+      "哪个可安装制品实际包含主分支修复或回移？"
+    ],
+    "related": [
+      {
+        "title": "vLLM异步KV加载正确性",
+        "path": "/radar/vllm-async-kv-zeroing/"
+      },
+      {
+        "title": "vLLM pause wait排空边界",
+        "path": "/radar/vllm-pause-async-kv-drain/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "研究窗口2026-10-12 02:46 UTC至2026-10-13 02:51 UTC。核验于10月13日。九章分析基于公开PR、issue与固定源码；独立方法隔离检查并非全套CPU测试、真实块池或NPU/DMA验证。原文创建、合入和核验日期分别标注；main合入不等于正式发布。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一 本次变化与判断",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "vLLM-Ascend #16461 在窗口内合入 main。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3,
+                6,
+                7,
+                8
+              ],
+              "text": "核心问题发生在请求取消与异步收取交错时：用户侧结束了请求，接收完成仍承担解除资源占用的责任。因此，接收登记不能跟随请求结束立即消失。此次修改把登记清理移到接收完成输出到达之后。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里最值得检查的不是吞吐数字，而是长时间运行后“已无客户等待的请求”是否还占住 KV。建议先核对现场连接器配置和镜像源码，再以取消时序进行对照验收。未确认使用对应异步路径的系统，无需仅因这条变更紧急升级。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二 发布边界必须落到具体构建",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "身份与发布状态：main合入、回移与正式制品分别核验",
+              "columns": [
+                "对象",
+                "已核事实",
+                "能作出的判断"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "main PR #16461",
+                    "GitHub mergedTime 为 2026-10-12 15:04:13 UTC",
+                    "已合入主分支"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "squash commit",
+                    "8194eceae4a86366bea75309baa22fea4993da8a，提交时间 15:04:12 UTC",
+                    "固定源码分析对象"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "直接父提交",
+                    "2fa829f95a68438033931e05527bb2334f7698ad",
+                    "本文隔离对照的旧实现"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.30.0 回移 #18424",
+                    "本次读取状态 OPEN，目标 releases/v0.30.0",
+                    "回移尚不能当作已合入，更不能当正式发布"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "正式安装包与镜像",
+                    "未确认包含该 SHA 的已发布制品",
+                    "不声称某 release 已修复"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "一秒时间差是提交与 PR 状态事件的差异，不应混写。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "运维核对建议：保存镜像 digest、Ascend 和 vLLM 的完整 SHA、torch-npu/CANN 版本、模型与并行布局，以及连接器额外配置。仅看到较新的日期或包含“v0.30”的分支名，不足以认定具备修复。若采用下游回移，比较两处代码语义和相应测试，而非只查上游 SHA。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "三 哪些路径值得检查",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "固定 scheduler 源码在 load_async 为真、use_layerwise 为假时把请求放入接收登记集合。这限定了本文的直接分析范围。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4,
+                5
+              ],
+              "text": "连接器默认后端名为 mooncake，后端注册表还列出 memcache、yuanrong。后端列表表明接入能力，并不证明它们具有完全相同的运行配置或测试覆盖。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对 910 的实际意义是：优先问“现场是否进入这个接收生命周期”，再问“使用何种芯片”。H20/SGLang 不直接运行这段 AscendStore scheduler，不能拿本文当作其升级理由。layerwise、纯同步收取、未启用外部 KV 的实例也不能直接套用复现结论。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "四 机制是两种生命周期交错",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "vLLM 核心对仍在等待远端 KV 的取消请求可以延迟释放块；完成输出抵达时，已终止请求才走释放分支。这个行为保护尚未结束的传输所使用的内存。本文核读的核心版本为 PR 正文关联的 8cc9aa5ad350f6f80cf3bebb298d410803ff75a9，不声称它等于所有现场依赖。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7,
+                8
+              ],
+              "text": "AscendStore worker 从收取线程提取完成时传入登记集合。线程使用集合交集取出允许上报的完成项，只删除此次取出的项。因此，过早删除登记会让已经完成的接收留在线程集合里，却无法沿正常路径交给核心。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "逻辑时序："
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "1. 收取启动，登记包含 r；核心等待远端 KV。\n2. 客户取消 r，核心把请求终止，但等待收取结算。\n3. 旧实现处理 finished_req_ids 时也注销 r；修复保留 r。\n4. 收取线程完成；worker 根据登记选择可上报项。\n5. 修复后完成项进入核心，登记清理、延迟块释放各在对应职责中完成。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这是代码关系推导的示意，未展示 DMA 的真实时序。异常传输永不完成的情形需要另一套失败结算证据，不能由正常完成路径外推。"
+            },
+            {
+              "type": "diagram",
+              "title": "旧路径：取消时注销登记，完成通知被交集过滤",
+              "caption": "原创控制逻辑示意；纵向为逻辑阶段，非真实延迟。适用本文核读的异步非layerwise路径。内存安全与真实DMA完成需另验；未给出永不完成或异常收取的完整恢复协议。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                3,
+                6,
+                7,
+                8
+              ],
+              "nodes": [
+                {
+                  "id": "client-cancel",
+                  "label": "客户取消",
+                  "detail": "取消结束客户等待，不代表收取线程已停止",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "客户取消",
+                  "tone": "control"
+                },
+                {
+                  "id": "core-wait",
+                  "label": "等待远端KV",
+                  "detail": "核心仍持有请求及KV块",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "等待远端KV",
+                  "tone": "kv"
+                },
+                {
+                  "id": "core-abort",
+                  "label": "请求终止 保留块",
+                  "detail": "因远端收取未结算，核心延迟释放",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "请求终止 保留块",
+                  "tone": "control"
+                },
+                {
+                  "id": "reg-start",
+                  "label": "登记包含 r",
+                  "detail": "load_async 且非layerwise时登记",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "登记包含 r",
+                  "tone": "control"
+                },
+                {
+                  "id": "recv-start",
+                  "label": "收取在途",
+                  "detail": "该图不表示真实DMA时长",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "收取在途",
+                  "tone": "communication"
+                },
+                {
+                  "id": "recv-done",
+                  "label": "收取完成",
+                  "detail": "完成项写入接收线程集合",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "收取完成",
+                  "tone": "communication"
+                },
+                {
+                  "id": "reg-drop",
+                  "label": "过早注销登记",
+                  "detail": "父版本在finished_req_ids清理中删除r",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "过早注销登记",
+                  "tone": "danger"
+                },
+                {
+                  "id": "worker-filter",
+                  "label": "完成项被过滤",
+                  "detail": "交集不含r，不向核心报告",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "完成项被过滤",
+                  "tone": "danger"
+                },
+                {
+                  "id": "thread-residue",
+                  "label": "线程完成集合残留",
+                  "detail": "未被提取的完成项没有从集合删除",
+                  "column": 3,
+                  "row": 3,
+                  "shortLabel": "线程完成集合残留",
+                  "tone": "danger"
+                },
+                {
+                  "id": "core-held",
+                  "label": "核心继续等待结算",
+                  "detail": "正常完成通知未到达，延迟块无法沿所示路径释放",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "核心继续等待结算",
+                  "tone": "danger"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "core-wait",
+                  "to": "core-abort",
+                  "label": "等待时取消"
+                },
+                {
+                  "from": "client-cancel",
+                  "to": "core-abort",
+                  "label": "终止请求"
+                },
+                {
+                  "from": "reg-start",
+                  "to": "recv-start",
+                  "label": "已登记收取"
+                },
+                {
+                  "from": "recv-start",
+                  "to": "recv-done",
+                  "label": "传输结束"
+                },
+                {
+                  "from": "core-abort",
+                  "to": "reg-drop",
+                  "label": "结束元数据"
+                },
+                {
+                  "from": "reg-drop",
+                  "to": "worker-filter",
+                  "label": "报告资格丢失"
+                },
+                {
+                  "from": "recv-done",
+                  "to": "worker-filter",
+                  "label": "交集排除r"
+                },
+                {
+                  "from": "worker-filter",
+                  "to": "thread-residue",
+                  "label": "未取出完成项"
+                },
+                {
+                  "from": "worker-filter",
+                  "to": "core-held",
+                  "label": "完成通知缺失"
+                }
+              ],
+              "presentation": {
+                "kind": "ascend-receive-completion-lifecycle-before",
+                "panels": [
+                  {
+                    "title": "客户请求",
+                    "tone": "control",
+                    "nodeIds": [
+                      "client-cancel"
+                    ]
+                  },
+                  {
+                    "title": "核心调度器",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "core-wait",
+                      "core-abort",
+                      "core-held"
+                    ]
+                  },
+                  {
+                    "title": "连接器与worker",
+                    "tone": "control",
+                    "nodeIds": [
+                      "reg-start",
+                      "reg-drop",
+                      "worker-filter"
+                    ]
+                  },
+                  {
+                    "title": "接收线程",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "recv-start",
+                      "recv-done",
+                      "thread-residue"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "diagram",
+              "title": "修复路径：取消后保留接收登记，完成后各自结算",
+              "caption": "原创控制逻辑示意；纵向为逻辑阶段，非真实延迟。适用本文核读的异步非layerwise路径。内存安全与真实DMA完成需另验；未给出永不完成或异常收取的完整恢复协议。",
+              "basis": "inference",
+              "sourceIndices": [
+                3,
+                6,
+                7,
+                8
+              ],
+              "nodes": [
+                {
+                  "id": "client-cancel",
+                  "label": "客户取消",
+                  "detail": "取消结束客户等待，不代表收取线程已停止",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "客户取消",
+                  "tone": "control"
+                },
+                {
+                  "id": "core-wait",
+                  "label": "等待远端KV",
+                  "detail": "核心仍持有请求及KV块",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "等待远端KV",
+                  "tone": "kv"
+                },
+                {
+                  "id": "core-abort",
+                  "label": "请求终止 保留块",
+                  "detail": "因远端收取未结算，核心延迟释放",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "请求终止 保留块",
+                  "tone": "control"
+                },
+                {
+                  "id": "reg-start",
+                  "label": "登记包含 r",
+                  "detail": "load_async 且非layerwise时登记",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "登记包含 r",
+                  "tone": "control"
+                },
+                {
+                  "id": "recv-start",
+                  "label": "收取在途",
+                  "detail": "该图不表示真实DMA时长",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "收取在途",
+                  "tone": "communication"
+                },
+                {
+                  "id": "recv-done",
+                  "label": "收取完成",
+                  "detail": "完成项写入接收线程集合",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "收取完成",
+                  "tone": "communication"
+                },
+                {
+                  "id": "reg-retain",
+                  "label": "结束后仍保留登记",
+                  "detail": "finished_req_ids不再删除接收登记",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "结束后仍保留登记",
+                  "tone": "control"
+                },
+                {
+                  "id": "worker-report",
+                  "label": "完成项可上报",
+                  "detail": "worker按登记交集提取r",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "完成项可上报",
+                  "tone": "communication"
+                },
+                {
+                  "id": "core-output",
+                  "label": "核心处理完成输出",
+                  "detail": "先调用连接器输出处理，再按请求终态结算",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "核心处理完成输出",
+                  "tone": "control"
+                },
+                {
+                  "id": "reg-clean",
+                  "label": "清理完成登记",
+                  "detail": "update_finished_recving只删已报告项",
+                  "column": 2,
+                  "row": 3,
+                  "shortLabel": "清理完成登记",
+                  "tone": "control"
+                },
+                {
+                  "id": "core-free",
+                  "label": "释放延迟KV块",
+                  "detail": "由核心终态分支释放，不由登记集合直接释放",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "释放延迟KV块",
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "core-wait",
+                  "to": "core-abort",
+                  "label": "等待时取消"
+                },
+                {
+                  "from": "client-cancel",
+                  "to": "core-abort",
+                  "label": "终止请求"
+                },
+                {
+                  "from": "reg-start",
+                  "to": "recv-start",
+                  "label": "已登记收取"
+                },
+                {
+                  "from": "recv-start",
+                  "to": "recv-done",
+                  "label": "传输结束"
+                },
+                {
+                  "from": "core-abort",
+                  "to": "reg-retain",
+                  "label": "结束元数据"
+                },
+                {
+                  "from": "reg-retain",
+                  "to": "worker-report",
+                  "label": "保留报告资格"
+                },
+                {
+                  "from": "recv-done",
+                  "to": "worker-report",
+                  "label": "交集含r"
+                },
+                {
+                  "from": "worker-report",
+                  "to": "core-output",
+                  "label": "finished_recving"
+                },
+                {
+                  "from": "core-output",
+                  "to": "reg-clean",
+                  "label": "连接器更新"
+                },
+                {
+                  "from": "reg-clean",
+                  "to": "core-free",
+                  "label": "随后核心终态结算"
+                }
+              ],
+              "presentation": {
+                "kind": "ascend-receive-completion-lifecycle-fixed",
+                "panels": [
+                  {
+                    "title": "客户请求",
+                    "tone": "control",
+                    "nodeIds": [
+                      "client-cancel"
+                    ]
+                  },
+                  {
+                    "title": "核心调度器",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "core-wait",
+                      "core-abort",
+                      "core-output",
+                      "core-free"
+                    ]
+                  },
+                  {
+                    "title": "连接器与worker",
+                    "tone": "control",
+                    "nodeIds": [
+                      "reg-start",
+                      "reg-retain",
+                      "worker-report",
+                      "reg-clean"
+                    ]
+                  },
+                  {
+                    "title": "接收线程",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "recv-start",
+                      "recv-done"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "五 三行变更为何要配四类回归",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "固定 diff 删除了 finished_req_ids 清理中的一次登记删除，并在 update_connector_output 开头接入既有的接收完成清理方法；该调用位于 worker metadata 类型和 block pool 判断之前。抢占路径原有清理保留。"
+            },
+            {
+              "type": "table",
+              "caption": "四类回归方法的局部覆盖与边界",
+              "columns": [
+                "新测试关注点",
+                "可支持的局部结论",
+                "不能据此证明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "请求结束后收到完成",
+                    "结束时保留登记，完成后删除",
+                    "真实收取一定到达"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "部分或空完成集合",
+                    "只清理被报告的请求",
+                    "分布式重复投递全部安全"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "preemption",
+                    "既有抢占清理行为保留",
+                    "抢占中的 DMA 生命周期已端到端验证"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "pending send",
+                    "接收登记清理不改变所构造的发送状态",
+                    "所有发送失败路径无回归"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    9
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                9
+              ],
+              "text": "表中“不能证明”是对测试边界的独立审查，不是作者承诺。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最容易误读的是 request_finished 返回允许同步保存后释放的结果，就据此认为取消不可能滞留。核心还有自己的“仍在等远端 KV”条件，连接器的结束回调不能代替核心的接收结算。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "六 证据与实验要按版本分层",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据分层：作者报告、源码和独立局部检查不可互换",
+              "columns": [
+                "证据",
+                "观察",
+                "边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "原 issue 的 CPU 生命周期复现",
+                    "作者报告旧实现 14 失败 2 通过，候选 16 通过",
+                    "注入完成事件，显式构造状态；非设备 DMA"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    10
+                  ]
+                },
+                {
+                  "cells": [
+                    "本文固定父提交与合入提交的隔离检查",
+                    "抽取原方法和四个原回归方法；父版本三个测试方法失败，新版本四个通过，无执行错误",
+                    "使用 metadata/output 替身；未做完整模块导入、初始化、真实块池或存储 I/O"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "PR 既往硬件记录",
+                    "作者报告较早 combined build 跑过 352 请求，其中一半在开始生成后取消",
+                    "非当前合入 SHA；不等价于在远端 KV 等待期取消"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "合入时检查摘要",
+                    "页面显示 39/41 checks passed",
+                    "不能表述为所有检查全绿，也不能把未展开的两项归类为失败"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "维护者复现留言",
+                    "留言称服务器上原问题可复现，补丁后解决",
+                    "未公开足够硬件、配置、数据原文来独立复核"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    12
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                11
+              ],
+              "text": "作者后来称新 CI 的选定设备测试和 gate 已通过，不能把这一留言升级为我们逐 job 验证的结论。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文隔离检查结果按“测试方法”计数：父版本四个方法中的三个失败；其中选择性清理测试有两个失败子用例，因此 unittest 记录四个 failure 条目，不应误写四个方法全失败。新版本四方法均通过。它证实的是读取源码后的局部控制流，与作者既往大套件数字不同。本轮没有运行原作者的压缩包，也没有新增 910、950 或 H20 真机结果。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七 面向生产的验收矩阵",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下是建议实验，并未执行。全部在可回滚测试环境进行；先记录 KV 基线与请求 ID，再逐项改变一个条件。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议隔离实验：本轮未执行910、存储或DMA验收",
+              "columns": [
+                "场景",
+                "观测点",
+                "验收条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正常收取后继续生成",
+                    "登记数、完成上报、请求状态",
+                    "对应登记退出，未误清其他请求"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "WAITING_FOR_REMOTE_KVS 时取消",
+                    "取消时间、真实收取完成时间、块引用与请求表",
+                    "完成前不复用在途块，完成后请求及资源可结算"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "完成先于取消",
+                    "核心与连接器的完成状态",
+                    "不重复释放，不残留接收登记"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "连续取消且混有健康请求",
+                    "登记集合与可用 KV 的稳态",
+                    "健康请求正常；停止负载并等收取结束后不持续累积"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "空完成与部分完成",
+                    "每次输出的 request IDs",
+                    "无完成时不误清，部分完成仅影响对应请求"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "带发送事件的接收完成",
+                    "发送事件/块记账",
+                    "接收清理不会提前释放仍需发送保护的资源"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "抢占及恢复",
+                    "preempted 与 finished 分开标记",
+                    "按现场版本的既定契约处理，无重复释放或陈旧完成"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "慢收取、失败、超时",
+                    "后端返回、失败集合、重算/终止行为",
+                    "每种终态有明确责任人；不能永远等不存在的成功完成"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "“取消后 HTTP 没报错”不足以作为通过条件。应同时查看服务输出和资源回收；“完成前块未释放”和“完成后块能释放”是相互独立的两个检查。对吞吐或可用 KV 做比较时，还应排除前缀缓存策略、后台驱逐和并发差异，不能把所有占用变化都归因于本补丁。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八 升级操作与回滚门槛",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议分三步。先用只读检查确认是否存在受关注路径及修复语义；再在固定工作负载下强制产生等待远端 KV 的窗口并取消；最后才考虑小流量部署。避免拿随机取消的通过率代替目标时序命中率。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议升级记录中分别填写：取消命中等待态的次数、真实完成次数、核心收到完成次数、待结算请求数、空闲块恢复曲线、错误及重算次数。集合类指标最好保留少量经过脱敏的请求级事件，便于分辨同一请求的不同尝试；不要只保留一个总计。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "回滚门槛可以包括：本来健康的请求受影响、完成后出现重复释放断言、待结算请求持续增加、收取失败无法落入终态。阈值由现场 SLO 与基线确定，本文没有替现场给出任意百分比。回滚也不能主动复用仍被传输使用的内存；应按既有排空、隔离与实例替换流程处理。"
+            },
+            {
+              "type": "table",
+              "caption": "预定义验收门：待现场验证，不代表本轮已通过",
+              "columns": [
+                "验收维度",
+                "通过条件",
+                "所需证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "在途安全",
+                    "真实收取完成前不复用在途KV块",
+                    "请求状态、块引用和真实完成时间"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "结算进展",
+                    "完成后对应登记和请求退出，KV可回收",
+                    "完成输出、登记集合与空闲块恢复轨迹"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "隔离与幂等",
+                    "健康请求不受误清理，未发生重复释放",
+                    "混合负载与重复/交错事件trace"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "失败终态",
+                    "失败或超时能进入明确终态，不永久等成功",
+                    "后端失败输出、重算或终止路径证据"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级回滚",
+                    "制品与依赖可复现，发现回归能安全排空替换",
+                    "镜像digest、SHA、配置与回滚记录"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九 尚待验证的问题与最终结论",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "仍需现场或更完整上游证据回答：910 的具体驱动与传输栈是否进入同一路径；后端超时如何形成可结算终态；异构 KV 组与不同并行规模是否覆盖；重启/重试与 request ID 重用是否引入另一种旧完成问题；#18424 最终是否合入，哪个可安装制品实际携带修复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次足够支持的结论是：main 已修正 AscendStore 接收登记与请求终止的错误耦合，固定方法对照也通过了这四类局部回归。它值得纳入 Ascend 异步 KV 的取消验收，但不构成任何 910 现场已受影响、所有后端已验证、或稳定版已交付的证明。可靠的发布判断应把代码、依赖、制品和实际命中的取消时序同时对齐。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "h20-serving-slo",
     "kind": "analysis",
     "title": "从 271 tok/s 到可交付服务：H20 推理优化的工程读法",
