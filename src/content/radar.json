@@ -3735,7 +3735,7 @@
     "title": "Mooncake RDMA 稀疏完成通知：省下 CQE，不省掉结算责任",
     "summary": "#4542已在10月10日合入main。以同机H20作者实验为入口，解释classic RDMA的信号间隔、FIFO退休与最坏CQ容量责任；跨机P/D、实际产物和故障恢复均待验证。",
     "publishedAt": "2026-10-09",
-    "reviewedAt": "2026-10-11",
+    "reviewedAt": "2026-10-13",
     "topics": [
       "GPU 通信",
       "故障分析",
@@ -3825,6 +3825,58 @@
           "peerReview": "unknown"
         },
         "accessedAt": "2026-10-11"
+      },
+      {
+        "title": "Mooncake · 10月12日原子指针补丁固定合并提交",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/23c15baedbcae702b7883d8c98cb63c2170ab001",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "Mooncake · 固定Slice指针发布、加载及完成入口",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/23c15baedbcae702b7883d8c98cb63c2170ab001/mooncake-transfer-engine/include/transport/transport.h",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "Mooncake · 固定RDMA提交：task指针赋值及后续字段初始化",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/23c15baedbcae702b7883d8c98cb63c2170ab001/mooncake-transfer-engine/src/transport/rdma_transport/rdma_transport.cpp",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "Mooncake · 固定RDMA FIFO展开与终态回调",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/23c15baedbcae702b7883d8c98cb63c2170ab001/mooncake-transfer-engine/src/transport/rdma_transport/worker_pool.cpp",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "Mooncake · #4391作者说明、变更时间线与合入状态",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4391",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "Mooncake · #4556 TCP回调生命周期问题及作者ASAN报告",
+        "url": "https://github.com/kvcache-ai/Mooncake/issues/4556",
+        "review": {
+          "category": "community",
+          "publisher": "Mooncake GitHub issue参与者",
+          "status": "attributed",
+          "note": "社区参与者报告TCP ACK回调与释放竞态及ASAN本地复现；我们未独立运行验证，不将作者诊断升级为全部传输路径的已证实结论。"
+        },
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "Mooncake · #4568 nightly失败的10月12日后续讨论",
+        "url": "https://github.com/kvcache-ai/Mooncake/issues/4568",
+        "review": {
+          "category": "community",
+          "publisher": "Mooncake GitHub issue参与者",
+          "status": "attributed",
+          "note": "社区评论建议等待含4391的nightly，属于修复关联假设；页面仍Open，不能据此声称UAF已解决。"
+        },
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "Mooncake · 固定batch释放门与EDC条件",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/23c15baedbcae702b7883d8c98cb63c2170ab001/mooncake-transfer-engine/src/multi_transport.cpp",
+        "accessedAt": "2026-10-13"
       }
     ],
     "claims": [
@@ -3849,12 +3901,22 @@
         "status": "pending",
         "text": "目标制品包含、provider错误语义、跨节点与SGLang服务收益尚未验证。",
         "sourceIndices": []
+      },
+      {
+        "status": "confirmed",
+        "text": "10月12日#4391合入main，task指针原子发布并由完成函数单次acquire-load；不能据此宣布回调保活问题已解决。",
+        "sourceIndices": [
+          12,
+          13,
+          19
+        ]
       }
     ],
     "questions": [
       "实际部署使用classic还是TENT，加载制品是否包含固定提交？",
       "失败或flush的无信号WR是否产生预期CQE并仅结算一次？",
-      "目标负载的正确性、资源、故障时限与服务SLO是否同时通过？"
+      "目标负载的正确性、资源、故障时限与服务SLO是否同时通过？",
+      "原子指针补丁之外，最终回调与freeBatchID之间的对象存活是否经过确定性测试？"
     ],
     "related": [
       {
@@ -3864,7 +3926,7 @@
     ],
     "report": {
       "version": 1,
-      "scope": "资料事件窗口2026-10-10 03:00至2026-10-11 02:44 UTC；公开源码和页面查阅于10月11日。仅公开研究，未安装制品、未运行任何GPU/RDMA/provider或服务实机实验。PR首发10月9日，窗口内新事件是合入。固定源码559f83cb73eb870d208a8d4f333b1a24ee992f26；机制图为原创非实测。",
+      "scope": "资料事件窗口2026-10-10 03:00至2026-10-11 02:44 UTC；公开源码和页面查阅于10月11日。仅公开研究，未安装制品、未运行任何GPU/RDMA/provider或服务实机实验。PR首发10月9日，窗口内新事件是合入。固定源码559f83cb73eb870d208a8d4f333b1a24ee992f26；机制图为原创非实测。 10月13日增补核验窗口为2026-10-12 02:46至2026-10-13 02:51 UTC；增补固定23c15baedbcae702b7883d8c98cb63c2170ab001的Slice::task发布边界及仍未结算的回调保活问题。原文及原12来源保留。",
       "sections": [
         {
           "id": "conclusion",
@@ -3890,6 +3952,21 @@
               "basis": "pending",
               "sourceIndices": [],
               "text": "本站没有证明它改善跨机 P/D KV 交接、TTFT、尾延迟或 SLO 内 goodput。可回滚基线是同一固定构建、参数为 1 的路径，而不是随时间漂移的 main。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                12,
+                16
+              ],
+              "text": "10月13日增补：#4391在10月12日03:25:25 UTC合入main，固定提交23c15baedbcae702b7883d8c98cb63c2170ab001。它补足提交线程到完成线程的task指针同步；不改变#4542的通知间隔算法。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次继续更新同一结算主题。原子发布让完成端有明确的指针读取契约，却不能替代对象保活；不能把它写成全部异步释放风险已修复，也不据此建议立即扩大信号间隔。"
             }
           ]
         },
@@ -3960,6 +4037,23 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "该负载提供了一个可检验假设：链路尚有余量时，CPU 处理大量完成记录可能限制进展。若服务实际每批只产生少量 WR，或瓶颈是网络拥塞、GPU 计算、调度排队，减少通知不一定带来同等级收益。不要把“同为 H20”当作负载相同。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                16
+              ],
+              "text": "#4391于9月29日提出，10月10日重放到当时main并适配completion_state握手，窗口内的新事件是合并。作者较早版本的CI陈述不替代最终目标构建验证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                8,
+                9
+              ],
+              "text": "10月13日发布目录仍以v0.3.14-rc1为最新预发布条目，PyPI当前版本仍为0.3.13.post1；本轮没有证据证明目标wheel或用户镜像包含10月12日提交。"
             }
           ]
         },
@@ -4410,6 +4504,158 @@
                   }
                 ]
               }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                13
+              ],
+              "text": "新增SliceTaskPtr封装原子指针：普通指针赋值使用seq_cst；markSuccess和markFailed分别先acquire-load一次到局部t，再更新该任务的计数并进入finishIfComplete。移动赋值使用relaxed，保留重置Slice的可编译性。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                14
+              ],
+              "text": "固定RDMA提交源码先填部分slice字段，再赋task指针，之后仍写target_id、status等字段。故不能仅凭这次指针store声称所有后续字段已发布；其可见性还依赖既有工作队列和提交顺序。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                15
+              ],
+              "text": "稀疏CQE先展开FIFO前缀，再让各slice进入终态回调。本次补丁作用在这条链的task读取处；前缀退休、对象存活及业务KV可用，是分别需要证明的条件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                13,
+                19
+              ],
+              "text": "在固定版本中，finishIfComplete先访问task->batch_id，再在EDC编译分支增加活跃回调计数；tryFreeBatchID的计数门也仅位于该编译分支。原子load不增加引用计数，源码本身没有证明“读取指针后直到回调返回，对象一定存活”。"
+            },
+            {
+              "type": "diagram",
+              "title": "指针发布与对象保活：两道独立的门",
+              "caption": "原创机制示意，非实测时序。实线表示这次补丁可核对的发布/读取路径；释放竞争为待验证旁路，不宣称必现或已解决。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "publish",
+                  "label": "提交端写task指针",
+                  "detail": "seq_cst store；后续仍有slice字段初始化。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "发布指针",
+                  "tone": "control"
+                },
+                {
+                  "id": "fifo",
+                  "label": "CQE展开FIFO前缀",
+                  "detail": "#4542的既有顺序与逐WR账本保持独立。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "退休前缀",
+                  "tone": "communication"
+                },
+                {
+                  "id": "load",
+                  "label": "终态函数读取一次",
+                  "detail": "acquire-load得到局部t；读取值不等于保留对象所有权。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "读取t",
+                  "tone": "control"
+                },
+                {
+                  "id": "count",
+                  "label": "更新任务与完成状态",
+                  "detail": "success/failure计数及completion_state；随后进入完成发布。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "更新状态",
+                  "tone": "control"
+                },
+                {
+                  "id": "free",
+                  "label": "另一线程尝试freeBatchID",
+                  "detail": "必须另验直到最后回调退出的存活契约。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "释放竞争待验",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "business",
+                  "label": "KV与请求验收",
+                  "detail": "跨机H20/SGLang正确性、资源回收及SLO全部待验。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "业务待验",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "publish",
+                  "to": "load",
+                  "label": "原子发布/读取契约"
+                },
+                {
+                  "from": "fifo",
+                  "to": "load",
+                  "label": "逐slice进入终态"
+                },
+                {
+                  "from": "load",
+                  "to": "count",
+                  "label": "使用同一个t"
+                },
+                {
+                  "from": "free",
+                  "to": "count",
+                  "label": "对象保活另验"
+                },
+                {
+                  "from": "count",
+                  "to": "business",
+                  "label": "不能直接推导通过"
+                }
+              ],
+              "presentation": {
+                "kind": "task-pointer-lifetime",
+                "panels": [
+                  {
+                    "title": "本次同步补丁",
+                    "tone": "control",
+                    "nodeIds": [
+                      "publish",
+                      "load",
+                      "count"
+                    ]
+                  },
+                  {
+                    "title": "已有完成通知机制",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "fifo"
+                    ]
+                  },
+                  {
+                    "title": "独立验收边界",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "free",
+                      "business"
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
@@ -4515,6 +4761,86 @@
               "basis": "pending",
               "sourceIndices": [],
               "text": "本次只读取检查页状态，没有完成失败日志归因。该页还出现一轮 SGLang 集成取消、一轮成功，以及 Ascend/ROCm 失败。既不隐去失败，也不把非目标平台失败解释为 H20 回归。"
+            },
+            {
+              "type": "table",
+              "caption": "10月13日追加：代码事实、作者报告与未证实关联",
+              "columns": [
+                "证据",
+                "本轮可确认",
+                "不能推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "固定补丁及调用源码",
+                    "task指针原子化，完成路径局部单次读取；RDMA终态调用可追踪",
+                    "整个batch生命周期安全或全部架构运行通过"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    12,
+                    13,
+                    14,
+                    15
+                  ]
+                },
+                {
+                  "cells": [
+                    "#4391公开合入页",
+                    "页面显示合入及28 checks passed",
+                    "本地复现、最终镜像通过、H20跨机验证"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    16
+                  ]
+                },
+                {
+                  "cells": [
+                    "#4556社区报告",
+                    "作者描述TCP ACK回调与freeBatchID竞态，并报告ASAN本地复现",
+                    "我们已重现，或RDMA与TCP有完全相同触发条件"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    17
+                  ]
+                },
+                {
+                  "cells": [
+                    "#4568在10月12日的评论",
+                    "评论者建议观察新nightly以判断4391影响",
+                    "该建议已成为修复结论或nightly已经转绿"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    18
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                17,
+                18
+              ],
+              "text": "#4556中的ASAN和本地复现均为参与者报告。本轮没有下载运行二进制或执行sanitizer。#4568把#4391与失败相联系并建议等待nightly，这是待核对假设；其页面仍为Open。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                12,
+                13,
+                14,
+                15,
+                16,
+                19
+              ],
+              "text": "上表前两行对应固定补丁、提交/完成调用链及#4391合入页面；28 checks passed为页面可见状态，未核查每项作业硬件覆盖，也没有在目标环境执行。后两行为参与者陈述和建议，其证据身份与前两行不同。"
             }
           ]
         },
@@ -4549,6 +4875,18 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "该机制没有减少 payload 字节量，也没有合并逻辑KV块。它与增大消息、合并切片、调大SQ深度是不同干预变量。A/B若同时改后三者，就无法判断收益来自通知减少还是排队容量变化。测试应保留“仅改 max_wr”的对照，而不把作者最终配置直接复制成最佳实践。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "单次读取避免在同一终态函数里反复取指针，但原子性不防止已释放地址被复用，也不替代所有权、回调撤销和释放协议。移动支持解决编译兼容性，不是允许并发移动正在使用的Slice。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "未测量seq_cst发布的成本。不能把多一次同步原语等同可见吞吐回退，也不能拿#4542原H20微基准替本次新构建背书；性能和正确性需要同构对照。"
             }
           ]
         },
@@ -4573,6 +4911,18 @@
                 "CPU轮询占用下降但P99 TTFT变差。检查小批任务是否被大批退休工作抢占、发送槽释放是否更突发，并分别记录服务排队与传输完成时间。通知减少不保证公平性提高。",
                 "参数已配置但结果无变化。先核对实际库路径、构建SHA、后端、配置日志和带信号比例；不要只用环境变量截图证明特性命中。"
               ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "生产候选冻结完整SHA、构建选项和镜像digest。保留interval=1作控制组，再以同一构建试验稀疏信号；将“代码同步变化”和“信号间隔变化”拆开，避免把两个因果混成一次升级效果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "先确定classic/TENT、RDMA/TCP和EDC开关实际命中路径。TCP ACK问题的证据可用于设计保活测试，不能自动扩大为所有H20 RDMA部署均有同一现场故障。"
             }
           ]
         },
@@ -4673,6 +5023,62 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "故障注入需要隔离集群和明确回收手段。N=1与N>1应使用同一批输入和故障时刻策略；先判明未提交、在途、已完成三类WR的期望结果，再启动测试。不能把“最终不挂”当作正确性，因为错误地提前报成功也可能让队列看似收敛。"
+            },
+            {
+              "type": "table",
+              "caption": "10月13日追加：所有实验均待执行",
+              "columns": [
+                "场景",
+                "固定对照",
+                "需要留下的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "指针发布",
+                    "修复前后同一最小并发用例，固定线程调度与初始化顺序",
+                    "完成端拿到预期task；TSAN结果与已知队列同步背景分别记录"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回调保活",
+                    "可销毁本地TCP环境，暂停最终ACK回调，竞争freeBatchID，再恢复；EDC开关分层",
+                    "ASAN与确定性调度日志；对象释放不得早于最后合法访问"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "RDMA终态结算",
+                    "同一修复构建interval=1与候选值；成功、flush及重试耗尽",
+                    "FIFO退休数、任务终态和资源归还不重不漏"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20跨机P/D",
+                    "固定模型、NIC、驱动、版本、KV布局；并发请求与取消/重启分层",
+                    "KV独立校验、错误退出时限、资源账本、TTFT/TPOT及SLO"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "无故障成本",
+                    "修复前后同一interval，再单独改变interval；多轮交替",
+                    "分布与原始样本，不借用旧作者数字证明本次收益"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
             }
           ]
         },
@@ -4759,6 +5165,59 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "最终推荐不是“达到作者5.99GB/s就通过”，而是“保持正确性与服务约束，在目标负载上证明可重复收益”。如果只是为复现极端批次而改动生产切片策略，则应另立实验，不能混入此优化的验收。"
+            },
+            {
+              "type": "table",
+              "caption": "10月13日追加：指针同步不是最终验收",
+              "columns": [
+                "门",
+                "通过条件",
+                "当前状态"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "来源与构建",
+                    "补丁包含、装载库和选项可追溯",
+                    "源码已核对；部署待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "对象存活",
+                    "确定性回调/释放交错下无UAF；资源最终回收",
+                    "待验；不能以原子load替代"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "RDMA与业务",
+                    "计账闭合，KV一致，服务符合预先冻结SLO",
+                    "待验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级门",
+                    "全部正确性门通过后才扩大canary和稀疏信号",
+                    "未批准任何生产变更"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "任何UAF、重复完成、KV错误或释放账本失配都停止扩大候选。回滚到已验证完整构建，并记录它仍可能带回的旧问题；不以调整信号间隔声称能修复所有权缺口。"
             }
           ]
         },
@@ -4778,6 +5237,12 @@
                 "检查页失败根因；本次只能确认状态，不能写“全部通过”或“算法导致失败”。",
                 "既有报告增补的Mooncake #4453属于异步元数据/握手故障边界；本文独立关注完成通知与账本，不复用它的CI结论。FlashInfer #6254、TENT #4515同窗合入但本稿不扩展为多主题拼盘。"
               ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下一步只结算明确未知：后续nightly是否在含4391的确切SHA上通过、#4556是否有独立保活修复、实际制品是否包含补丁，以及目标H20服务的正确性与SLO。新的nightly成功也只覆盖其测试范围。"
             }
           ]
         }
