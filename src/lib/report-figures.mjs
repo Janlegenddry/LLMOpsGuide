@@ -5,6 +5,7 @@ import { renderReleaseFigure } from './report-release-figures.mjs';
 import { renderFaultFigure } from './report-fault-figures.mjs';
 import { renderStateBoundaryFigure } from './report-state-boundary-figures.mjs';
 import { renderRestoreRdmaFigure } from './report-restore-rdma-figures.mjs';
+import { renderOwnershipKvFigure } from './report-ownership-kv-figures.mjs';
 export const figurePalette = {
   compute: ['#edf4fd', '#4776a8'], kv: ['#edf7f2', '#438779'],
   communication: ['#fff7e6', '#aa7d35'], control: ['#f3effa', '#8563a2'],
@@ -116,6 +117,8 @@ export function renderNumericalFigure(chart, { compact = false, id = 'numerical-
 }
 
 export function renderTechnicalFigure(diagram, { compact = false, id = 'technical-figure' } = {}) {
+  const ownershipKv = renderOwnershipKvFigure(diagram, { compact, id, canvas, figurePalette });
+  if (ownershipKv) return ownershipKv;
   const restoreRdma = renderRestoreRdmaFigure(diagram, { compact, id, canvas });
   if (restoreRdma) return restoreRdma;
   const stateBoundary = renderStateBoundaryFigure(diagram, { compact, id, canvas });

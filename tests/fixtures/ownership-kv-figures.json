@@ -1,0 +1,787 @@
+[
+  {
+    "type": "diagram",
+    "title": "旧路径：取消时注销登记，完成通知被交集过滤",
+    "caption": "原创控制逻辑示意；纵向为逻辑阶段，非真实延迟。适用本文核读的异步非layerwise路径。内存安全与真实DMA完成需另验；未给出永不完成或异常收取的完整恢复协议。",
+    "basis": "inference",
+    "sourceIndices": [
+      1,
+      3,
+      6,
+      7,
+      8
+    ],
+    "nodes": [
+      {
+        "id": "client-cancel",
+        "label": "客户取消",
+        "shortLabel": "客户取消",
+        "detail": "取消结束客户等待，不代表收取线程已停止",
+        "column": 0,
+        "row": 1,
+        "tone": "control"
+      },
+      {
+        "id": "core-wait",
+        "label": "等待远端KV",
+        "shortLabel": "等待远端KV",
+        "detail": "核心仍持有请求及KV块",
+        "column": 1,
+        "row": 0,
+        "tone": "kv"
+      },
+      {
+        "id": "core-abort",
+        "label": "请求终止 保留块",
+        "shortLabel": "请求终止 保留块",
+        "detail": "因远端收取未结算，核心延迟释放",
+        "column": 1,
+        "row": 1,
+        "tone": "control"
+      },
+      {
+        "id": "reg-start",
+        "label": "登记包含 r",
+        "shortLabel": "登记包含 r",
+        "detail": "load_async 且非layerwise时登记",
+        "column": 2,
+        "row": 0,
+        "tone": "control"
+      },
+      {
+        "id": "recv-start",
+        "label": "收取在途",
+        "shortLabel": "收取在途",
+        "detail": "该图不表示真实DMA时长",
+        "column": 3,
+        "row": 0,
+        "tone": "communication"
+      },
+      {
+        "id": "recv-done",
+        "label": "收取完成",
+        "shortLabel": "收取完成",
+        "detail": "完成项写入接收线程集合",
+        "column": 3,
+        "row": 2,
+        "tone": "communication"
+      },
+      {
+        "id": "reg-drop",
+        "label": "过早注销登记",
+        "shortLabel": "过早注销登记",
+        "detail": "父版本在finished_req_ids清理中删除r",
+        "column": 2,
+        "row": 1,
+        "tone": "danger"
+      },
+      {
+        "id": "worker-filter",
+        "label": "完成项被过滤",
+        "shortLabel": "完成项被过滤",
+        "detail": "交集不含r，不向核心报告",
+        "column": 2,
+        "row": 2,
+        "tone": "danger"
+      },
+      {
+        "id": "thread-residue",
+        "label": "线程完成集合残留",
+        "shortLabel": "线程完成集合残留",
+        "detail": "未被提取的完成项没有从集合删除",
+        "column": 3,
+        "row": 3,
+        "tone": "danger"
+      },
+      {
+        "id": "core-held",
+        "label": "核心继续等待结算",
+        "shortLabel": "核心继续等待结算",
+        "detail": "正常完成通知未到达，延迟块无法沿所示路径释放",
+        "column": 1,
+        "row": 3,
+        "tone": "danger"
+      }
+    ],
+    "edges": [
+      {
+        "from": "core-wait",
+        "to": "core-abort",
+        "label": "等待时取消"
+      },
+      {
+        "from": "client-cancel",
+        "to": "core-abort",
+        "label": "终止请求"
+      },
+      {
+        "from": "reg-start",
+        "to": "recv-start",
+        "label": "已登记收取"
+      },
+      {
+        "from": "recv-start",
+        "to": "recv-done",
+        "label": "传输结束"
+      },
+      {
+        "from": "core-abort",
+        "to": "reg-drop",
+        "label": "结束元数据"
+      },
+      {
+        "from": "reg-drop",
+        "to": "worker-filter",
+        "label": "报告资格丢失"
+      },
+      {
+        "from": "recv-done",
+        "to": "worker-filter",
+        "label": "交集排除r"
+      },
+      {
+        "from": "worker-filter",
+        "to": "thread-residue",
+        "label": "未取出完成项"
+      },
+      {
+        "from": "worker-filter",
+        "to": "core-held",
+        "label": "完成通知缺失"
+      }
+    ],
+    "presentation": {
+      "kind": "ascend-receive-completion-lifecycle-before",
+      "panels": [
+        {
+          "title": "客户请求",
+          "tone": "control",
+          "nodeIds": [
+            "client-cancel"
+          ]
+        },
+        {
+          "title": "核心调度器",
+          "tone": "kv",
+          "nodeIds": [
+            "core-wait",
+            "core-abort",
+            "core-held"
+          ]
+        },
+        {
+          "title": "连接器与worker",
+          "tone": "control",
+          "nodeIds": [
+            "reg-start",
+            "reg-drop",
+            "worker-filter"
+          ]
+        },
+        {
+          "title": "接收线程",
+          "tone": "communication",
+          "nodeIds": [
+            "recv-start",
+            "recv-done",
+            "thread-residue"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "修复路径：取消后保留接收登记，完成后各自结算",
+    "caption": "原创控制逻辑示意；纵向为逻辑阶段，非真实延迟。适用本文核读的异步非layerwise路径。内存安全与真实DMA完成需另验；未给出永不完成或异常收取的完整恢复协议。",
+    "basis": "inference",
+    "sourceIndices": [
+      3,
+      6,
+      7,
+      8
+    ],
+    "nodes": [
+      {
+        "id": "client-cancel",
+        "label": "客户取消",
+        "shortLabel": "客户取消",
+        "detail": "取消结束客户等待，不代表收取线程已停止",
+        "column": 0,
+        "row": 1,
+        "tone": "control"
+      },
+      {
+        "id": "core-wait",
+        "label": "等待远端KV",
+        "shortLabel": "等待远端KV",
+        "detail": "核心仍持有请求及KV块",
+        "column": 1,
+        "row": 0,
+        "tone": "kv"
+      },
+      {
+        "id": "core-abort",
+        "label": "请求终止 保留块",
+        "shortLabel": "请求终止 保留块",
+        "detail": "因远端收取未结算，核心延迟释放",
+        "column": 1,
+        "row": 1,
+        "tone": "control"
+      },
+      {
+        "id": "reg-start",
+        "label": "登记包含 r",
+        "shortLabel": "登记包含 r",
+        "detail": "load_async 且非layerwise时登记",
+        "column": 2,
+        "row": 0,
+        "tone": "control"
+      },
+      {
+        "id": "recv-start",
+        "label": "收取在途",
+        "shortLabel": "收取在途",
+        "detail": "该图不表示真实DMA时长",
+        "column": 3,
+        "row": 0,
+        "tone": "communication"
+      },
+      {
+        "id": "recv-done",
+        "label": "收取完成",
+        "shortLabel": "收取完成",
+        "detail": "完成项写入接收线程集合",
+        "column": 3,
+        "row": 2,
+        "tone": "communication"
+      },
+      {
+        "id": "reg-retain",
+        "label": "结束后仍保留登记",
+        "shortLabel": "结束后仍保留登记",
+        "detail": "finished_req_ids不再删除接收登记",
+        "column": 2,
+        "row": 1,
+        "tone": "control"
+      },
+      {
+        "id": "worker-report",
+        "label": "完成项可上报",
+        "shortLabel": "完成项可上报",
+        "detail": "worker按登记交集提取r",
+        "column": 2,
+        "row": 2,
+        "tone": "communication"
+      },
+      {
+        "id": "core-output",
+        "label": "核心处理完成输出",
+        "shortLabel": "核心处理完成输出",
+        "detail": "先调用连接器输出处理，再按请求终态结算",
+        "column": 1,
+        "row": 2,
+        "tone": "control"
+      },
+      {
+        "id": "reg-clean",
+        "label": "清理完成登记",
+        "shortLabel": "清理完成登记",
+        "detail": "update_finished_recving只删已报告项",
+        "column": 2,
+        "row": 3,
+        "tone": "control"
+      },
+      {
+        "id": "core-free",
+        "label": "释放延迟KV块",
+        "shortLabel": "释放延迟KV块",
+        "detail": "由核心终态分支释放，不由登记集合直接释放",
+        "column": 1,
+        "row": 3,
+        "tone": "kv"
+      }
+    ],
+    "edges": [
+      {
+        "from": "core-wait",
+        "to": "core-abort",
+        "label": "等待时取消"
+      },
+      {
+        "from": "client-cancel",
+        "to": "core-abort",
+        "label": "终止请求"
+      },
+      {
+        "from": "reg-start",
+        "to": "recv-start",
+        "label": "已登记收取"
+      },
+      {
+        "from": "recv-start",
+        "to": "recv-done",
+        "label": "传输结束"
+      },
+      {
+        "from": "core-abort",
+        "to": "reg-retain",
+        "label": "结束元数据"
+      },
+      {
+        "from": "reg-retain",
+        "to": "worker-report",
+        "label": "保留报告资格"
+      },
+      {
+        "from": "recv-done",
+        "to": "worker-report",
+        "label": "交集含r"
+      },
+      {
+        "from": "worker-report",
+        "to": "core-output",
+        "label": "finished_recving"
+      },
+      {
+        "from": "core-output",
+        "to": "reg-clean",
+        "label": "连接器更新"
+      },
+      {
+        "from": "reg-clean",
+        "to": "core-free",
+        "label": "随后核心终态结算"
+      }
+    ],
+    "presentation": {
+      "kind": "ascend-receive-completion-lifecycle-fixed",
+      "panels": [
+        {
+          "title": "客户请求",
+          "tone": "control",
+          "nodeIds": [
+            "client-cancel"
+          ]
+        },
+        {
+          "title": "核心调度器",
+          "tone": "kv",
+          "nodeIds": [
+            "core-wait",
+            "core-abort",
+            "core-output",
+            "core-free"
+          ]
+        },
+        {
+          "title": "连接器与worker",
+          "tone": "control",
+          "nodeIds": [
+            "reg-start",
+            "reg-retain",
+            "worker-report",
+            "reg-clean"
+          ]
+        },
+        {
+          "title": "接收线程",
+          "tone": "communication",
+          "nodeIds": [
+            "recv-start",
+            "recv-done"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "双向KV复用：数据路径与资格判断分开",
+    "caption": "原创机制示意，非性能或时序比例图。资格门是拟议生产验收设计；固定示例proxy不包含完整token一致性判断。虚线元数据不携带KV张量；D保留块的容量代价需另测。",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "nodes": [
+      {
+        "id": "client-prior",
+        "label": "上一轮响应",
+        "shortLabel": "上一轮响应",
+        "detail": "历史中可能包含思考、工具调用与普通输出",
+        "column": 0,
+        "row": 0,
+        "tone": "neutral"
+      },
+      {
+        "id": "client-next",
+        "label": "下一轮输入",
+        "shortLabel": "下一轮输入",
+        "detail": "完整token历史与会话版本决定语义资格",
+        "column": 0,
+        "row": 1,
+        "tone": "neutral"
+      },
+      {
+        "id": "client-rewrite",
+        "label": "历史改写或分支",
+        "shortLabel": "历史改写或分支",
+        "detail": "删思考、摘要、工具重写与并发分支需独立判断",
+        "column": 0,
+        "row": 2,
+        "tone": "danger"
+      },
+      {
+        "id": "router-metadata",
+        "label": "记录D元数据",
+        "shortLabel": "记录D元数据",
+        "detail": "只有位置、期限与身份信息；KV不经路由器",
+        "column": 1,
+        "row": 0,
+        "tone": "control"
+      },
+      {
+        "id": "router-gate",
+        "label": "拟议复用资格门",
+        "shortLabel": "拟议复用资格门",
+        "detail": "身份/模型/历史一致性/期限/成本；不是示例proxy已有全套保证",
+        "column": 1,
+        "row": 1,
+        "tone": "control"
+      },
+      {
+        "id": "router-fallback",
+        "label": "放弃远端复用",
+        "shortLabel": "放弃远端复用",
+        "detail": "走经验证的重算或错误处理；不承诺透明恢复",
+        "column": 1,
+        "row": 2,
+        "tone": "danger"
+      },
+      {
+        "id": "p-local",
+        "label": "本地覆盖检查",
+        "shortLabel": "本地覆盖检查",
+        "detail": "扣除本地已计算部分后，再评估远端可提供token",
+        "column": 2,
+        "row": 0,
+        "tone": "kv"
+      },
+      {
+        "id": "p-pull",
+        "label": "P读取D保留KV",
+        "shortLabel": "P读取D保留KV",
+        "detail": "由P发起NIXL READ；实际数据方向D→P",
+        "column": 2,
+        "row": 1,
+        "tone": "communication"
+      },
+      {
+        "id": "p-compute",
+        "label": "计算剩余输入",
+        "shortLabel": "计算剩余输入",
+        "detail": "计算未覆盖后缀，不把全部prompt都算作避免的工作",
+        "column": 2,
+        "row": 2,
+        "tone": "kv"
+      },
+      {
+        "id": "p-export",
+        "label": "交出P端元数据",
+        "shortLabel": "交出P端元数据",
+        "detail": "为D的常规读取提供地址与请求身份",
+        "column": 2,
+        "row": 3,
+        "tone": "control"
+      },
+      {
+        "id": "d-retain",
+        "label": "D保留上一轮块",
+        "shortLabel": "D保留上一轮块",
+        "detail": "占用容量且有期限；元数据命中不证明块仍有效",
+        "column": 3,
+        "row": 0,
+        "tone": "kv"
+      },
+      {
+        "id": "d-serve",
+        "label": "有效块可被读取",
+        "shortLabel": "有效块可被读取",
+        "detail": "远端期限与最后访问/重用关系仍需实机验收",
+        "column": 3,
+        "row": 1,
+        "tone": "kv"
+      },
+      {
+        "id": "d-pull",
+        "label": "D读取P端KV",
+        "shortLabel": "D读取P端KV",
+        "detail": "由D发起常规NIXL READ；数据方向P→D",
+        "column": 3,
+        "row": 2,
+        "tone": "communication"
+      },
+      {
+        "id": "d-generate",
+        "label": "继续生成并刷新状态",
+        "shortLabel": "继续生成并刷新状态",
+        "detail": "后续完成可能产生下一轮的保留块与元数据",
+        "column": 3,
+        "row": 3,
+        "tone": "kv"
+      }
+    ],
+    "edges": [
+      {
+        "from": "client-prior",
+        "to": "client-next",
+        "label": "沿用历史"
+      },
+      {
+        "from": "client-next",
+        "to": "router-gate",
+        "label": "新输入与会话版本"
+      },
+      {
+        "from": "client-rewrite",
+        "to": "router-gate",
+        "label": "必须重新核验"
+      },
+      {
+        "from": "d-retain",
+        "to": "router-metadata",
+        "label": "位置元数据"
+      },
+      {
+        "from": "router-metadata",
+        "to": "router-gate",
+        "label": "候选状态"
+      },
+      {
+        "from": "router-gate",
+        "to": "p-local",
+        "label": "资格通过"
+      },
+      {
+        "from": "router-gate",
+        "to": "router-fallback",
+        "label": "资格不成立"
+      },
+      {
+        "from": "p-local",
+        "to": "p-pull",
+        "label": "值得远端复用"
+      },
+      {
+        "from": "d-retain",
+        "to": "d-serve",
+        "label": "仍有效且可读"
+      },
+      {
+        "from": "d-serve",
+        "to": "p-pull",
+        "label": "D→P数据"
+      },
+      {
+        "from": "p-pull",
+        "to": "p-compute",
+        "label": "覆盖前缀后"
+      },
+      {
+        "from": "router-fallback",
+        "to": "p-compute",
+        "label": "若策略选择重算"
+      },
+      {
+        "from": "p-compute",
+        "to": "p-export",
+        "label": "prefill完成"
+      },
+      {
+        "from": "p-export",
+        "to": "d-pull",
+        "label": "位置元数据"
+      },
+      {
+        "from": "d-pull",
+        "to": "d-generate",
+        "label": "常规P→D读取后"
+      },
+      {
+        "from": "d-generate",
+        "to": "router-metadata",
+        "label": "刷新下一轮元数据"
+      },
+      {
+        "from": "p-compute",
+        "to": "d-pull",
+        "label": "P→D数据，由D发起READ"
+      }
+    ],
+    "presentation": {
+      "kind": "bidirectional-kv-eligibility",
+      "panels": [
+        {
+          "title": "客户端：历史与分支",
+          "tone": "neutral",
+          "nodeIds": [
+            "client-prior",
+            "client-next",
+            "client-rewrite"
+          ]
+        },
+        {
+          "title": "路由器：元数据与拟议资格门",
+          "tone": "control",
+          "nodeIds": [
+            "router-metadata",
+            "router-gate",
+            "router-fallback"
+          ]
+        },
+        {
+          "title": "Prefill：复用与重算",
+          "tone": "kv",
+          "nodeIds": [
+            "p-local",
+            "p-pull",
+            "p-compute",
+            "p-export"
+          ]
+        },
+        {
+          "title": "Decode：保留、读取与生成",
+          "tone": "communication",
+          "nodeIds": [
+            "d-retain",
+            "d-serve",
+            "d-pull",
+            "d-generate"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "指针发布与对象保活：两道独立的门",
+    "caption": "原创机制示意，非实测时序。实线表示这次补丁可核对的发布/读取路径；释放竞争为待验证旁路，不宣称必现或已解决。",
+    "basis": "inference",
+    "sourceIndices": [],
+    "nodes": [
+      {
+        "id": "publish",
+        "label": "提交端写task指针",
+        "detail": "seq_cst store；后续仍有slice字段初始化。",
+        "column": 0,
+        "row": 0,
+        "shortLabel": "发布指针",
+        "tone": "control"
+      },
+      {
+        "id": "fifo",
+        "label": "CQE展开FIFO前缀",
+        "detail": "#4542的既有顺序与逐WR账本保持独立。",
+        "column": 1,
+        "row": 0,
+        "shortLabel": "退休前缀",
+        "tone": "communication"
+      },
+      {
+        "id": "load",
+        "label": "终态函数读取一次",
+        "detail": "acquire-load得到局部t；读取值不等于保留对象所有权。",
+        "column": 2,
+        "row": 0,
+        "shortLabel": "读取t",
+        "tone": "control"
+      },
+      {
+        "id": "count",
+        "label": "更新任务与完成状态",
+        "detail": "success/failure计数及completion_state；随后进入完成发布。",
+        "column": 3,
+        "row": 0,
+        "shortLabel": "更新状态",
+        "tone": "control"
+      },
+      {
+        "id": "free",
+        "label": "另一线程尝试freeBatchID",
+        "detail": "必须另验直到最后回调退出的存活契约。",
+        "column": 1,
+        "row": 1,
+        "shortLabel": "释放竞争待验",
+        "tone": "neutral"
+      },
+      {
+        "id": "business",
+        "label": "KV与请求验收",
+        "detail": "跨机H20/SGLang正确性、资源回收及SLO全部待验。",
+        "column": 3,
+        "row": 1,
+        "shortLabel": "业务待验",
+        "tone": "neutral"
+      }
+    ],
+    "edges": [
+      {
+        "from": "publish",
+        "to": "load",
+        "label": "原子发布/读取契约"
+      },
+      {
+        "from": "fifo",
+        "to": "load",
+        "label": "逐slice进入终态"
+      },
+      {
+        "from": "load",
+        "to": "count",
+        "label": "使用同一个t"
+      },
+      {
+        "from": "free",
+        "to": "count",
+        "label": "对象保活另验"
+      },
+      {
+        "from": "count",
+        "to": "business",
+        "label": "不能直接推导通过"
+      }
+    ],
+    "presentation": {
+      "kind": "task-pointer-lifetime",
+      "panels": [
+        {
+          "title": "本次同步补丁",
+          "tone": "control",
+          "nodeIds": [
+            "publish",
+            "load",
+            "count"
+          ]
+        },
+        {
+          "title": "已有完成通知机制",
+          "tone": "communication",
+          "nodeIds": [
+            "fifo"
+          ]
+        },
+        {
+          "title": "独立验收边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "free",
+            "business"
+          ]
+        }
+      ]
+    }
+  }
+]

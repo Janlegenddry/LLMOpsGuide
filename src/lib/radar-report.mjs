@@ -12,6 +12,9 @@ Object.assign(figureKinds, { 'artifact-admission-gates': [5, 2], 'graph-input-wi
 Object.assign(figureKinds, { 'restore-consensus': [1, 2, 2, 2, 3, 1], 'restore-budget-ledger': [3, 3, 2, 1], 'rdma-retirement': [5, 3, 1, 1], 'rdma-partial-post': [2, 5, 2, 1, 1] });
 Object.assign(figureKinds, { 'storage-worker-liveness': [5, 5, 1, 1] });
 
+Object.assign(figureKinds, {"ascend-receive-completion-lifecycle-before":[1,3,3,3],"ascend-receive-completion-lifecycle-fixed":[1,4,4,2],"bidirectional-kv-eligibility":[3,3,4,4],"task-pointer-lifetime":[3,1,2]});
+const oct13Roles = {"ascend-receive-completion-lifecycle-before":{"roles":[["client-cancel"],["core-wait","core-abort","core-held"],["reg-start","reg-drop","worker-filter"],["recv-start","recv-done","thread-residue"]],"edges":[["core-wait","core-abort"],["client-cancel","core-abort"],["reg-start","recv-start"],["recv-start","recv-done"],["core-abort","reg-drop"],["reg-drop","worker-filter"],["recv-done","worker-filter"],["worker-filter","thread-residue"],["worker-filter","core-held"]]},"ascend-receive-completion-lifecycle-fixed":{"roles":[["client-cancel"],["core-wait","core-abort","core-output","core-free"],["reg-start","reg-retain","worker-report","reg-clean"],["recv-start","recv-done"]],"edges":[["core-wait","core-abort"],["client-cancel","core-abort"],["reg-start","recv-start"],["recv-start","recv-done"],["core-abort","reg-retain"],["reg-retain","worker-report"],["recv-done","worker-report"],["worker-report","core-output"],["core-output","reg-clean"],["reg-clean","core-free"]]},"bidirectional-kv-eligibility":{"roles":[["client-prior","client-next","client-rewrite"],["router-metadata","router-gate","router-fallback"],["p-local","p-pull","p-compute","p-export"],["d-retain","d-serve","d-pull","d-generate"]],"edges":[["client-prior","client-next"],["client-next","router-gate"],["client-rewrite","router-gate"],["d-retain","router-metadata"],["router-metadata","router-gate"],["router-gate","p-local"],["router-gate","router-fallback"],["p-local","p-pull"],["d-retain","d-serve"],["d-serve","p-pull"],["p-pull","p-compute"],["router-fallback","p-compute"],["p-compute","p-export"],["p-export","d-pull"],["d-pull","d-generate"],["d-generate","router-metadata"],["p-compute","d-pull"]]},"task-pointer-lifetime":{"roles":[["publish","load","count"],["fifo"],["free","business"]],"edges":[["publish","load"],["fifo","load"],["load","count"],["free","count"],["count","business"]]}};
+
 // Only structured text and graph coordinates enter the renderer; no HTML or SVG payloads.
 export function validateReport(raw, sources, { keys, str, array, fail }) {
   keys(raw, ['version', 'scope', 'sections'], 'report');
@@ -92,6 +95,15 @@ export function validateReport(raw, sources, { keys, str, array, fail }) {
             return { title: str(panel.title, `${b}.panel.title`, 80), tone: panel.tone, nodeIds };
           });
           if (included.size !== nodes.length) fail(`${b} 技术图分组不能遗漏节点`);
+          const contract = oct13Roles[block.presentation.kind];
+          if (contract) {
+            for (const [i, panel] of panels.entries()) {
+              if (JSON.stringify(panel.nodeIds) !== JSON.stringify(contract.roles[i])) fail(`${b} 新图职责角色与顺序不符`);
+              if (block.presentation.kind !== 'task-pointer-lifetime' && panel.nodeIds.some(id => nodes.find(n => n.id === id).column !== i)) fail(`${b} 新图节点必须位于其职责列`);
+            }
+            const connections = edges.map(e => `${e.from}→${e.to}`).sort();
+            if (JSON.stringify(connections) !== JSON.stringify(contract.edges.map(([from, to]) => `${from}→${to}`).sort())) fail(`${b} 新图必须保留精确的已定义连线`);
+          }
           out.presentation = { kind: block.presentation.kind, panels };
         }
         return out;

@@ -99,6 +99,12 @@
 | rdma-retirement | 5 / 3 / 1 / 1 | 五项同 QP 提交链、一个 CQE/三项退休/三份额度、后缀保留、独立容量说明 |
 | rdma-partial-post | 2 / 5 / 2 / 1 / 1 | 部分提交、已提交前缀尝试、允许重试/耗尽分支、未提交项、终态与资源待验 |
 | storage-worker-liveness | 5 / 5 / 1 / 1 | 独立读/写泳道、逐批 ACK/最终通知/操作确认、独立完成计数、rank 与资源待验 |
+| ascend-receive-completion-lifecycle-before | 1 / 3 / 3 / 3 | 客户、核心、连接器/worker、接收线程四职责；取消后的登记丢失与完成通知缺失 |
+| ascend-receive-completion-lifecycle-fixed | 1 / 4 / 4 / 2 | 同四职责；保留报告资格、完成输出、连接器清理与核心释放分别呈现 |
+| bidirectional-kv-eligibility | 3 / 3 / 4 / 4 | 客户历史、拟议路由资格门、P 与 D；双向 KV 数据和四条元数据路径 |
+| task-pointer-lifetime | 3 / 1 / 2 | 指针发布/单次读取/计数、独立 FIFO 输入、对象保活与业务待验；非 WR 链 |
+
+2026-10-13 四种构图分别校验精确节点角色、顺序及已定义连线，不放宽旧图、0–3 坐标、来源数量或证据校验。Ascend 与双向 KV 的 panel i 必须属于职责列 i；行仅为逻辑阶段，不代表等比例时间。Ascend 旧图的完成通知缺失和线程残留用红色虚线呈现，登记集合不拥有 KV；修复图保持连接器清理与核心终态释放的不同节点。双向 KV 两条数据线加粗，标明 D→P / P→D；四条虚线只携带位置、期限和身份元数据，KV 不经路由器。资格门为拟议生产验收，保留空心虚线与拟议标记，失败处理不表示透明恢复保证。task-pointer-lifetime 精确六节点五条边，free→count 与 count→business 为虚线，free/business 空心待验；原子性不等于对象所有权。手机按职责或输入/控制/边界分组纵排，图内编号保留完整关系图例，不添加顺序边；旧 RDMA 图保持原 SVG。节点全文与 caption 保留在详情与可访问文本中，所有图均为原创非实测示意。
 
 storage-worker-liveness 的读写五角色分别按提交输入的顺序排列。读失败显示本批新增 0 与累计前缀保留，finally 最终通知不替代逐批 ACK；写确认不指向成功字节数，完成量仅由声明的 write-error→data-fact 支线解释。手机将 data-fact 放在 write-ack 下方独立框，主线绕过此框继续，不补 ACK→数据成功边。跨 rank 与资源重用边界为空心。兼容坐标仍为 0–3；五列实际布局由固定语义角色确定，不能因此放宽兼容坐标或来源校验。
 
