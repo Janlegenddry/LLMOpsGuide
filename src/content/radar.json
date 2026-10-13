@@ -1,6 +1,956 @@
 [
   {
     "schemaVersion": 1,
+    "id": "vllm-bidirectional-kv-eligibility",
+    "kind": "analysis",
+    "title": "vLLM 双向 KV：上一轮的缓存，下一轮真的还能用吗",
+    "summary": "10月12日官方博客展示多轮PD的双向KV复用。以固定源码、补丁链和复现脚本拆解复用资格、缓存期限及成本；H200作者成绩不外推H20或Ascend，先验证token历史与资源安全。",
+    "publishedAt": "2026-10-12",
+    "reviewedAt": "2026-10-13",
+    "topics": [
+      "vLLM",
+      "KV Cache",
+      "PD 分离",
+      "GPU 通信"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM官方博客：多轮双向KV作者实验",
+        "url": "https://vllm.ai/blog/2026-10-12-bidirectional-kvxfer-multiturn-agentic-workload",
+        "publishedAt": "2026-10-12",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "官方博客固定内容与提交身份",
+        "url": "https://github.com/vllm-project/vllm-project.github.io/blob/541bd3a1463a89e844d52e920466a0e30e7f923f/_posts/2026-10-12-bidirectional-kvxfer-multiturn-agentic-workload.md",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM博客仓库 · Sunita Nadampalli署名技术文章",
+          "status": "attributed",
+          "note": "已下载阅读固定提交541bd3a1463a89e844d52e920466a0e30e7f923f中的Markdown，内容与博客页交叉核对。仓库路径未登记为本站官方来源，按作者材料显式归因；与博客为同一作品，不增加独立实验或派生额度。未复现作者性能。"
+        },
+        "publishedAt": "2026-10-12",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定pull scheduler：复用计数与保留期限",
+        "url": "https://github.com/vllm-project/vllm/blob/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定pull worker：远端过期检查",
+        "url": "https://github.com/vllm-project/vllm/blob/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定示例proxy：会话元数据缓存与转发",
+        "url": "https://github.com/vllm-project/vllm/blob/98dff2a81d747d1dba01a47f939f48c3526d4206/examples/disaggregated/disaggregated_serving/disagg_proxy_multiturn.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "官方NIXL使用文档：支持范围与历史改写限制",
+        "url": "https://docs.vllm.ai/en/latest/features/nixl_connector_usage",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "公开issue #43094：社区风险报告及自动关闭",
+        "url": "https://github.com/vllm-project/vllm/issues/43094",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM issue #43094 发起者及公开讨论参与者",
+          "status": "attributed",
+          "note": "已读取成员报告、公开讨论与自动关闭时间线。历史改写导致错误KV位置是报告方陈述，并由官方文档保留限制说明；本轮未运行模型复现。Sep19因不活跃关闭不等于缺陷已修复。"
+        },
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定启动脚本：PD参数与TTL",
+        "url": "https://github.com/vllm-project/vllm-project.github.io/blob/541bd3a1463a89e844d52e920466a0e30e7f923f/assets/repro/2026-10-12-bidirectional-kvxfer-multiturn-agentic-workload/serve_pd_multiturn.sh",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM博客仓库 · 双向KV复现启动脚本",
+          "status": "attributed",
+          "note": "已下载阅读固定提交中的serve_pd_multiturn.sh，核对双端开关、prefill prefix cache关闭、TTL480秒、TP8等默认参数。只做静态阅读，未启动服务器、安装环境或执行GPU实验。未登记仓库路径按作者复现材料归因。"
+        },
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定负载脚本：多轮参数、长度扫描和等待",
+        "url": "https://github.com/vllm-project/vllm-project.github.io/blob/541bd3a1463a89e844d52e920466a0e30e7f923f/assets/repro/2026-10-12-bidirectional-kvxfer-multiturn-agentic-workload/run_multiturn_sweep.sh",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM博客仓库 · 双向KV多轮负载脚本",
+          "status": "attributed",
+          "note": "已下载阅读固定提交中的run_multiturn_sweep.sh，核对会话/轮数、输入输出目标、客户端和活跃会话默认值、暖身选项及默认20秒等待。只读未运行；默认等待不能单独证明旧KV已回收，不据此否定作者成绩。未登记仓库路径按作者材料归因。"
+        },
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "vLLM v0.29.0正式发行身份",
+        "url": "https://github.com/vllm-project/vllm/releases/tag/v0.29.0",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "PR #40186：流式返回KV参数的未合入补丁",
+        "url": "https://github.com/vllm-project/vllm/pull/40186",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM PR #40186 作者 Sunita Nadampalli",
+          "status": "attributed",
+          "note": "已读取PR页面、公开diff和patch头，页面核验时仍Open。补丁头提交ae79e0f73d15d8784884d2cd29a64494cc5323c6的作者日期为Sep18，不当作PR创建日。仅下载审阅，未应用或执行，不将提交状态当成正式发行包含。"
+        },
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定chat serving：响应字段检查",
+        "url": "https://github.com/vllm-project/vllm/blob/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/entrypoints/openai/chat_completion/serving.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "官方博客文件提交历史",
+        "url": "https://github.com/vllm-project/vllm-project.github.io/commits/main/_posts/2026-10-12-bidirectional-kvxfer-multiturn-agentic-workload.md.atom",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub · vLLM博客文件历史feed",
+          "status": "attributed",
+          "note": "已读取该文件的公开Atom历史，看到提交541bd3a1463a89e844d52e920466a0e30e7f923f及2026-10-12T18:08:25Z。仅用于归因文件历史所示时间，不把提交时间当作精确首次公告或网页上线时间。该仓库路径未登记为本站官方来源。"
+        },
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定base scheduler：配置默认值",
+        "url": "https://github.com/vllm-project/vllm/blob/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py",
+        "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "固定清理脚本：只读审阅未执行",
+        "url": "https://github.com/vllm-project/vllm-project.github.io/blob/541bd3a1463a89e844d52e920466a0e30e7f923f/assets/repro/2026-10-12-bidirectional-kvxfer-multiturn-agentic-workload/cleanup.sh",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM博客仓库 · 双向KV复现清理脚本",
+          "status": "attributed",
+          "note": "已下载阅读固定提交中的cleanup.sh，确认仓库存在这份复现配套文件。未执行清理、终止实例或操作任何服务；仅静态阅读，未登记仓库路径按作者材料归因。"
+        },
+        "accessedAt": "2026-10-13"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "vLLM博客页面标注的日级发布日期为2026-10-12。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "按已读取博客仓库文件及历史feed所示，将内容固定到提交541bd3a1463a89e844d52e920466a0e30e7f923f；该提交时间不能当作精确首次公开时间。",
+        "sourceIndices": [
+          1,
+          12
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "固定v0.29.0源码包含双向pull调度和示例proxy。",
+        "sourceIndices": [
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "博客作者的附录要求额外应用流式参数补丁#40186；结合所读PR页面和固定chat serving，不能将完整流式复现链等同于仅安装正式发行包。",
+        "sourceIndices": [
+          0,
+          10,
+          11
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本轮未独立复现性能，未运行GPU、NIXL或完整vLLM；H20和Ascend910的正确性、可用性与性能均待目标环境验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "新旧token历史相容，还是只有同一个conversation_id？",
+      "正常本地prefix cache命中率下，D→P搬运仍比重算划算吗？",
+      "元数据期限、远端最后访问与块复用如何一起验收？"
+    ],
+    "related": [
+      {
+        "title": "vLLM NIXL：传输完成之后，KV布局仍须验收",
+        "path": "/radar/vllm-nixl-receive-layout/"
+      },
+      {
+        "title": "vLLM pause(wait)：排空边界",
+        "path": "/radar/vllm-pause-async-kv-drain/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "研究窗口2026-10-12 02:46至2026-10-13 02:52 UTC；随后完成只读证据核验。官方博客及固定仓库源码、脚本、公开issue与PR。仅抽取示例proxy两个类作局部CPU方法检查，没有运行HTTP处理器、完整vLLM、GPU或NIXL。作者性能只对应H200/EFA且prefill prefix cache关闭的测试；H20与Ascend910不继承结论。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先证明复用资格，再计算节省",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                0
+              ],
+              "text": "10月12日的vLLM官方博客值得读，最有迁移价值的问题是：PD分离之后，怎样让上一轮decode已经算过的状态在下一轮prefill继续有用。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这不是“打开开关就提速”的故事。一次远端KV复用同时需要四项条件：找到正确的会话版本；新旧token历史相容；远端块尚在且可读；搬运的总成本低于重算。任何一项不成立，都应选择可解释的重算或失败处理，而非继续使用看似存在的块地址。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对H20团队，建议把它当作多轮PD服务的一套隔离实验题。对SGLang团队，可迁移的是资格判断、缓存寿命与成本度量方法，不能把vLLM参数当成SGLang现成接口。对Ascend910，本次没有后端可用性或性能证据，不能继承结论。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：分离计算之后，还要接回上下文",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "PD分离把两种资源曲线拆开：prefill面对大段输入，decode面对逐token生成。多轮应用却把它们重新连起来，因为下一轮输入通常含有上一轮生成结果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创例子：一个代码代理先读文件、生成分析，再接受测试输出。下一轮可能沿用完整历史，也可能先摘要历史、删除内部思考、规范化工具调用。两者都叫“同一会话”，但并不对应同一条token序列。会话标识只回答“属于谁”，不能独自回答“这些KV对应哪一段输入”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此，“缓存存在”至少有三个不同含义：控制面还记得地址；数据面还保留内存；语义上仍对应这次计算。只看命中率，会把三者混为一谈。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：两条数据路径，一道资格门",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "固定v0.29.0源码表明，pull调度器先计算远端可提供、且尚未由本地覆盖的token数量，再与阈值比较；并不是拿总prompt长度直接决定搬运。decode在合适完成状态下延迟释放块，并把远端请求、块位置、计算长度及过期信息交出去。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "worker会在带有远端过期信息时结合时钟偏移与安全余量判断是否拒绝读取；若元数据没有过期字段，该检查返回“不判定过期”。这证明存在一条防护路径，不证明每个路由器都完整转发了字段，更不证明所有失败已自动恢复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "示例proxy按conversation_id保存位置元数据，后续请求取出并消费它，再转交给prefill。固定缓存对象保存的字段是参数与时间戳；检查的处理路径没有验证前后token历史。 这是一份流程示例，生产路由仍需明确内容一致性、身份隔离和并发分支规则。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3,
+                4
+              ],
+              "text": "读图时应区分两种箭头：实线表示P与D之间的KV数据，虚线表示路由器携带的位置与身份元数据。资格门是拟议生产设计，不是示例proxy已有的完整能力；保留块会占用容量，图中不表达任何测得的收益。"
+            },
+            {
+              "type": "diagram",
+              "title": "双向KV复用：数据路径与资格判断分开",
+              "caption": "原创机制示意，非性能或时序比例图。资格门是拟议生产验收设计；固定示例proxy不包含完整token一致性判断。虚线元数据不携带KV张量；D保留块的容量代价需另测。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3,
+                4,
+                5
+              ],
+              "nodes": [
+                {
+                  "id": "client-prior",
+                  "label": "上一轮响应",
+                  "detail": "历史中可能包含思考、工具调用与普通输出",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "上一轮响应",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "client-next",
+                  "label": "下一轮输入",
+                  "detail": "完整token历史与会话版本决定语义资格",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "下一轮输入",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "client-rewrite",
+                  "label": "历史改写或分支",
+                  "detail": "删思考、摘要、工具重写与并发分支需独立判断",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "历史改写或分支",
+                  "tone": "danger"
+                },
+                {
+                  "id": "router-metadata",
+                  "label": "记录D元数据",
+                  "detail": "只有位置、期限与身份信息；KV不经路由器",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "记录D元数据",
+                  "tone": "control"
+                },
+                {
+                  "id": "router-gate",
+                  "label": "拟议复用资格门",
+                  "detail": "身份/模型/历史一致性/期限/成本；不是示例proxy已有全套保证",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "拟议复用资格门",
+                  "tone": "control"
+                },
+                {
+                  "id": "router-fallback",
+                  "label": "放弃远端复用",
+                  "detail": "走经验证的重算或错误处理；不承诺透明恢复",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "放弃远端复用",
+                  "tone": "danger"
+                },
+                {
+                  "id": "p-local",
+                  "label": "本地覆盖检查",
+                  "detail": "扣除本地已计算部分后，再评估远端可提供token",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "本地覆盖检查",
+                  "tone": "kv"
+                },
+                {
+                  "id": "p-pull",
+                  "label": "P读取D保留KV",
+                  "detail": "由P发起NIXL READ；实际数据方向D→P",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "P读取D保留KV",
+                  "tone": "communication"
+                },
+                {
+                  "id": "p-compute",
+                  "label": "计算剩余输入",
+                  "detail": "计算未覆盖后缀，不把全部prompt都算作避免的工作",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "计算剩余输入",
+                  "tone": "kv"
+                },
+                {
+                  "id": "p-export",
+                  "label": "交出P端元数据",
+                  "detail": "为D的常规读取提供地址与请求身份",
+                  "column": 2,
+                  "row": 3,
+                  "shortLabel": "交出P端元数据",
+                  "tone": "control"
+                },
+                {
+                  "id": "d-retain",
+                  "label": "D保留上一轮块",
+                  "detail": "占用容量且有期限；元数据命中不证明块仍有效",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "D保留上一轮块",
+                  "tone": "kv"
+                },
+                {
+                  "id": "d-serve",
+                  "label": "有效块可被读取",
+                  "detail": "远端期限与最后访问/重用关系仍需实机验收",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "有效块可被读取",
+                  "tone": "kv"
+                },
+                {
+                  "id": "d-pull",
+                  "label": "D读取P端KV",
+                  "detail": "由D发起常规NIXL READ；数据方向P→D",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "D读取P端KV",
+                  "tone": "communication"
+                },
+                {
+                  "id": "d-generate",
+                  "label": "继续生成并刷新状态",
+                  "detail": "后续完成可能产生下一轮的保留块与元数据",
+                  "column": 3,
+                  "row": 3,
+                  "shortLabel": "继续生成并刷新状态",
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "client-prior",
+                  "to": "client-next",
+                  "label": "沿用历史"
+                },
+                {
+                  "from": "client-next",
+                  "to": "router-gate",
+                  "label": "新输入与会话版本"
+                },
+                {
+                  "from": "client-rewrite",
+                  "to": "router-gate",
+                  "label": "必须重新核验"
+                },
+                {
+                  "from": "d-retain",
+                  "to": "router-metadata",
+                  "label": "位置元数据"
+                },
+                {
+                  "from": "router-metadata",
+                  "to": "router-gate",
+                  "label": "候选状态"
+                },
+                {
+                  "from": "router-gate",
+                  "to": "p-local",
+                  "label": "资格通过"
+                },
+                {
+                  "from": "router-gate",
+                  "to": "router-fallback",
+                  "label": "资格不成立"
+                },
+                {
+                  "from": "p-local",
+                  "to": "p-pull",
+                  "label": "值得远端复用"
+                },
+                {
+                  "from": "d-retain",
+                  "to": "d-serve",
+                  "label": "仍有效且可读"
+                },
+                {
+                  "from": "d-serve",
+                  "to": "p-pull",
+                  "label": "D→P数据"
+                },
+                {
+                  "from": "p-pull",
+                  "to": "p-compute",
+                  "label": "覆盖前缀后"
+                },
+                {
+                  "from": "router-fallback",
+                  "to": "p-compute",
+                  "label": "若策略选择重算"
+                },
+                {
+                  "from": "p-compute",
+                  "to": "p-export",
+                  "label": "prefill完成"
+                },
+                {
+                  "from": "p-export",
+                  "to": "d-pull",
+                  "label": "位置元数据"
+                },
+                {
+                  "from": "d-pull",
+                  "to": "d-generate",
+                  "label": "常规P→D读取后"
+                },
+                {
+                  "from": "d-generate",
+                  "to": "router-metadata",
+                  "label": "刷新下一轮元数据"
+                },
+                {
+                  "from": "p-compute",
+                  "to": "d-pull",
+                  "label": "P→D数据，由D发起READ"
+                }
+              ],
+              "presentation": {
+                "kind": "bidirectional-kv-eligibility",
+                "panels": [
+                  {
+                    "title": "客户端：历史与分支",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "client-prior",
+                      "client-next",
+                      "client-rewrite"
+                    ]
+                  },
+                  {
+                    "title": "路由器：元数据与拟议资格门",
+                    "tone": "control",
+                    "nodeIds": [
+                      "router-metadata",
+                      "router-gate",
+                      "router-fallback"
+                    ]
+                  },
+                  {
+                    "title": "Prefill：复用与重算",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "p-local",
+                      "p-pull",
+                      "p-compute",
+                      "p-export"
+                    ]
+                  },
+                  {
+                    "title": "Decode：保留、读取与生成",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "d-retain",
+                      "d-serve",
+                      "d-pull",
+                      "d-generate"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：新博客、旧能力和补丁链要分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "官方博客页面标注日期为2026-10-12，支持日级发布时间的归属。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                12
+              ],
+              "text": "已读博客仓库文件历史显示提交541bd3a1463a89e844d52e920466a0e30e7f923f，时间为2026-10-12 18:08:25 UTC。这里归因于所读文件历史；内容提交时间不等于精确首次公开时间，不能据此推导首次公告分钟。"
+            },
+            {
+              "type": "table",
+              "caption": "证据分层：作者性能、固定源码与局部方法检查分开",
+              "columns": [
+                "证据",
+                "本轮确认",
+                "不能据此声称"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "官方作者性能报告",
+                    "两台p5en.48xlarge，各8张H200，EFA，1P1D；Qwen3-32B最高约1.6倍、GLM-5-FP8最高约3.3倍TTFT改善；prefill prefix cache关闭",
+                    "H20/Ascend收益、正常本地高命中收益、端到端吞吐同倍提升"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "正式v0.29.0源码",
+                    "发布SHA为98dff2a81d747d1dba01a47f939f48c3526d4206，含双向pull逻辑和示例proxy",
+                    "仅安装发行包就完整复现博客流式链路"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    9,
+                    2,
+                    3,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "附录与PR #40186",
+                    "博客作者附录指定v0.29.0、NIXL1.4.1并要求手工补流式KV参数；所读PR页面在本轮核验时显示Open",
+                    "该补丁已正式合入发布"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0,
+                    10,
+                    11
+                  ]
+                },
+                {
+                  "cells": [
+                    "局部CPU方法检查",
+                    "抽取固定proxy两个类，验证单次消费、过期丢弃、同键覆盖",
+                    "GPU正确性、网络可靠性、真实并发或完整HTTP链路"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "博客表格数字只代表作者所设场景，未检得独立复现。它是官方技术博客，不是本轮确认经过同行评议的性能论文。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "官方文档明确提醒：删去thinking trace会让后续输入与D端缓存的token位置不符。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6
+              ],
+              "text": "对应公开issue #43094的发起者于5月报告这一风险；GitHub时间线显示该 issue 于9月因不活跃关闭为not planned；这种关闭不是“问题已修复”的证据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                10
+              ],
+              "text": "按所下载作者补丁材料固定身份：#40186补丁头给出ae79e0f73d15d8784884d2cd29a64494cc5323c6，作者日期为2026-09-18，不能当作PR创建日期。本轮仅下载审阅，没有应用补丁。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                4
+              ],
+              "text": "原创局部CPU检查只抽取固定proxy的CachedKVEntry与ConversationKVCache两个类：第一次get返回已存元数据、第二次为None；过期项返回None；同键后写覆盖前写。未执行HTTP处理器、未import完整vLLM、未连接后端，也未证明真实模型输出中的正确性。历史改写风险来自官方文档与社区报告，不能归功于这个方法检查。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "成本：省掉计算，可能留下另一份账单",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创成本框架：一次复用的收益应由“避免的prefill计算”减去“元数据协调、网络传输、排队变化、保留内存导致的机会成本”来衡量。各项可能重叠，不能将分段日志直接机械相加，当成端到端关键路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "保留更久通常提高再次使用机会，也让没有返回的会话继续占据容量。只测低并发TTFT，很容易错过新请求排队、decode可用块减少和尾延迟上升。应在固定硬件预算下同时测完成请求量、SLO内有效吞吐和保留块峰值。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "阈值也不是硬件无关常数。相同token数量，对不同模型的KV字节数、不同精度、不同链路拥塞都不同。建议先按“避免的计算时间/传输字节”建观察表，再决定是否需要比固定token阈值更细的策略；这里并未声称框架提供了自动成本优化器。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产取舍：把安全退化做成可观测路径",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议将状态分为候选、已核验、读取中、已完成、已放弃五类。记录为什么放弃：本地已覆盖、历史变更、元数据缺失、期限接近、远端不可达、收益不足。这样既能解释MISS，也能识别错误使用了缓存的情况。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "拟议最小观测：匿名会话版本/turn序号、模型与模板版本、路由代际、远端engine/request身份、可复用token、实际字节、P和D的读取方向、保留块占用、拒绝原因、重算代价、TTFT及TPOT。不要记录真实提示词或缓存内容来换取方便。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "并发分支特别需要明确：同一会话同时发起两条后续请求，或者重试先于旧响应抵达，哪个版本可以消费缓存？固定示例的pop说明单次读取会消耗映射，同键put会覆盖。不能因此推断已有完整版本控制。生产实现可以先串行化同一会话、对分支使用新版本键；具体方案应按业务要求验收，本文未实施。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "历史被压缩、工具调用被重写、thinking被剥离时，安全默认应是停止使用不再匹配的远端状态。可保留多长共同前缀，需要经token级和块级验证，不能在文本看似相同的基础上猜测。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先补齐复现包，再把基线恢复正常",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                7,
+                8,
+                14
+              ],
+              "text": "本轮找到博客网页脚本链接404，但同一官方仓库中的三个脚本可读取。因此应说“网页分发链接存在缺口，仓库可取”，不能说“没有脚本”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                7,
+                8
+              ],
+              "text": "源码静态检查另有一个实验卫生疑点：sweep默认等待20秒，注释说等待D保留块到期；启动脚本默认保留期限480秒。 20秒等待本身不能证明旧点已清空。但块可能因已消费、之前已老化或其他生命周期路径而释放，不能据此断言实际一定残留，更不能否定作者成绩。每个点应记录占用归零/稳定证据，或使用隔离重启并明确冷暖条件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                7,
+                8
+              ],
+              "text": "按所读作者复现脚本，默认负载为10个会话、每会话10轮，每轮用户输入150、输出目标300 token，2个客户端、最多10个活跃会话；扫初始前缀长度。应区分初始前缀长度与逐轮增长的实际输入长度，使用逐请求token计数归组。脚本提供暖身配置，但本轮未运行，不声明所有图表遵循某一推断的统计口径。"
+            },
+            {
+              "type": "table",
+              "caption": "E0–E7隔离实验计划：全部待执行",
+              "columns": [
+                "实验",
+                "拟议方法",
+                "主要记录及停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "E0 产物与链路",
+                    "固定发行SHA、补丁SHA/哈希、NIXL、模型revision、模板、参数与网络；确认最终流式块含元数据",
+                    "元数据缺失或路径未命中即停，不能把ON标签当ON执行"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E1 四格基线",
+                    "prefix cache开/关 × 双向开/关，其他条件相同",
+                    "按真实本地命中率分层；不能只保留最有利的关闭基线"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E2 资格正确性",
+                    "完整历史、删thinking、改工具调用、摘要历史、改模板分别回放",
+                    "不相容历史必须拒绝远端复用；发现错误token立即停"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E3 成本阈值",
+                    "固定模型与请求集，扫描可复用长度、链路负载和并发",
+                    "记录实际传输字节与SLO有效吞吐，定位搬运不划算区间"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E4 生命周期",
+                    "下轮在期限前、临界点、之后到达；分别丢失元数据、重启路由/远端",
+                    "拒绝可解释、释放可核对、无失效地址误读；不要默认失败一定透明重算"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E5 会话竞争",
+                    "同键并发分支、超时重试、旧响应迟到",
+                    "缓存版本不串线；若实现没有防护，先禁止该模式"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E6 容量与公平",
+                    "持续负载混入不再返回的会话，比较保留期限",
+                    "保留块、排队、p99及新会话成功率；资源债务持续增长即停"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E7 故障恢复",
+                    "隔离环境中使读取失败，再恢复健康远端",
+                    "后续健康请求能在预定义SLO内完成，错误被分类；无跨请求污染"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "所有E0–E7均未执行；方案中的阈值须在测试前由目标服务SLO设定，不在结果出来后追认。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：性能提升必须排在正确性后面",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟议验收门槛：先正确性，再性能与恢复",
+              "columns": [
+                "门槛",
+                "通过条件",
+                "不能替代它的信号"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "语义一致",
+                    "复用数据对应实际输入和模型版本；改写历史被正确拒绝或使用经验证共同前缀",
+                    "同conversation_id、输出读起来流畅"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源安全",
+                    "远端最后访问与块重用关系明确，过期/取消/失败都有终结路径",
+                    "健康检查200、没有立刻崩溃"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "身份隔离",
+                    "跨租户、分支和迟到响应不串线；缓存键与权限边界一致",
+                    "单会话顺序测试通过"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能有效",
+                    "正常prefix cache基线下，预先约定负载的SLO有效吞吐/成本达标，尾延迟无不可接受回退",
+                    "最高单点TTFT改善、均值漂亮"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可恢复",
+                    "状态丢失、远端失败和网络退化后的路径有界且可观测",
+                    "单次重试最后成功"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可复核",
+                    "产物、负载、冷暖状态、逐请求记录和统计方法齐全",
+                    "版本字符串、博客标题"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "出现错误缓存复用、跨请求污染、读取仍在进行时重用内存，应立即停止推广。若只在prefill本地缓存关闭时获益，也并非实验无价值，但结论必须限于迁移、驱逐或缺乏本地局部性的工作负载。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "下一步：值得做的是一个小而完整的资格实验",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "优先完成E0与E2，再做E1。先回答“这次读回来的状态正确吗”，然后问“真实本地命中率下还省多少”。最后扩到容量、分支与故障。不要同时换模型、通信后端、量化和调度策略，否则收益和回归难以归因。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本轮建议：保留为高价值工程解读候选；不直接推荐线上开关，不给H20/Ascend性能承诺，不把官方博客中尚需补丁的复现路径写成已完整发布。它最有用的启发是，把远端KV从一个“命中计数”，重新看成有身份、语义、寿命和价格的计算状态。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-hicache-storage-worker-liveness",
     "kind": "analysis",
     "title": "SGLang HiCache：存储异常之后，谁来交回完成通知",
