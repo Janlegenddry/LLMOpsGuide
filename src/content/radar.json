@@ -19425,9 +19425,9 @@
     "id": "vllm-ascend-receive-registration-lifetime",
     "kind": "analysis",
     "title": "vLLM Ascend：请求取消之后，接收登记为何仍须保留",
-    "summary": "#16461于10月12日合入main，修复AscendStore异步收取中取消先于完成时的KV结算缺口。拆解登记过滤与核心延迟释放，给出固定父提交对照和910验收边界；v0.30回移仍Open。",
+    "summary": "#16461修复AscendStore取消后的接收登记寿命。10月14日补核：#18424已合入v0.30分支，但rc2与rc1固定标签仍是旧逻辑；分开说明主线、回移、可安装制品与910现场验收。",
     "publishedAt": "2026-09-13",
-    "reviewedAt": "2026-10-13",
+    "reviewedAt": "2026-10-14",
     "topics": [
       "vLLM",
       "NPU/昇腾",
@@ -19450,10 +19450,10 @@
         "accessedAt": "2026-10-13"
       },
       {
-        "title": "v0.30.0回移 #18424 当前Open",
+        "title": "v0.30.0回移 #18424：10月13日已合入",
         "url": "https://github.com/vllm-project/vllm-ascend/pull/18424",
         "publishedAt": "2026-10-12",
-        "accessedAt": "2026-10-13"
+        "accessedAt": "2026-10-14"
       },
       {
         "title": "固定AscendStore scheduler源码",
@@ -19525,6 +19525,31 @@
         },
         "publishedAt": "2026-10-12",
         "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "回移合入提交9d6b364",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/9d6b364184cd970b8819ae6521fa518348407403",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "v0.30.0rc2预发行：仅Dockerfile/CANN修正",
+        "url": "https://github.com/vllm-project/vllm-ascend/releases/tag/v0.30.0rc2",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "v0.30.0rc2固定标签scheduler逻辑",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.30.0rc2/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "v0.30.0rc1固定标签scheduler逻辑",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.30.0rc1/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "v0.23.0.post1固定标签scheduler逻辑",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.23.0.post1/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py",
+        "accessedAt": "2026-10-14"
       }
     ],
     "claims": [
@@ -19548,9 +19573,10 @@
       },
       {
         "status": "confirmed",
-        "text": "本次读取#18424回移状态为Open，不能写成v0.30正式发布已包含该修复。",
+        "text": "历史核验：2026-10-13早间读取#18424为Open。2026-10-14补核实时PR：已于10月13日03:18:40 UTC合入releases/v0.30.0，提交9d6b364；这不等于正式制品包含。",
         "sourceIndices": [
-          2
+          2,
+          13
         ]
       },
       {
@@ -19562,6 +19588,16 @@
         "status": "pending",
         "text": "910具体现场、所有后端与失败/超时终态仍待验证；没有H20或910性能收益结论。",
         "sourceIndices": []
+      },
+      {
+        "status": "confirmed",
+        "text": "v0.30.0rc2标记为预发行；其固定标签scheduler仍在finished_req_ids处理中删除_loading_req_ids，未见通过update_finished_recving(connector_output.finished_recving)清理。rc1与v0.23.0.post1同样保留该旧路径。",
+        "sourceIndices": [
+          14,
+          15,
+          16,
+          17
+        ]
       }
     ],
     "questions": [
@@ -19581,7 +19617,7 @@
     ],
     "report": {
       "version": 1,
-      "scope": "研究窗口2026-10-12 02:46 UTC至2026-10-13 02:51 UTC。核验于10月13日。九章分析基于公开PR、issue与固定源码；独立方法隔离检查并非全套CPU测试、真实块池或NPU/DMA验证。原文创建、合入和核验日期分别标注；main合入不等于正式发布。",
+      "scope": "研究窗口2026-10-12 02:46 UTC至2026-10-13 02:51 UTC。核验于10月13日。九章分析基于公开PR、issue与固定源码；独立方法隔离检查并非全套CPU测试、真实块池或NPU/DMA验证。原文创建、合入和核验日期分别标注；main合入不等于正式发布。 2026-10-14追加定点核验：仅更新#18424合入及rc2/rc1/正式标签代码状态，未重跑10月13日实验。",
       "sections": [
         {
           "id": "conclusion",
@@ -19664,12 +19700,13 @@
                 {
                   "cells": [
                     "v0.30.0 回移 #18424",
-                    "本次读取状态 OPEN，目标 releases/v0.30.0",
-                    "回移尚不能当作已合入，更不能当正式发布"
+                    "历史：10月13日早间为Open；补核：03:18:40 UTC合入",
+                    "分支已合入；标签制品须另核，不能沿用旧Open状态"
                   ],
                   "basis": "official",
                   "sourceIndices": [
-                    2
+                    2,
+                    13
                   ]
                 },
                 {
@@ -20330,6 +20367,26 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "本文隔离检查结果按“测试方法”计数：父版本四个方法中的三个失败；其中选择性清理测试有两个失败子用例，因此 unittest 记录四个 failure 条目，不应误写四个方法全失败。新版本四方法均通过。它证实的是读取源码后的局部控制流，与作者既往大套件数字不同。本轮没有运行原作者的压缩包，也没有新增 910、950 或 H20 真机结果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                13
+              ],
+              "text": "2026-10-14状态补核：#18424于2026-10-13 03:18:40 UTC合入releases/v0.30.0，固定提交9d6b364184cd970b8819ae6521fa518348407403。旧记录“Open”是当天更早时点的读取结果，保留为历史；当前判断改为回移分支已合入。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                14,
+                15,
+                16,
+                17
+              ],
+              "text": "同时核读v0.30.0rc2、rc1和v0.23.0.post1标签文件：三者仍保留finished_req_ids处提前discard，且没有本修复的完成输出清理调用。rc2于10月13日15:24:29 UTC作为预发行发布，说明仅修Dockerfile并更新CANN。发布时刻较晚，仍不能替代实际源码包含检查。"
             }
           ]
         },
@@ -20522,13 +20579,19 @@
               "type": "paragraph",
               "basis": "pending",
               "sourceIndices": [],
-              "text": "仍需现场或更完整上游证据回答：910 的具体驱动与传输栈是否进入同一路径；后端超时如何形成可结算终态；异构 KV 组与不同并行规模是否覆盖；重启/重试与 request ID 重用是否引入另一种旧完成问题；#18424 最终是否合入，哪个可安装制品实际携带修复。"
+              "text": "仍需现场或更完整上游证据回答：910 的具体驱动与传输栈是否进入同一路径；后端超时如何形成可结算终态；异构 KV 组与不同并行规模是否覆盖；重启/重试与 request ID 重用是否引入另一种旧完成问题；哪个可安装制品实际携带已合入的#18424修复。"
             },
             {
               "type": "paragraph",
               "basis": "inference",
               "sourceIndices": [],
               "text": "本次足够支持的结论是：main 已修正 AscendStore 接收登记与请求终止的错误耦合，固定方法对照也通过了这四类局部回归。它值得纳入 Ascend 异步 KV 的取消验收，但不构成任何 910 现场已受影响、所有后端已验证、或稳定版已交付的证明。可靠的发布判断应把代码、依赖、制品和实际命中的取消时序同时对齐。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "此次确认的是实时PR合入事实和三个标签文件的语义差异。GitHub API限流使完整DAG ancestry比较未完成，未核查任何容器digest或已安装wheel；不声明标签是否存在等效下游补丁。获取候选镜像后，仍须核对上述两处逻辑与回归测试。"
             }
           ]
         }
