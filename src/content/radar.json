@@ -5251,6 +5251,902 @@
   },
   {
     "schemaVersion": 1,
+    "id": "vllm-mamba2-checkpoint-logical-width",
+    "kind": "analysis",
+    "title": "vLLM Mamba2：缓存命中了，恢复的却是哪一段历史",
+    "summary": "PR #60797于10月13日合入main，修复投机槽扩宽后内部checkpoint的卷积历史错位。沿固定源码拆分逻辑窗口、物理容量和读取起点，提出旧缓存代际隔离及状态/数值分层验收；H20、Ascend和正式发行包含均待核对。",
+    "publishedAt": "2026-10-09",
+    "reviewedAt": "2026-10-15",
+    "topics": [
+      "vLLM",
+      "KV Cache",
+      "投机解码",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM PR #60797：创建与合入身份",
+        "url": "https://github.com/vllm-project/vllm/pull/60797",
+        "publishedAt": "2026-10-09",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "PR #60797 作者报告：定向回归及端到端错误计数",
+        "url": "https://github.com/vllm-project/vllm/pull/60797",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM PR #60797 作者 sungsooha",
+          "status": "attributed",
+          "note": "已阅读PR说明、改动文件和公开评论，核对作者的回归配置、记录复制任务、修复前后计数及限制。作者实验未独立复现；GPU型号和部署产物不能由PR合入状态推定。与第一来源是同一作品，不增加证据独立性或引用额度。"
+        },
+        "publishedAt": "2026-10-09",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定源码：checkpoint导出地址与逻辑长度",
+        "url": "https://github.com/vllm-project/vllm/blob/c7a305ec10f3ec06c2784f1258162483c5fc8d73/vllm/model_executor/layers/mamba/ops/ssd_checkpoint.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定源码：Mamba2状态分配与布局方向",
+        "url": "https://github.com/vllm-project/vllm/blob/c7a305ec10f3ec06c2784f1258162483c5fc8d73/vllm/model_executor/layers/mamba/mamba_utils.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定源码：prefill与update卷积读者",
+        "url": "https://github.com/vllm-project/vllm/blob/c7a305ec10f3ec06c2784f1258162483c5fc8d73/vllm/model_executor/layers/mamba/ops/causal_conv1d.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定源码：Mamba2 checkpoint调用者",
+        "url": "https://github.com/vllm-project/vllm/blob/c7a305ec10f3ec06c2784f1258162483c5fc8d73/vllm/model_executor/layers/mamba/mamba_mixer2.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定测试：checkpoint状态与页写入范围",
+        "url": "https://github.com/vllm-project/vllm/blob/c7a305ec10f3ec06c2784f1258162483c5fc8d73/tests/kernels/mamba/test_mamba2_checkpoint_state.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定配置：匹配粒度与共享前缀检查点开关",
+        "url": "https://github.com/vllm-project/vllm/blob/c7a305ec10f3ec06c2784f1258162483c5fc8d73/vllm/config/cache.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "PR #57329 作者说明：内部checkpoint与冷暖数值边界",
+        "url": "https://github.com/vllm-project/vllm/pull/57329",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM PR #57329 说明",
+          "status": "attributed",
+          "note": "已阅读PR完整说明，重点核对内部checkpoint目的、冷暖prefill计算形状差异及工具解析测试的边界。文中H200近似并列token翻转和其他硬件成绩属于作者报告；本轮未独立复现，不用其性能数字推断H20或Ascend。"
+        },
+        "publishedAt": "2026-09-17",
+        "accessedAt": "2026-10-14"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "PR #60797于2026-10-13 10:09:18 UTC合入main；原文创建日为10月9日，不能把合入日当成发布日期。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "固定调用者向checkpoint导出器显式传入conv_kernel_size−1；存储容量不再决定导出的历史窗口长度。",
+        "sourceIndices": [
+          2,
+          5
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "这是写入合同修复；若新读者继续复用旧生产者导出的错误状态，单独更换读取侧镜像不足以纠正历史。",
+        "sourceIndices": [
+          2,
+          4
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本文未独立运行模型或硬件实验；H20、Ascend、正式发行包含、跨代缓存及服务SLO仍待验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "命中的checkpoint是否同时具有正确的conv窗口、SSM状态和前缀截止位置？",
+      "实际镜像和缓存生产者是否都越过同一个修复边界？",
+      "如何把精确的状态复制检查与合理的冷暖浮点差异分开验收？"
+    ],
+    "related": [
+      {
+        "title": "Unified Radix Cache：命中边界",
+        "path": "/radar/unified-radix-cache/"
+      },
+      {
+        "title": "vLLM NIXL：传输之后的布局验收",
+        "path": "/radar/vllm-nixl-receive-layout/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-10-14核对PR #60797、公开评论、固定合并SHA的导出器/调用者/布局/读者/测试/配置，以及前序#57329说明。仅做公开资料静态研究；所有新实验、阈值和诊断流程均为原创待执行方案。未运行GPU/NPU或服务，无H20/Ascend实测，不声称正式发行已包含修复。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：先证明恢复的历史正确，再计算缓存收益",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "PR #60797创建于2026年10月9日07:27:00 UTC，10月13日10:09:18 UTC合入main；合并提交为c7a305ec10f3ec06c2784f1258162483c5fc8d73。本文10月14日核对源码，未核验任何正式发行或现网镜像已包含它。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对同时使用Mamba2、内部prefill checkpoint、前缀复用和投机解码的部署，应把这条变化列入正确性优先的升级检查。风险发生在“恢复后使用了哪一段历史”，因此缓存命中率、成功返回HTTP和较低TTFT都不足以宣布服务健康。先证明实际命中了目标checkpoint，再核对恢复状态，最后检查答案与延迟。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这是由写入端修复边界推出的运维风险：新进程不会自动把已经导出的错误历史改正确。若外部缓存、持久化层或旧实例仍能提供旧checkpoint，应给状态加生产者版本/代际，盘点并定向失效或隔离可疑状态。是否存在跨重启复用，要查实际架构；本文没有证实任何生产系统已受影响。",
+              "title": "最容易漏掉的上线动作：隔离旧checkpoint"
+            },
+            {
+              "type": "callout",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本文没有运行GPU/NPU实验。H20的真实内核路径、Ascend的对应实现与模型支持均待核对；合入main既不证明可在目标平台运行，也不证明已消除该平台的所有恢复错误。",
+              "title": "目标硬件结论仍为空白"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：一个命中点，需要两种状态共同表示同一段前缀",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                8
+              ],
+              "text": "#57329作者介绍：内部checkpoint从一次prefill的中间状态导出缓存，减少为边界单独切分forward。作者同时提醒，冷prefill与恢复后的尾部可能采用不同计算形状，曾观察到近似并列token翻转；因此两条路径的文本不保证逐位一致。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以把恢复合同写成四元组：前缀截止位置p、卷积历史C、递归状态R、状态所属的模型/层/分组/分片身份。p说明处理到哪里，C为紧邻p的局部历史，R代表此前序列的递归累积。只要其中一项属于另一时刻或另一身份，恢复就像把两段不同时间的录像接在一起：地址合法、张量形状正常，却不再表示同一个计算现场。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "投机解码使“能放多少状态”与“本次需要恢复多少历史”变成两个问题。为未来的验证或滑动更新预留空间，本身不意味着卷积依赖的历史变长。应分别记录分配长度、有效长度和读取起点，不能把一个shape字段当成三者共同的语义。这个区分同样适合审查混合模型中的环形缓冲、padding和跨设备布局转换。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "固定配置中，prefix_match_unit规定匹配边界粒度，不等于状态保存频率；共享前缀checkpoint还受前缀缓存、Mamba组EAGLE及粒度小于block等条件约束。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "据此，排障时应在真实token化之后记录“查到的最长前缀”和“最终实际恢复位置”。仅修改一个匹配参数然后观察错误消失，不能证明根因消失：它也可能只是让有问题的导出状态不再被选中。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：把逻辑窗口、物理行宽和读取起点分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                3,
+                5
+              ],
+              "text": "固定mamba_utils.py的Mamba2分配宽度为K−1+S，K为卷积核宽，S为投机槽数。修复后的导出函数接收必填state_len；mamba_mixer2.py传入K−1。导出内核用逻辑长度选择输入位置，同时沿conv_state的真实strides定位目标。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "固定causal_conv1d.py的prefill路径使用K−1项历史；update路径按accepted−1确定读起点，再取卷积窗口。这里不能把“每次update都从槽0读”当成恒真条件；后文示意只讨论首读起点为0的恢复情形。"
+            },
+            {
+              "type": "code",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创索引推导；只讨论有效checkpoint且输入历史足够长：\nK = 卷积核宽；W = K−1；S = 投机预留槽；P = W+S\nq = 当前请求在批内输入中的起点；p = 请求内checkpoint偏移\n正确槽j对应：x[q+p−W+j]，0≤j<W\n旧导出若用P选历史：x[q+p−P+j] = x[q+p−W+j−S]\n因此读者仍取前W槽时，每项都早S个输入位置。\nS=0时两种索引重合；这解释了无投机配置为何难以暴露此错位。",
+              "language": "text"
+            },
+            {
+              "type": "diagram",
+              "title": "原创机制图：容量扩大不应让历史向过去平移",
+              "caption": "原创非实测索引示意。K=4、S=3、p=40、q=0是教学取值；槽内数字表示输入激活的位置。两条路径有相同物理宽度和首读窗口，只改变checkpoint写入的逻辑长度。尾部灰区不代表已清零；图中没有端到端成功或硬件适配保证。 示意明确假定恢复首读起点为0；不表示所有后续update都从槽0读。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "prefix",
+                  "label": "同一个合成checkpoint：p=40",
+                  "detail": "原创索引示意：忽略批内起点，q=0；x_t是第t个卷积前激活向量，不是token ID。逻辑历史W=3，物理容量P=6，输入范围足够长。数字仅帮助检查索引，非实测。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "前缀边界",
+                  "subtitle": "K=4，S=3",
+                  "tone": "compute"
+                },
+                {
+                  "id": "old-write",
+                  "label": "旧写入长度误取P=6",
+                  "detail": "教学旧路径：按物理容量取x_34至x_39，顺序写进6个槽。该路径用于表现旧实现的索引结果，不代表线上抓取的张量。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "旧导出",
+                  "subtitle": "窗口起点34",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-state",
+                  "label": "旧槽位：[34,35,36 | 37,38,39]",
+                  "detail": "数字是激活的输入位置标签。竖线只标示读者的逻辑窗口边界；物理上仍是一行。正确最近历史虽出现在后部，但首读窗口仍落在前部。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "旧状态行",
+                  "subtitle": "前三区间偏旧",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-read",
+                  "label": "首窗口拿到34、35、36",
+                  "detail": "在读者从槽0取3项的前提下，实际读取位置比目标37、38、39分别早3步。此图止于状态错误，不承诺每次都产生可见错误答案。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "旧首读",
+                  "subtitle": "偏旧3步",
+                  "tone": "danger"
+                },
+                {
+                  "id": "new-write",
+                  "label": "修复写入逻辑W=3",
+                  "detail": "教学新路径：选择最近3项；物理地址步长仍按原行布局计算。扩大可分配槽数不应改变这一时间窗口。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "新导出",
+                  "subtitle": "窗口起点37",
+                  "tone": "control"
+                },
+                {
+                  "id": "new-state",
+                  "label": "新槽位：[37,38,39 | 保留原值]",
+                  "detail": "尾部不是强制归零。图中的保留原值表示本次checkpoint导出不写该区域；尾部何时可被后续路径读写，必须按实际恢复与投机更新生命周期验证。",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "新状态行",
+                  "subtitle": "尾部不写入",
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-read",
+                  "label": "首窗口拿到37、38、39",
+                  "detail": "在同一首读前提下，最近历史位置正确。SSM状态、目标block身份、后续更新、任务答案和平台支持是另外的验收项，不由这一箭头自动证明。",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "新首读",
+                  "subtitle": "历史身份吻合",
+                  "tone": "compute"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "prefix",
+                  "to": "old-write",
+                  "label": "旧路径：用物理容量选择历史"
+                },
+                {
+                  "from": "old-write",
+                  "to": "old-state",
+                  "label": "写入全部6个槽"
+                },
+                {
+                  "from": "old-state",
+                  "to": "old-read",
+                  "label": "首读只消费槽0至2"
+                },
+                {
+                  "from": "prefix",
+                  "to": "new-write",
+                  "label": "修复路径：用逻辑宽度选择历史"
+                },
+                {
+                  "from": "new-write",
+                  "to": "new-state",
+                  "label": "只写前3个槽，保留实际strides"
+                },
+                {
+                  "from": "new-state",
+                  "to": "new-read",
+                  "label": "相同首读窗口"
+                }
+              ],
+              "presentation": {
+                "kind": "conv-checkpoint-window",
+                "panels": [
+                  {
+                    "title": "共同输入与宽度",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "prefix"
+                    ]
+                  },
+                  {
+                    "title": "旧导出：物理宽度误作历史",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-write",
+                      "old-state",
+                      "old-read"
+                    ]
+                  },
+                  {
+                    "title": "修复：只导出逻辑窗口",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "new-write",
+                      "new-state",
+                      "new-read"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "图中故意把时间标签写进状态槽，而不是把浮点数画出来。观察数值差可能被小幅噪声、相似输入或后续计算掩盖；观察“这一槽应该代表第几个输入激活”则直接测试合同。工程测试可给合成激活编码位置与通道，使错误呈现为可定位的索引偏移，随后再用真实随机张量验证数据通路。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次应修复的是语义长度，不是删掉预留容量。若把物理行也缩成W，可能改变后续投机更新的空间合同；若保持写满P只把读者右移S，又会改变其他写入者的读法。较窄的接口让调用者明确提供语义长度，避免以存储细节反推时间含义。这是本文对接口设计的解读，不能替代全部调用链回归。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据：源码、定向测试和作者端到端观察分开记账",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "代码证据覆盖的是哪些合同",
+              "columns": [
+                "证据位置",
+                "已读到的事实",
+                "仍未被该事实证明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "ssd_checkpoint.py，64–118行",
+                    "state_len变为必填参数，未再从目标shape推导。",
+                    "目标镜像已带入修复。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "mamba_mixer2.py，883–894行",
+                    "内部checkpoint调用传入conv_kernel_size−1。",
+                    "其他模型或替代后端也走这一调用。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "test_mamba2_checkpoint_state.py，117–169行",
+                    "测试交叉覆盖spec_slots=0/3与两种布局，核对有效conv窗口、未写尾槽、SSM源行和页padding。",
+                    "测试已在H20/Ascend执行，或覆盖任意投机长度。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "同文件，70–114行",
+                    "独立prefix与中间SSM状态的比较采用atol=8e−3、rtol=5e−3。",
+                    "这一float32小测试阈值可直接用于所有生产dtype。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "PR作者报告：本文件8项GPU测试修复后通过；旧实现只在有投机槽的两种布局失败。端到端记录复制实验中，7草稿本地重发错误由8/24变为0/24，NIXL P/D重发由13/24变为0/24。结果属于作者观察，本文未复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "作者的端到端设置含Mamba2混合模型、一个MTP层、align缓存、FP8 KV、温度0与关闭thinking；作者报告检查了实际恢复位置，并声称KV容量和重发延迟未变。具体模型、硬件、环境与置信区间不足以由这段描述完整重建。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "评估证据强度时，分母应与问题匹配。几次相同长前缀的重发能很好地检测稳定复现的缓存缺陷，却不等价于同样数量的独立任务、模型和负载覆盖；“本批0错”也不是一般错误概率为0。最有价值的正向证据是：原来会失败的具体状态合同现在满足，而且命中路径与对照路径的差异可定位。"
+            },
+            {
+              "type": "callout",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本轮已读公开评论，但没有核验完整CI日志与每个作业的终态。本文的“8项通过”明确归于作者报告。CI选择建议、审阅赞同和合入状态都不替代目标机器上的回归。",
+              "title": "没有把CI触发消息当成通过证明"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：哪些部署应优先处理，哪些结论不能外推",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议的排期和限制；均为本文运维判断",
+              "columns": [
+                "部署情况",
+                "建议动作",
+                "取舍或限制"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "Mamba2 + 投机 + 真实内部checkpoint恢复",
+                    "优先建立修复前后配对回归，再决定上线。",
+                    "只看模型名称或启用prefix cache不足以确认走到目标路径。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "没有投机，或没有内部checkpoint恢复",
+                    "保留为升级审查项；验证控制组。",
+                    "不把“缺少触发条件”写成所有缓存路径都无缺陷。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20上运行该组合",
+                    "记录实际backend、dtype、编译产物和恢复链路，在隔离实例执行矩阵。",
+                    "本文没有H20可用性、收益或错误率数据。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Ascend上计划使用相似混合模型",
+                    "先确认模型和投机/缓存组合是否支持，再找到实际导出器与读者。",
+                    "若不是同一实现，只能迁移状态合同测试，不能宣称本PR已修复Ascend。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "无法及时上线修复但已有可重复错误",
+                    "在隔离环境评估关闭投机或绕过相关缓存路径，并由服务方批准取舍。",
+                    "可能牺牲吞吐或TTFT；不能同时改多个开关再把收益归给单一因素。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "跨实例、跨版本、持久化缓存",
+                    "在上线计划中加入生产者版本与缓存代际隔离。",
+                    "失效会带来冷启动压力；粒度过大可能造成不必要重算。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要把“kernel少写了几个槽”直接折算成吞吐提升。总请求成本还包括计算、调度、命中选择与传输，较短写入也可能不改变启动网格或关键路径。更重要的收益是恢复合同正确。性能检查应在正确性已通过的相同工作负载上进行，并保持输出长度、接受率和缓存状态可比。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "状态尾部未写不等于“尾部内容随时无关”。读者可见区会随接受计数和后续更新移动，因此还需要证明恢复首步之前不消费未定义尾部，以及之后的消费者只读取已有效化的区域。最有效的补充测试是给尾部放非零哨兵或毒化模式，追踪首次读取与首次写入，而不是以零初始化掩盖非法依赖。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、生产诊断：把安静的状态错误变成可判别的证据",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下为原创故障假设，不是作者报告的新增事故。日志优先记录合成任务标识、位置、长度、状态版本和摘要；真实用户激活与完整提示词不应为了排障默认落盘。诊断插桩会改变调度和性能，因此先在隔离环境验证，性能测量时另开低扰动观测组。"
+            },
+            {
+              "type": "table",
+              "caption": "症状只能提出假设，状态身份才是归因依据",
+              "columns": [
+                "原创假设",
+                "应收集的证据",
+                "能区分的相邻问题"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "只有warm hit错，冷请求正常",
+                    "恢复位置p、生产者版本、W/P、首读起点、conv有效区与参考切片比较。",
+                    "区分历史错位与普通生成随机性；温度0仍不足以排除数值差。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "关投机后错误消失",
+                    "同一prefix、同一checkpoint位置的S=0与S>0配对；禁止把无命中当成通过。",
+                    "区分真正的槽宽相关错误与开关改变了路由/命中。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "同一请求跨PD才错",
+                    "导出、接收后、首次消费前分别记录有效状态摘要及block/group身份。",
+                    "源端已经错指向导出；传前正确传后错误才支持布局/传输方向排查。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "少数长度或边界附近更易错",
+                    "按实际p、尾部长度、block边界和匹配粒度分桶，保留未命中样本。",
+                    "区分恢复落点覆盖不足、错误checkpoint被选择与纯长度压力。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "换新镜像后偶发旧症状",
+                    "读取侧镜像身份、写入侧身份、缓存代际和旧状态来源。",
+                    "区分修复未包含、旧状态复用、灰度混用和新的独立缺陷。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "conv窗口正确但答案仍错",
+                    "同p的SSM参考、层/组/分片映射、首次差异层和受控logit比较。",
+                    "不能把所有混合模型错误都归给这一处conv导出。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若无法证明请求实际恢复自内部checkpoint，就先修复观测或构造负载；不要继续扩大性能压测。若状态身份失败，立即保留最小合成复现，停止把该配置用于正确性放量，直到有明确修复或经过批准的绕行方案。",
+              "title": "归因停止线"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、实验矩阵：先做状态见证，再做真实服务配对",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下均为待执行方案。本轮只读公开源码与测试，没有运行vLLM、GPU/NPU、NIXL或模型服务。建议基线固定为修复提交的第一父提交，实验组固定为本次合并SHA；父提交身份需在实施前核对，不能用不断变化的main充当对照。两组使用相同模型权重、tokenizer、编译依赖与生成参数。"
+            },
+            {
+              "type": "table",
+              "caption": "分层矩阵，按依赖顺序执行；后层失败可回溯前层",
+              "columns": [
+                "层次",
+                "变量与样本",
+                "最少观测",
+                "待建立的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "0 产物与路径",
+                    "基线/修复；H20/Ascend分别登记支持状态；选定实际backend。",
+                    "镜像digest、代码SHA、实际调用者/导出器/读者、依赖版本。",
+                    "确实比较了目标代码；不支持的组合明确标记阻塞。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "1 导出合同",
+                    "S=0/1/3/实际配置；两种布局；非连续输入；多请求不同q/p。",
+                    "位置编码激活、目标dtype参考、目标块、未选块、SSM页与padding。",
+                    "前W槽取最近历史；其他不该写区域原样保持。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "2 恢复和投机更新",
+                    "首读起点0；实际接受数范围；尾部非零哨兵；至少两轮更新。",
+                    "逐步读写有效区、首步输出、接受计数和状态滑动参考。",
+                    "未定义尾部不被过早消费；后续状态没有因首次修复而错位。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "3 真实checkpoint覆盖",
+                    "默认/细匹配粒度；block前后；共享前缀开/关；不同尾部长度。",
+                    "实际命中p、恢复来源、checkpoint是否导出与被选中。",
+                    "每个必测桶有真实恢复，而不是只证明请求可以成功。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "4 单实例任务正确性",
+                    "合成记录复制、键值检索、结构化字段任务；冷/暖；投机开/关。",
+                    "任务精确答案、conv/SSM参考、首差异层、受控logit误差。",
+                    "状态修复对应任务正确；合理浮点差与语义错误分开。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "5 传输与旧状态",
+                    "仅实际支持的PD/offload链路；新写新读、旧写新读、跨代隔离。",
+                    "源端/目的端摘要、生产者代际、是否正确拒用不合格状态。",
+                    "不把源码修复误当成旧状态自动修复。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "6 服务负载",
+                    "低并发到生产目标并发；冷启动、稳定warm、缓存压力分别测。",
+                    "错误率、TTFT/TPOT分位、有效输出吞吐、重算量和命中覆盖。",
+                    "正确性通过后，量化切换与失效的真实服务成本。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "矩阵不必做完全笛卡尔积。先用位置编码的廉价导出测试覆盖全部索引和布局，再对高风险组合运行昂贵模型任务；每个最终结论必须能追溯到对应路径。设备只提供其他backend时，复用同一状态合同和任务语料，但另立基线，不把它混进CUDA实现的通过率。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "计划为合成记录任务至少准备300个不同前缀族，每族包含多种恢复边界与数次warm重发。重复发送用于覆盖状态生命周期，统计时以独立前缀族分组报告，避免把相关请求当独立样本。该数量只是第一阶段建议，不是充分质量保证；关键任务或更低错误率目标应事先扩大样本与持续观察期。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、验收：复制状态可精确，浮点推理须受控，任务答案要正确",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "推荐把验收拆成结构、数值、业务、服务四层，并在实验前冻结标准。结构层失败不允许被业务均分掩盖；任务答案错误不允许被低延迟抵消。下表是本文建议的预定义门槛，尚未在任何硬件上满足。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议验收合同；阈值必须随目标环境留档",
+              "columns": [
+                "指标",
+                "口径",
+                "预定义通过条件",
+                "失败处理"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物和命中证据",
+                    "必测桶中的实际目标路径与checkpoint恢复次数。",
+                    "所有必测桶有有效恢复样本；版本、backend和生产者代际可追溯。",
+                    "无命中桶记为未覆盖，不记通过。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "conv历史身份",
+                    "前W槽对比相同目标dtype下的参考激活窗口。",
+                    "合法有限输入逐元素一致；写入范围与时间索引完全相符。",
+                    "优先定位长度、q/p、stride和block身份。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "写入隔离",
+                    "未选请求、预留尾槽、SSM页padding的前后快照。",
+                    "所有非目标区域不变；尾部使用非零哨兵补充零初始化测试。",
+                    "停止后续放量，定位越界或错误目标页。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "SSM与受控数值",
+                    "同前缀参考、相同dtype/形状控制组；单独标注冷暖形状不同组。",
+                    "预先按dtype和模型冻结atol/rtol及异常值规则；同时查最大误差和高分位，不能事后放宽。",
+                    "追踪首差异层；不凭不同greedy字符串直接判本缺陷复发。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "任务精确正确性",
+                    "合成任务按标准答案逐字段判定；错误任务/任务总数，按前缀族分组。",
+                    "首阶段计划集零结构错误、零错误字段；记录所有失败及零错误样本的统计限制。",
+                    "任何确认的状态错误停止放量；数值相关答案错误另建最小复现。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "一般生成质量",
+                    "同一评测集、语料版本和生成预算，区分冷/暖与命中桶。",
+                    "上线前冻结非劣界和置信区间方法；不能以逐字同输出替代任务质量评估。",
+                    "低于非劣界则暂缓；定位数值或其他计算路径。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务成本",
+                    "仅统计正确请求；按冷/暖、并发分桶的TTFT/TPOT及有效输出吞吐。",
+                    "建议试点门槛：p95延迟回退不超过5%，正确输出吞吐下降不超过3%，并满足既有SLO；实施前由服务方冻结。",
+                    "先查命中分布、输出长度、接受率和冷启动量，不回退到已知错误配置换速度。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "缓存代际安全",
+                    "修复读者面对旧生产者状态的处置记录。",
+                    "不合格状态被拒用/失效或隔离；新的可复用状态具有可核对来源。",
+                    "暂停跨代共享；评估冷启动压力后再恢复。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "结构复制测试可以要求严格相等，因为它验证的是取对位置、搬对数据。完整模型的冷暖执行可能改变浮点运算次序；逐字差异需结合任务答案、状态合同和受控数值对照判断。另一方面，“浮点允许不同”也绝不是接受错误字段或历史错位的理由。",
+              "title": "为什么不要求所有冷暖greedy文本逐字相同"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、待验证：从main上的窄修复，到可承担责任的上线结论",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "发行与镜像：尚未建立任何正式release/tag、wheel或现网镜像包含此合并提交的证据。部署前检查提交可达性与实际文件，记录构建身份。",
+                "H20：没有目标机器上的模型启动、编译、状态回归、量化配置或服务指标；不得将“GPU测试通过”改写为H20通过。",
+                "Ascend：尚未核对目标模型、投机方法、checkpoint及分离式部署组合的支持状态，也未证明采用相同导出器；没有NPU实验结果。",
+                "跨代缓存：写入端修复不能推出外部状态已正确。实际是否会复用旧checkpoint、如何定向失效与冷启动代价，都须架构核对和实验。",
+                "后续消费者：本轮没有运行尾部哨兵、接受计数扫描和多轮更新，不能把“导出没有写尾部”直接升级为完整生命周期安全证明。",
+                "其他实现：不把Mamba2结论推广到KDA/GDN、替代kernel或所有混合模型；共享框架名称不能替代逐路径状态合同。",
+                "作者实验复现：PR提供了任务和配置描述，但本轮没有独立执行，也未核验完整CI终态、环境可重建性或统计置信区间。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "当前可以采取的稳妥动作是建立清单：先找实际使用这条恢复路径的服务，再准备合成状态测试与代际隔离方案。只有产物、路径、状态、任务和服务成本五项证据闭合，才把这条main变更升级为本部署的上线依据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "2026-10-15追加版本核查：#60797的merge SHA仍为c7a305ec10f3ec06c2784f1258162483c5fc8d73。公开PR时间线在Oct14增加v0.32.0 cherry picks里程碑及关联提交活动；这些是回移跟踪证据，不是正式版本已包含的证明。原先的目标tag、wheel和镜像包含核查仍保持待验证。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-ascend-lookup-rpc-liveness",
     "kind": "analysis",
     "title": "vLLM Ascend：缓存查询失败，调度权何时归还",
