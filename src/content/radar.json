@@ -5842,9 +5842,9 @@
     "id": "mooncake-rdma-sparse-completion",
     "kind": "analysis",
     "title": "Mooncake RDMA 稀疏完成通知：省下 CQE，不省掉结算责任",
-    "summary": "#4542已在10月10日合入main。以同机H20作者实验为入口，解释classic RDMA的信号间隔、FIFO退休与最坏CQ容量责任；跨机P/D、实际产物和故障恢复均待验证。",
+    "summary": "#4542已在10月10日合入main。以同机H20作者实验为入口，解释classic RDMA的信号间隔、FIFO退休与最坏CQ容量责任；跨机P/D、实际产物和故障恢复均待验证。 10月15日增补#4569：终态发布前保活、延期释放契约与待验矩阵；不外推制品发布或H20收益。",
     "publishedAt": "2026-10-09",
-    "reviewedAt": "2026-10-13",
+    "reviewedAt": "2026-10-15",
     "topics": [
       "GPU 通信",
       "故障分析",
@@ -5986,6 +5986,57 @@
         "title": "Mooncake · 固定batch释放门与EDC条件",
         "url": "https://github.com/kvcache-ai/Mooncake/blob/23c15baedbcae702b7883d8c98cb63c2170ab001/mooncake-transfer-engine/src/multi_transport.cpp",
         "accessedAt": "2026-10-13"
+      },
+      {
+        "title": "10月15日复核 · Mooncake发布目录",
+        "url": "https://github.com/kvcache-ai/Mooncake/releases",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "#4569 · 合并事件与修复范围",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4569",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "#4569 · 作者测试与限制",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4569",
+        "review": {
+          "category": "community",
+          "publisher": "Mooncake PR #4569 作者",
+          "status": "attributed",
+          "note": "从官方仓库闭合PR列表读取完整正文及合并元数据，核对固定源码；作者测试未独立执行，无本站H20/RDMA实测。"
+        },
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · 回调保活与终态发布",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/5c82be77867070b2cb1de4ddf74a8770fb68d57f/mooncake-transfer-engine/include/transport/transport.h",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · 直接Transport释放准入",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/5c82be77867070b2cb1de4ddf74a8770fb68d57f/mooncake-transfer-engine/src/transport/transport.cpp",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · 延迟清理和失效句柄",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/5c82be77867070b2cb1de4ddf74a8770fb68d57f/mooncake-transfer-engine/src/multi_transport.cpp",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · TCP任务归属",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/5c82be77867070b2cb1de4ddf74a8770fb68d57f/mooncake-transfer-engine/src/transport/tcp_transport/tcp_transport.cpp",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定测试 · 回调静默后回收",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/5c82be77867070b2cb1de4ddf74a8770fb68d57f/mooncake-transfer-engine/tests/transport_uint_test.cpp",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定测试 · TCP写可见性",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/5c82be77867070b2cb1de4ddf74a8770fb68d57f/mooncake-transfer-engine/tests/tcp_write_visibility_test.cpp",
+        "accessedAt": "2026-10-15"
       }
     ],
     "claims": [
@@ -6035,7 +6086,7 @@
     ],
     "report": {
       "version": 1,
-      "scope": "资料事件窗口2026-10-10 03:00至2026-10-11 02:44 UTC；公开源码和页面查阅于10月11日。仅公开研究，未安装制品、未运行任何GPU/RDMA/provider或服务实机实验。PR首发10月9日，窗口内新事件是合入。固定源码559f83cb73eb870d208a8d4f333b1a24ee992f26；机制图为原创非实测。 10月13日增补核验窗口为2026-10-12 02:46至2026-10-13 02:51 UTC；增补固定23c15baedbcae702b7883d8c98cb63c2170ab001的Slice::task发布边界及仍未结算的回调保活问题。原文及原12来源保留。",
+      "scope": "资料事件窗口2026-10-10 03:00至2026-10-11 02:44 UTC；公开源码和页面查阅于10月11日。仅公开研究，未安装制品、未运行任何GPU/RDMA/provider或服务实机实验。PR首发10月9日，窗口内新事件是合入。固定源码559f83cb73eb870d208a8d4f333b1a24ee992f26；机制图为原创非实测。 10月13日增补核验窗口为2026-10-12 02:46至2026-10-13 02:51 UTC；增补固定23c15baedbcae702b7883d8c98cb63c2170ab001的Slice::task发布边界及仍未结算的回调保活问题。原文及原12来源保留。 10月15日03:31 UTC增补#4569（10月14日合入），仅公开PR元数据、固定源码和测试阅读；保留原20来源、全部正文及3图。无实机实验、无发布。",
       "sections": [
         {
           "id": "conclusion",
@@ -6076,6 +6127,20 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "本次继续更新同一结算主题。原子发布让完成端有明确的指针读取契约，却不能替代对象保活；不能把它写成全部异步释放风险已修复，也不据此建议立即扩大信号间隔。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                21
+              ],
+              "text": "10月15日增补：#4569于10月14日08:02:14 UTC合入，固定提交5c82be77867070b2cb1de4ddf74a8770fb68d57f。此前列为未决的“终态已发布、回调仍在访问对象”现在有对应修复；历史章节描述的是10月13日状态，本次增补更新这项状态，不删除历史证据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议把该提交纳入生命周期回归候选，而非直接增大MC_RDMA_SIGNAL_INTERVAL。#4391解决指针发布，#4569解决发布终态后的对象保活；两个条件不可相互替代。仍未证明GPU缓冲区复用、跨机P/D交接或真实provider错误路径安全。"
             }
           ]
         },
@@ -6163,6 +6228,22 @@
                 9
               ],
               "text": "10月13日发布目录仍以v0.3.14-rc1为最新预发布条目，PyPI当前版本仍为0.3.13.post1；本轮没有证据证明目标wheel或用户镜像包含10月12日提交。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                20
+              ],
+              "text": "核验截至2026-10-15 03:31 UTC。GitHub发布目录最新仍为v0.3.14-rc1；没有此次修复已进入目标wheel或服务镜像的证明。本文继续保留原发布日期。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                22
+              ],
+              "text": "作者报告默认构建和事件驱动完成构建的回归检查通过，并报告未修复版本可复现ASan释放后使用。本轮只做源码核对，没有运行这些测试；作者结果不构成H20或真实RDMA验证。"
             }
           ]
         },
@@ -6765,6 +6846,153 @@
                   }
                 ]
               }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                23
+              ],
+              "text": "新实现先在markSuccess、markFailed与sealTaskSubmission入口持有回调pin，再发布完成计数并调用finishIfComplete；退出作用域时减少pin。active_completion_callbacks不再限于事件驱动完成构建。其前提仍是每个slice只发布一次终态；它不是任意悬空指针的通用修复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                24,
+                25
+              ],
+              "text": "直接Transport释放检查任务完成和pin归零；MultiTransport把忙碌批次交给延迟清理，并返回BatchCleanupDeferred。这一返回已经使调用者的BatchID失效，不是鼓励调用者继续查询该句柄。两种入口的重试所有权不同，包装层必须分别处理。"
+            },
+            {
+              "type": "diagram",
+              "title": "10月15日增补：终态通知与对象可释放是两道门",
+              "caption": "原创生命周期示意，非实测时序。左到右表示逻辑事件；上下为旧风险与候选保护。仅下轨MultiTransport忙则移交并失效句柄；直接Transport返回BatchBusy仍由调用方持有并重试。未声称GPU数据同步或缓冲区重用安全。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-publish",
+                  "label": "发布终态",
+                  "detail": "旧路径：完成计数可被等待方观察",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "发布终态"
+                },
+                {
+                  "id": "old-free",
+                  "label": "提前释放",
+                  "detail": "旧路径：等待方据终态尝试回收描述符",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "提前释放"
+                },
+                {
+                  "id": "old-access",
+                  "label": "回调继续访问",
+                  "detail": "旧路径：仍读取task或batch，存在竞态窗口",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "回调继续访问"
+                },
+                {
+                  "id": "old-risk",
+                  "label": "释放后使用风险",
+                  "detail": "教学风险分支，并非每次必现",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "释放后使用风险"
+                },
+                {
+                  "id": "new-pin",
+                  "label": "先取得pin",
+                  "detail": "候选路径：终态发布前保活",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "先取得pin"
+                },
+                {
+                  "id": "new-publish",
+                  "label": "发布并处理完成",
+                  "detail": "pin覆盖完成处理和回调退栈",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "发布并处理完成"
+                },
+                {
+                  "id": "new-defer",
+                  "label": "MultiTransport延期",
+                  "detail": "MultiTransport调用方句柄失效，由其清理线程接管；不表示直接Transport也移交所有权",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "MultiTransport延期"
+                },
+                {
+                  "id": "new-drain",
+                  "label": "归零后释放",
+                  "detail": "任务终态且全部pin归零才释放",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "归零后释放"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-publish",
+                  "to": "old-free",
+                  "label": "等待方观察"
+                },
+                {
+                  "from": "old-free",
+                  "to": "old-access",
+                  "label": "可能并发"
+                },
+                {
+                  "from": "old-access",
+                  "to": "old-risk",
+                  "label": "访问已释放对象"
+                },
+                {
+                  "from": "new-pin",
+                  "to": "new-publish",
+                  "label": "先保活"
+                },
+                {
+                  "from": "new-publish",
+                  "to": "new-defer",
+                  "label": "释放尝试遇pin"
+                },
+                {
+                  "from": "new-defer",
+                  "to": "new-drain",
+                  "label": "等待回调退栈"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧风险：通知早于回调结束",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-publish",
+                      "old-free",
+                      "old-access",
+                      "old-risk"
+                    ]
+                  },
+                  {
+                    "title": "候选保护：先保活再通知",
+                    "tone": "control",
+                    "nodeIds": [
+                      "new-pin",
+                      "new-publish",
+                      "new-defer",
+                      "new-drain"
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
@@ -6950,6 +7178,72 @@
                 19
               ],
               "text": "上表前两行对应固定补丁、提交/完成调用链及#4391合入页面；28 checks passed为页面可见状态，未核查每项作业硬件覆盖，也没有在目标环境执行。后两行为参与者陈述和建议，其证据身份与前两行不同。"
+            },
+            {
+              "type": "table",
+              "caption": "10月15日新增证据，不替代原稀疏CQ证据",
+              "columns": [
+                "位置",
+                "核对所得",
+                "不能推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "transport.h",
+                    "三个终态相关入口先建立pin；计数不受EDC条件编译限制",
+                    "所有生命周期风险均已消失"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    23
+                  ]
+                },
+                {
+                  "cells": [
+                    "transport.cpp",
+                    "直接释放须等待任务结束及回调计数归零",
+                    "直接调用者可忽略BatchBusy"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    24
+                  ]
+                },
+                {
+                  "cells": [
+                    "multi_transport.cpp",
+                    "延期时句柄失效；非Busy永久错误退出重试队列",
+                    "永久错误对应对象一定已释放"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    25
+                  ]
+                },
+                {
+                  "cells": [
+                    "TCP提交",
+                    "设置task.batch_id，使直接传输也关联保活对象",
+                    "TCP数据与GPU消费之间的同步已验证"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    26
+                  ]
+                },
+                {
+                  "cells": [
+                    "回调静默单测",
+                    "构造已完成但仍持pin的批次，先延期、清pin后等回收",
+                    "实网所有竞态均已穷尽"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    27
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -6996,6 +7290,12 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "未测量seq_cst发布的成本。不能把多一次同步原语等同可见吞吐回退，也不能拿#4542原H20微基准替本次新构建背书；性能和正确性需要同构对照。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "pin增加原子计数操作；延期队列把立即释放转化为稍后回收。应同时观察峰值在途对象、队列驻留和回收速率，而不只看吞吐。低负载时看不见的回收积压，在高并发错误风暴中可能变成内存压力。这里是风险假设，尚无性能测量。"
             }
           ]
         },
@@ -7032,6 +7332,12 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "先确定classic/TENT、RDMA/TCP和EDC开关实际命中路径。TCP ACK问题的证据可用于设计保活测试，不能自动扩大为所有H20 RDMA部署均有同一现场故障。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "新增诊断顺序：先区分接口返回的BatchBusy与BatchCleanupDeferred，再查重复句柄使用、pin是否归零和清理错误。若只见ECONNRESET但无内存错误证据，不能把所有TCP断连都归因于本次UAF。为每批记录创建、终态、移交、最终释放四个时点，业务成功与资源回收分开记账。"
             }
           ]
         },
@@ -7188,6 +7494,53 @@
                   "sourceIndices": []
                 }
               ]
+            },
+            {
+              "type": "table",
+              "caption": "新增实验矩阵：建议实施，均未执行",
+              "columns": [
+                "维度",
+                "注入或对照",
+                "观测"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "构建模式",
+                    "固定旧SHA与候选SHA；EDC关闭/开启；ASan开启/关闭",
+                    "同一用例可复现旧失败，候选无非法访问"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "入口与终态",
+                    "直接Transport与MultiTransport；成功/失败/提交封口并发",
+                    "返回值契约、唯一回收、无释放后查询"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "清理压力",
+                    "延迟回调、并发释放、永久错误和带在途回调关闭",
+                    "pin峰值、延期驻留、残留对象与错误日志"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20集成",
+                    "实际RDMA provider及TCP；interval=1与已授权候选值分组",
+                    "逐字节正确性、CPU、内存、SLO内goodput"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
             }
           ]
         },
@@ -7327,6 +7680,53 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "任何UAF、重复完成、KV错误或释放账本失配都停止扩大候选。回滚到已验证完整构建，并记录它仍可能带回的旧问题；不以调整信号间隔声称能修复所有权缺口。"
+            },
+            {
+              "type": "table",
+              "caption": "新增验收：先冻结口径，再运行",
+              "columns": [
+                "门槛",
+                "建议判据",
+                "失败处理"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "内存正确性",
+                    "目标压力时长内ASan零UAF/双释放；旧版负对照有诊断价值",
+                    "停止扩大候选范围"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "接口所有权",
+                    "Deferred后零句柄复用；直接Busy由其持有者按契约处理",
+                    "修复调用层并重跑"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可回收性",
+                    "停止提交且全部回调退出后，延期批次与待释放对象归零",
+                    "保存对象清单，不能只凭队列归零通过"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务表现",
+                    "预先冻结TTFT/ITL分位、goodput、内存预算和允许退化，重复对照",
+                    "未达预算回到固定基线与interval=1"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
             }
           ]
         },
@@ -7352,6 +7752,12 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "下一步只结算明确未知：后续nightly是否在含4391的确切SHA上通过、#4556是否有独立保活修复、实际制品是否包含补丁，以及目标H20服务的正确性与SLO。新的nightly成功也只覆盖其测试范围。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "旧文“回调保活仍未结算”作为10月13日历史观察保留；当前已核对#4569对应实现，但是否进入目标制品、实网竞态、取消/关闭、GPU缓冲区责任链、H20收益仍待验证。GitHub API后续详情读取受到速率限制，未刷新#4556/#4568的独立issue状态，因此不声称issue已经关闭。"
             }
           ]
         }
