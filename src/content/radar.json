@@ -1,6 +1,697 @@
 [
   {
     "schemaVersion": 1,
+    "id": "delta-tokenizer-front-end-boundaries",
+    "kind": "analysis",
+    "title": "Delta Tokenizer：KV命中之后，CPU入口还在等待什么",
+    "summary": "从10月14日新论文出发，区分输入ID契约、入口排队、模型准入与可获取制品；给出H20/SGLang及NPU前端的拟议诊断和验收，不承诺目标硬件收益。",
+    "publishedAt": "2026-10-14",
+    "reviewedAt": "2026-10-15",
+    "topics": [
+      "SGLang",
+      "服务调度",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Delta Tokenizer v1：论文与补充材料",
+        "url": "https://arxiv.org/html/2610.19801v1",
+        "review": {
+          "category": "paper",
+          "publisher": "arXiv",
+          "status": "attributed",
+          "note": "核对10月14日v1正文、§4.5–4.6及S6.7；仅陈述作者实验与交付声明，不独立复现。摘要页提交时间08:44:46 UTC。",
+          "peerReview": "preprint"
+        },
+        "publishedAt": "2026-10-14",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "TokTier v0.2.9 Rust API",
+        "url": "https://github.com/asu-idi/toktier/blob/v0.2.9/docs/rust-api.md",
+        "review": {
+          "category": "community",
+          "publisher": "asu-idi/toktier",
+          "status": "attributed",
+          "note": "下载读取正式标签文档的Delta-native sessions和Construction章节；未编译或运行。此接口文档不能证明论文适配器已经公开。"
+        },
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "TokTier v0.2.9 Rust生命周期",
+        "url": "https://github.com/asu-idi/toktier/blob/v0.2.9/docs/rust-lifecycle.md",
+        "review": {
+          "category": "community",
+          "publisher": "asu-idi/toktier",
+          "status": "attributed",
+          "note": "下载读取并发和批处理部分；区分现有运行时文档与论文中待发布的实现。未验证调度公平性或取消时限。"
+        },
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "TokTier v0.2.9 README",
+        "url": "https://github.com/asu-idi/toktier/blob/v0.2.9/README.md",
+        "review": {
+          "category": "community",
+          "publisher": "asu-idi/toktier",
+          "status": "attributed",
+          "note": "读取现有产品路由策略与安装范围；仅用来划清已公开产品和新论文的关系，不复述宣传性能。"
+        },
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "Delta Tokenizer v1摘要页与代码交付说明",
+        "url": "https://arxiv.org/abs/2610.19801v1",
+        "review": {
+          "category": "paper",
+          "publisher": "arXiv",
+          "status": "attributed",
+          "note": "核对提交日期及Comments中的待发布范围；与全文为同一作品，改写预算合并，不能视作独立实验来源。",
+          "peerReview": "preprint"
+        },
+        "publishedAt": "2026-10-14",
+        "accessedAt": "2026-10-15"
+      }
+    ],
+    "claims": [
+      {
+        "status": "inference",
+        "text": "迁移价值首先是入口分层观测与输入一致性验收，目标硬件收益尚未测量。",
+        "sourceIndices": []
+      },
+      {
+        "status": "pending",
+        "text": "完整论文链路能否在目标栈复现，须先取得缺失制品并进行隔离测试。",
+        "sourceIndices": [
+          4
+        ]
+      }
+    ],
+    "questions": [
+      "长请求是否真正进入了模型？",
+      "输入ID与配置是否完全一致？",
+      "完整适配链路是否已有可固定的交付制品？"
+    ],
+    "related": [
+      {
+        "title": "H20推理服务SLO",
+        "path": "/radar/h20-serving-slo/"
+      },
+      {
+        "title": "vLLM双向KV复用资格",
+        "path": "/radar/vllm-bidirectional-kv-eligibility/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-10-15只读核对公开论文v1与TokTier v0.2.9文档；未安装、编译或运行任何源码/模型，没有独立性能结果。论文、产品和原创验收建议分别归因；不是产品可用性公告。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：先把首字延迟拆到CPU入口",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这篇论文值得作为H20/SGLang入口诊断的新线索。建议先回答两个问题：请求到底在哪里等待；测试所需实现是否已经可获取。没有目标机证据前，不应把一种前端优化升级为GPU容量承诺。对NPU服务，同样可以建立入口时间账本，但不能据此认定特定适配器、模型或算子已经兼容。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                4
+              ],
+              "text": "论文于10月14日提交；作者说明分块并行、CPU池和SGLang适配器尚待发布。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本文提出的是隔离实验和接入验收设计。所有表格里的测试都未执行；没有安装依赖、启动模型或访问用户电脑。可先补充观测，拿到完整制品后再决定是否做对照。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：先定义“请求完成了哪一层”",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个前端接受HTTP请求，并不等于后端已经接受同一个推理任务。建议为一次请求定义到达、模板完成、ID生成、模型准入、GPU排队、首token六类事件，用同一关联ID串起来。这样，模型队列很短却TTFT很高时，才有证据继续向入口查，而不是立即调整通信或KV容量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下是原创反例：两个测试都说每秒处理十个长请求，一个最后返回长度错误，另一个生成完整答案。两者会给CPU和GPU留下完全不同的工作量。不能拿入口吞吐当完成吞吐，也不能把错误返回速度混入正常首token指标。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "字符数、字节数、token数分别记录。跨语言或模板变化后，同样字符数未必形成同样模型负载；输入长度应使用最终交给引擎的实际ID计数。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：文本状态、ID状态与KV状态分别验收",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "论文核心是保留旧ID、修复追加处尾部，在安全切点并行完整编码，并按块调度短更新。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "TokTier标签文档将追加结果定义为TokenPatch：先按keep_tokens截断旧ID，再拼replacement_ids；完整快照另取。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "由这个接口可提出接入不变量：消费者的最终ID数组必须等于同配置参考编码；“新文本”不能直接被理解成“只追加ID”。若接入层还维护自己的token缓冲、长度计数或KV索引，每个派生状态都必须在同一请求版本下更新。本文不主张直接修改引擎KV，只要求通过原有已验证入口提交最终输入。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创示例：缓存版本a算出了一个修补结果，但版本b先到达。此时应拒绝过时提交或按明确顺序处理，而不是把两个补丁依次盲拼。下面图描述拟议接入验收，非论文系统架构复刻。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创接入验收：修补不能跨版本提交",
+              "caption": "拟议验证图，不表示项目已有这些闸门；参考比较属于隔离验收路径，不能据此宣称生产逐请求双算。边表示证据/处理关系，不是时长。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "text",
+                  "label": "文本身份",
+                  "detail": "租户、会话版本、模板与tokenizer配置形成接入身份。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "文本身份"
+                },
+                {
+                  "id": "candidate",
+                  "label": "候选修补",
+                  "detail": "把修补结果看成针对特定旧版本的候选，不是通用追加片段。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "候选修补"
+                },
+                {
+                  "id": "guard",
+                  "label": "版本闸门",
+                  "detail": "验证消费时的输入身份与候选旧版本仍相符。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "版本闸门"
+                },
+                {
+                  "id": "reference",
+                  "label": "参考编码",
+                  "detail": "对同一最终文本与配置产生参考完整ID。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "参考编码"
+                },
+                {
+                  "id": "apply",
+                  "label": "应用修补",
+                  "detail": "按接口替换尾段，禁止只把新ID接在末尾。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "应用修补"
+                },
+                {
+                  "id": "compare",
+                  "label": "逐ID比较",
+                  "detail": "测试环境比较长度和每个ID；解码文本相同不足以通过。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "逐ID比较"
+                },
+                {
+                  "id": "admit",
+                  "label": "模型准入",
+                  "detail": "只有经验证的最终输入进入引擎；记录被拒绝请求。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "模型准入"
+                },
+                {
+                  "id": "serve",
+                  "label": "服务观测",
+                  "detail": "分开记录GPU排队、prefill与首token及完成情况。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "服务观测"
+                },
+                {
+                  "id": "stop",
+                  "label": "停止与回退",
+                  "detail": "身份不符或ID不同即停；保留无敏感内容的诊断证据。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "停止与回退"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "text",
+                  "to": "candidate",
+                  "label": "生成候选"
+                },
+                {
+                  "from": "candidate",
+                  "to": "guard",
+                  "label": "绑定旧版本"
+                },
+                {
+                  "from": "guard",
+                  "to": "apply",
+                  "label": "版本匹配"
+                },
+                {
+                  "from": "text",
+                  "to": "reference",
+                  "label": "同一最终输入"
+                },
+                {
+                  "from": "reference",
+                  "to": "compare",
+                  "label": "参考ID"
+                },
+                {
+                  "from": "apply",
+                  "to": "compare",
+                  "label": "候选ID"
+                },
+                {
+                  "from": "compare",
+                  "to": "admit",
+                  "label": "测试一致"
+                },
+                {
+                  "from": "admit",
+                  "to": "serve",
+                  "label": "实际服务"
+                },
+                {
+                  "from": "guard",
+                  "to": "stop",
+                  "label": "版本不符"
+                },
+                {
+                  "from": "compare",
+                  "to": "stop",
+                  "label": "发现差异"
+                }
+              ],
+              "presentation": {
+                "kind": "token-id-frontier",
+                "panels": [
+                  {
+                    "title": "输入身份",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "text",
+                      "candidate",
+                      "guard"
+                    ]
+                  },
+                  {
+                    "title": "ID验收",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "reference",
+                      "apply",
+                      "compare"
+                    ]
+                  },
+                  {
+                    "title": "服务边界",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "admit",
+                      "serve"
+                    ]
+                  },
+                  {
+                    "title": "停止条件",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "stop"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据：放大数字之前先读实验分母",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "最少必要的原文事实；作者结果均未独立复现",
+              "columns": [
+                "证据",
+                "核对结果",
+                "工程边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "论文§4.5–4.6",
+                    "23×尾延迟场景中的超长背景请求在分词后被拒；新长文进入GPU时可由prefill主导。",
+                    "不能把23×当作普遍端到端收益。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "论文S6.7",
+                    "部分闭环负载中位TTFT回退，尽管完成速率增加。",
+                    "固定到达过程，不能仅按单一延迟指标选方案。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "Rust生命周期文档",
+                    "存在有界批处理与会话顺序约束。",
+                    "不将既有接口等同新论文CPU池。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "产品README",
+                    "GPU与CPU路径及准入策略分开描述。",
+                    "CPU方案不自动继承CUDA路径的硬件资格。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    3
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上述论文事实只用来提出待验证问题，不作为现场根因。即使现网也出现长请求、低GPU利用率或高TTFT，仍须用同一请求的分段观测证实时间花在哪里。搜索结果、论坛相似症状和新闻日期均不能替代这一步。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：把优化后的新瓶颈也算进去",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创成本账本应同时覆盖CPU核时、保存会话的主存、完整ID物化与序列化、队列等待、GPU工作和失败重试。减少某一段计算，可能只是让下一段更早接到请求。闭环压测会随响应加快自动增加供给，因此既要测闭环容量，也要用固定开放到达流比较同等压力下的延迟。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "假设前端省了20毫秒，但模型排队增加30毫秒，那么用户感知仍可能变差。这只是教学数字，非论文测量。若短请求变快而长请求持续排队，也不能仅宣布总体P99改善；至少同时报告各长度组、冷暖组、首次请求和后续轮次。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "持久化会话另有隐私和容量成本。标签文档明确持久存储包含恢复用的文本，应按应用数据保护。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文建议在试验中只使用公开或合成输入，诊断日志存不可逆标识和计数；不要为提高可观测性而收集真实用户全文。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、生产诊断：先区分四类故障假设",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创假设，不是已证实缺陷",
+              "columns": [
+                "观察",
+                "候选解释",
+                "所需区分证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "高KV命中但TTFT仍高",
+                    "入口编码或事件循环排队",
+                    "入口时间线、CPU采样、GPU队列时长；相关性不足以归因。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "热会话突然变慢",
+                    "状态失配、驱逐或走参考路径",
+                    "执行路径与原因、会话版本和内存水位；不能只看缓存命中率。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "文本看起来正确而行为变化",
+                    "ID、模板或特殊token契约变化",
+                    "逐ID差异及首个差异位置；隔离模型生成随机性。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "一组请求改善而另一组超时",
+                    "供给变化或队列不公平",
+                    "分组完成率、最老等待年龄、固定到达流对照。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对H20与Ascend都先确认CPU架构、亲和性、容器核配额和内存带宽约束。相同模型后端不意味着相同前端瓶颈；同一套CPU参数也未必适用于两种部署。没有相应机器证据，本报告不选择核心数、chunk大小或并发默认值。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、实验：一次只改变一个可解释的因素",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "未执行实验矩阵；先冻结参考编码与实际服务版本",
+              "columns": [
+                "编号",
+                "设计",
+                "记录与停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "E0 制品",
+                    "获取论文适配器、版本、依赖和启动参数；核对当前公开交付",
+                    "关键组件缺失就停，不用替代实现冒充复现。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E1 语义",
+                    "追加、中途编辑、模板变化、特殊token、Unicode组合、空输入",
+                    "同配置逐ID一致；发现任何差异立即停止性能试验。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E2 状态",
+                    "同会话并发、乱序、取消、重启、状态驱逐",
+                    "版本不串线、终态有界；参考回退路径单独计数。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E3 入口",
+                    "参考、只换编码器、状态复用、完整池分阶段比较",
+                    "固定输入与核预算，记录编码/排队/物化成本。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E4 服务",
+                    "冷/暖前缀×长背景被拒/实际服务×开放/闭环到达",
+                    "正常与拒绝分母分开，TTFT/TPOT/goodput全部记录。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E5 公平",
+                    "持续短更新混合冷长文，并扫核配额与会话数",
+                    "同时记录长文最大等待、错误率及主存；不能牺牲某组换总体指标。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E6 迁移",
+                    "在目标H20和NPU各自固定后端做独立对照",
+                    "先验证CPU前端可接入，再谈收益；不复用另一硬件结论。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、验收：正确性、可恢复、效益分别过门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟议门槛，具体SLO需在试验前登记",
+              "columns": [
+                "维度",
+                "通过标准",
+                "不能替代的信号"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "输入契约",
+                    "所有约定测试逐ID一致，配置身份可追溯",
+                    "输出可读或token总数相同。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期",
+                    "乱序和重启不污染状态；取消后资源与后续请求恢复",
+                    "进程存活或一次重试成功。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可归因",
+                    "每次请求标出执行路径、分段时间和准入结果",
+                    "全站平均TTFT。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "有效服务",
+                    "固定到达流下预登记SLO与错误预算达标；各请求组不饥饿",
+                    "只展示最有利峰值倍数。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成本",
+                    "按SLO内完成任务计CPU、主存、GPU与重试的总成本",
+                    "只看分词微基准或GPU利用率。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议用同批输入随机交错或独立重复实验，并公开样本量、运行时长、冷暖条件与分位数计算方式。若只有几十个请求，不要靠一个p99数值做生产决策；需要覆盖突发、回退和长等待尾部。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、待办：先验证入口，再决定是否接入",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "待取得论文完整复现制品；待核查目标SGLang版本的真实入口与会话接口；待做H20、NPU CPU前端独立基线；待实测持久状态成本与并发恢复。上述未知不由TokTier既有版本号、论文摘要或通过静态JSON校验来消除。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若业务的大部分时间仍在模型prefill或decode，先保留入口观测即可。若入口占比与长文阻塞确实显著，再推进小规模语义验证。这样能把新论文变成一个可证伪的工程问题，而非一个未经复现的上线承诺。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-decode-radix-ownership",
     "kind": "analysis",
     "title": "SGLang Decode Radix：请求都成功之后，KV 为什么仍可能双重归属",
