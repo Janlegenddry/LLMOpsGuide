@@ -1,0 +1,1051 @@
+[
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3,
+      8,
+      9
+    ],
+    "title": "一次查询，三种失败责任",
+    "caption": "原创非实测示意。先区分是否已成功收取请求，再决定能否补答；接收超时只使当前客户端失效。没有任何箭头表示自动重启服务端或一秒内完成生成。",
+    "nodes": [
+      {
+        "id": "req",
+        "label": "scheduler发起查询",
+        "detail": "只画进入非layerwise外部lookup分支的请求；本地命中或无需外部查询可跳过。",
+        "column": 0,
+        "row": 0
+      },
+      {
+        "id": "recv",
+        "label": "服务端收取请求",
+        "detail": "REP收取成功后才有对应回复义务；收取错误不能伪造已接收。",
+        "column": 1,
+        "row": 0
+      },
+      {
+        "id": "handler",
+        "label": "处理异常：回复零命中",
+        "detail": "已收取，但解码或查询处理抛异常；零命中是正常回复格式。",
+        "column": 2,
+        "row": 0
+      },
+      {
+        "id": "miss",
+        "label": "放弃本次外部缓存信用",
+        "detail": "scheduler收到零命中，按无新增外部token继续调度；不是外部存储已经恢复。",
+        "column": 3,
+        "row": 0
+      },
+      {
+        "id": "recverr",
+        "label": "收取或发送错误：退出",
+        "detail": "退出服务线程，由处理线程finally关闭socket和context；没有补画服务线程自动重启。",
+        "column": 2,
+        "row": 1
+      },
+      {
+        "id": "timeout",
+        "label": "客户端接收超时/错误",
+        "detail": "收不到有效回复时，已设置的接收等待上限触发ZMQ错误；并非发送和整体请求时限。",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "close",
+        "label": "关闭失效客户端",
+        "detail": "socket与私有context幂等关闭，返回零命中。",
+        "column": 2,
+        "row": 2
+      },
+      {
+        "id": "next",
+        "label": "下次查询创建新客户端",
+        "detail": "重新建立REQ状态；只有服务端仍可工作或已被外部恢复，才可能重新命中。",
+        "column": 3,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "req",
+        "to": "recv",
+        "label": "请求控制消息"
+      },
+      {
+        "from": "recv",
+        "to": "handler",
+        "label": "收取成功但处理失败"
+      },
+      {
+        "from": "handler",
+        "to": "miss",
+        "label": "合法零命中回复"
+      },
+      {
+        "from": "recv",
+        "to": "recverr",
+        "label": "I/O错误，停止服务循环"
+      },
+      {
+        "from": "req",
+        "to": "timeout",
+        "label": "没有及时收到回复"
+      },
+      {
+        "from": "timeout",
+        "to": "close",
+        "label": "作废本次REQ状态"
+      },
+      {
+        "from": "close",
+        "to": "next",
+        "label": "下一次外部查询"
+      }
+    ],
+    "presentation": {
+      "kind": "lookup-rpc-failure-boundaries",
+      "panels": [
+        {
+          "title": "调度入口",
+          "tone": "control",
+          "nodeIds": [
+            "req"
+          ]
+        },
+        {
+          "title": "服务端协议责任",
+          "tone": "communication",
+          "nodeIds": [
+            "recv",
+            "handler",
+            "recverr"
+          ]
+        },
+        {
+          "title": "客户端失效结算",
+          "tone": "control",
+          "nodeIds": [
+            "timeout",
+            "close"
+          ]
+        },
+        {
+          "title": "有限的后续能力",
+          "tone": "neutral",
+          "nodeIds": [
+            "miss",
+            "next"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [],
+    "title": "原创机制图：容量扩大不应让历史向过去平移",
+    "caption": "原创非实测索引示意。K=4、S=3、p=40、q=0是教学取值；槽内数字表示输入激活的位置。两条路径有相同物理宽度和首读窗口，只改变checkpoint写入的逻辑长度。尾部灰区不代表已清零；图中没有端到端成功或硬件适配保证。 示意明确假定恢复首读起点为0；不表示所有后续update都从槽0读。",
+    "nodes": [
+      {
+        "id": "prefix",
+        "label": "同一个合成checkpoint：p=40",
+        "shortLabel": "前缀边界",
+        "subtitle": "K=4，S=3",
+        "detail": "原创索引示意：忽略批内起点，q=0；x_t是第t个卷积前激活向量，不是token ID。逻辑历史W=3，物理容量P=6，输入范围足够长。数字仅帮助检查索引，非实测。",
+        "column": 0,
+        "row": 1,
+        "tone": "compute"
+      },
+      {
+        "id": "old-write",
+        "label": "旧写入长度误取P=6",
+        "shortLabel": "旧导出",
+        "subtitle": "窗口起点34",
+        "detail": "教学旧路径：按物理容量取x_34至x_39，顺序写进6个槽。该路径用于表现旧实现的索引结果，不代表线上抓取的张量。",
+        "column": 1,
+        "row": 0,
+        "tone": "danger"
+      },
+      {
+        "id": "old-state",
+        "label": "旧槽位：[34,35,36 | 37,38,39]",
+        "shortLabel": "旧状态行",
+        "subtitle": "前三区间偏旧",
+        "detail": "数字是激活的输入位置标签。竖线只标示读者的逻辑窗口边界；物理上仍是一行。正确最近历史虽出现在后部，但首读窗口仍落在前部。",
+        "column": 2,
+        "row": 0,
+        "tone": "danger"
+      },
+      {
+        "id": "old-read",
+        "label": "首窗口拿到34、35、36",
+        "shortLabel": "旧首读",
+        "subtitle": "偏旧3步",
+        "detail": "在读者从槽0取3项的前提下，实际读取位置比目标37、38、39分别早3步。此图止于状态错误，不承诺每次都产生可见错误答案。",
+        "column": 3,
+        "row": 0,
+        "tone": "danger"
+      },
+      {
+        "id": "new-write",
+        "label": "修复写入逻辑W=3",
+        "shortLabel": "新导出",
+        "subtitle": "窗口起点37",
+        "detail": "教学新路径：选择最近3项；物理地址步长仍按原行布局计算。扩大可分配槽数不应改变这一时间窗口。",
+        "column": 1,
+        "row": 2,
+        "tone": "control"
+      },
+      {
+        "id": "new-state",
+        "label": "新槽位：[37,38,39 | 保留原值]",
+        "shortLabel": "新状态行",
+        "subtitle": "尾部不写入",
+        "detail": "尾部不是强制归零。图中的保留原值表示本次checkpoint导出不写该区域；尾部何时可被后续路径读写，必须按实际恢复与投机更新生命周期验证。",
+        "column": 2,
+        "row": 2,
+        "tone": "kv"
+      },
+      {
+        "id": "new-read",
+        "label": "首窗口拿到37、38、39",
+        "shortLabel": "新首读",
+        "subtitle": "历史身份吻合",
+        "detail": "在同一首读前提下，最近历史位置正确。SSM状态、目标block身份、后续更新、任务答案和平台支持是另外的验收项，不由这一箭头自动证明。",
+        "column": 3,
+        "row": 2,
+        "tone": "compute"
+      }
+    ],
+    "edges": [
+      {
+        "to": "old-write",
+        "label": "旧路径：用物理容量选择历史",
+        "from": "prefix"
+      },
+      {
+        "to": "old-state",
+        "label": "写入全部6个槽",
+        "from": "old-write"
+      },
+      {
+        "to": "old-read",
+        "label": "首读只消费槽0至2",
+        "from": "old-state"
+      },
+      {
+        "to": "new-write",
+        "label": "修复路径：用逻辑宽度选择历史",
+        "from": "prefix"
+      },
+      {
+        "to": "new-state",
+        "label": "只写前3个槽，保留实际strides",
+        "from": "new-write"
+      },
+      {
+        "to": "new-read",
+        "label": "相同首读窗口",
+        "from": "new-state"
+      }
+    ],
+    "presentation": {
+      "kind": "conv-checkpoint-window",
+      "panels": [
+        {
+          "title": "共同输入与宽度",
+          "tone": "neutral",
+          "nodeIds": [
+            "prefix"
+          ]
+        },
+        {
+          "title": "旧导出：物理宽度误作历史",
+          "tone": "danger",
+          "nodeIds": [
+            "old-write",
+            "old-state",
+            "old-read"
+          ]
+        },
+        {
+          "title": "修复：只导出逻辑窗口",
+          "tone": "kv",
+          "nodeIds": [
+            "new-write",
+            "new-state",
+            "new-read"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "title": "CUDA Graph 模式下的计划与专用执行",
+    "caption": "仅表示 CUDA Graph 计划/捕获路径，不涵盖 eager 分支。原创机制示意，依据固定源码与 CUDA Graphs 语义；非实测时间线。CPU 计划/捕获与 GPU replay 分离，指向重放的边表示捕获后重放，不表示每次 replay 重新核验 Python 条件。专属构图 verify-plan-dispatch 按四种职责呈现；非实测性能或自动恢复承诺。",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3,
+      4,
+      9
+    ],
+    "nodes": [
+      {
+        "id": "batch",
+        "label": "EAGLE 验证批次",
+        "detail": "调用方提供实际 query 边界；专用 EAGLE 接线仍待合入。",
+        "column": 0,
+        "row": 0,
+        "tone": "control"
+      },
+      {
+        "id": "promise",
+        "label": "等长承诺核验",
+        "detail": "只在承诺与 host 边界吻合时使用提示。",
+        "column": 1,
+        "row": 0,
+        "tone": "control"
+      },
+      {
+        "id": "stockplan",
+        "label": "通用规划",
+        "detail": "缺失或不成立的提示保留通用计划。",
+        "column": 1,
+        "row": 1,
+        "tone": "control"
+      },
+      {
+        "id": "hintplan",
+        "label": "等长 FA2 规划",
+        "detail": "可单独验证规划收益，不等于已选择专用实现。",
+        "column": 1,
+        "row": 2,
+        "tone": "control"
+      },
+      {
+        "id": "gates",
+        "label": "专用条件检查",
+        "detail": "形状、dtype、语义、设备、缓冲与准备状态全部满足。",
+        "column": 1,
+        "row": 3,
+        "tone": "control"
+      },
+      {
+        "id": "stock",
+        "label": "Stock 执行",
+        "detail": "任一准入未通过时走既有路径。",
+        "column": 2,
+        "row": 0,
+        "tone": "compute"
+      },
+      {
+        "id": "split",
+        "label": "Split-KV attention",
+        "detail": "通过准入后执行专用注意力，写入持久工作区。",
+        "column": 2,
+        "row": 1,
+        "tone": "compute"
+      },
+      {
+        "id": "merge",
+        "label": "同流 Merge",
+        "detail": "依赖前一计算完成；图捕获记录两节点。",
+        "column": 2,
+        "row": 2,
+        "tone": "compute"
+      },
+      {
+        "id": "replay",
+        "label": "已捕获图重放",
+        "detail": "重放已捕获的通用或专用节点；不会重新执行 Python guard 或环境变量检查。图重建和切换仍须显式验证。",
+        "column": 3,
+        "row": 0,
+        "tone": "neutral"
+      }
+    ],
+    "edges": [
+      {
+        "from": "batch",
+        "to": "promise",
+        "label": "计划阶段"
+      },
+      {
+        "from": "promise",
+        "to": "stockplan",
+        "label": "提示缺失或不成立"
+      },
+      {
+        "from": "promise",
+        "to": "hintplan",
+        "label": "提示成立"
+      },
+      {
+        "from": "stockplan",
+        "to": "stock",
+        "label": "通用路径"
+      },
+      {
+        "from": "hintplan",
+        "to": "gates",
+        "label": "专用入口核验"
+      },
+      {
+        "from": "gates",
+        "to": "stock",
+        "label": "任一条件不满足"
+      },
+      {
+        "from": "gates",
+        "to": "split",
+        "label": "全部条件通过"
+      },
+      {
+        "from": "split",
+        "to": "merge",
+        "label": "stream 依赖"
+      },
+      {
+        "from": "merge",
+        "to": "replay",
+        "label": "捕获并实例化后的重放"
+      },
+      {
+        "from": "stock",
+        "to": "replay",
+        "label": "已捕获通用图的重放"
+      }
+    ],
+    "presentation": {
+      "kind": "verify-plan-dispatch",
+      "panels": [
+        {
+          "title": "服务语义输入",
+          "tone": "control",
+          "nodeIds": [
+            "batch"
+          ]
+        },
+        {
+          "title": "Host 计划与准入",
+          "tone": "control",
+          "nodeIds": [
+            "promise",
+            "stockplan",
+            "hintplan",
+            "gates"
+          ]
+        },
+        {
+          "title": "GPU 计算与顺序",
+          "tone": "compute",
+          "nodeIds": [
+            "stock",
+            "split",
+            "merge"
+          ]
+        },
+        {
+          "title": "已捕获图重放",
+          "tone": "neutral",
+          "nodeIds": [
+            "replay"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [
+      2,
+      3,
+      4
+    ],
+    "title": "GPU分片：创建分支、执行链与观测分开",
+    "caption": "原创非实测机制抽象。内存解析fail-open为空调整；计算模式fail-open回退后继续。异步映射是观测链，驱动与SLO节点均待实机验收。分层分支图不表示时间或比例。",
+    "nodes": [
+      {
+        "id": "request",
+        "label": "请求与分配",
+        "detail": "请求份额及目标GPU由上游带入；不是限制已生效的证据",
+        "column": 0,
+        "row": 0,
+        "shortLabel": "请求与分配",
+        "tone": "control"
+      },
+      {
+        "id": "parse",
+        "label": "解析容器注解",
+        "detail": "固定源码的内存注解与计算模式解析",
+        "column": 0,
+        "row": 1,
+        "shortLabel": "解析容器注解",
+        "tone": "control"
+      },
+      {
+        "id": "memory-error",
+        "label": "内存注解错误",
+        "detail": "与计算模式错误区分",
+        "column": 0,
+        "row": 2,
+        "shortLabel": "内存注解错误",
+        "tone": "danger"
+      },
+      {
+        "id": "compute-error",
+        "label": "计算模式错误",
+        "detail": "例如不支持的模式值",
+        "column": 0,
+        "row": 3,
+        "shortLabel": "计算模式错误",
+        "tone": "danger"
+      },
+      {
+        "id": "adjust",
+        "label": "生成容器调整",
+        "detail": "环境变量、MPS挂载与按配置请求的设备",
+        "column": 1,
+        "row": 0,
+        "shortLabel": "生成容器调整",
+        "tone": "control"
+      },
+      {
+        "id": "reject",
+        "label": "拒绝容器创建",
+        "detail": "fail-closed路径；不继续启动",
+        "column": 1,
+        "row": 1,
+        "shortLabel": "拒绝容器创建",
+        "tone": "danger"
+      },
+      {
+        "id": "no-adjust",
+        "label": "放行但空调整",
+        "detail": "内存解析失败且fail-open；不表示限制已应用",
+        "column": 1,
+        "row": 2,
+        "shortLabel": "放行但空调整",
+        "tone": "danger"
+      },
+      {
+        "id": "fallback",
+        "label": "回退时间分片",
+        "detail": "计算模式失败且fail-open，继续构造内存等调整",
+        "column": 1,
+        "row": 3,
+        "shortLabel": "回退时间分片",
+        "tone": "control"
+      },
+      {
+        "id": "runtime",
+        "label": "运行时交接",
+        "detail": "调整必须被实际运行时和对应依赖处理",
+        "column": 2,
+        "row": 0,
+        "shortLabel": "运行时交接",
+        "tone": "control"
+      },
+      {
+        "id": "driver",
+        "label": "驱动限制待验",
+        "detail": "运行时设置与实机分配限制之间仍有验收门",
+        "column": 2,
+        "row": 1,
+        "shortLabel": "驱动限制待验",
+        "tone": "compute"
+      },
+      {
+        "id": "application",
+        "label": "应用实际行为",
+        "detail": "分配、退出、清理与邻居影响均需测试",
+        "column": 2,
+        "row": 2,
+        "shortLabel": "应用实际行为",
+        "tone": "compute"
+      },
+      {
+        "id": "mapping",
+        "label": "异步映射尝试",
+        "detail": "成功返回路径提交观测工作；是否记录由适配器解析决定，不保证每次形成映射，也不改变容器",
+        "column": 2,
+        "row": 3,
+        "shortLabel": "异步映射尝试",
+        "tone": "control"
+      },
+      {
+        "id": "metrics",
+        "label": "GPU观测",
+        "detail": "进程数据结合映射，不能独自证明隔离",
+        "column": 3,
+        "row": 0,
+        "shortLabel": "GPU观测",
+        "tone": "control"
+      },
+      {
+        "id": "slo",
+        "label": "客户端SLO",
+        "detail": "独立采集延迟、错误、成功请求",
+        "column": 3,
+        "row": 1,
+        "shortLabel": "客户端SLO",
+        "tone": "control"
+      },
+      {
+        "id": "verify",
+        "label": "独立验收",
+        "detail": "限制反例、观测完整性、双方服务边界；未执行",
+        "column": 3,
+        "row": 2,
+        "shortLabel": "独立验收",
+        "tone": "control"
+      }
+    ],
+    "edges": [
+      {
+        "from": "request",
+        "to": "parse",
+        "label": "创建时评估"
+      },
+      {
+        "from": "parse",
+        "to": "adjust",
+        "label": "有效注解"
+      },
+      {
+        "from": "parse",
+        "to": "memory-error",
+        "label": "内存解析失败"
+      },
+      {
+        "from": "parse",
+        "to": "compute-error",
+        "label": "计算模式解析失败"
+      },
+      {
+        "from": "memory-error",
+        "to": "reject",
+        "label": "fail-closed"
+      },
+      {
+        "from": "memory-error",
+        "to": "no-adjust",
+        "label": "fail-open"
+      },
+      {
+        "from": "compute-error",
+        "to": "reject",
+        "label": "fail-closed"
+      },
+      {
+        "from": "compute-error",
+        "to": "fallback",
+        "label": "fail-open"
+      },
+      {
+        "from": "fallback",
+        "to": "adjust",
+        "label": "继续生成调整"
+      },
+      {
+        "from": "adjust",
+        "to": "runtime",
+        "label": "交给运行时"
+      },
+      {
+        "from": "runtime",
+        "to": "driver",
+        "label": "能否实际限制待验"
+      },
+      {
+        "from": "driver",
+        "to": "application",
+        "label": "实际分配结果"
+      },
+      {
+        "from": "adjust",
+        "to": "mapping",
+        "label": "返回路径提交映射尝试"
+      },
+      {
+        "from": "no-adjust",
+        "to": "mapping",
+        "label": "返回路径提交映射尝试"
+      },
+      {
+        "from": "mapping",
+        "to": "metrics",
+        "label": "仅观测归属"
+      },
+      {
+        "from": "application",
+        "to": "slo",
+        "label": "实际业务观测"
+      },
+      {
+        "from": "metrics",
+        "to": "verify",
+        "label": "一类验收证据"
+      },
+      {
+        "from": "slo",
+        "to": "verify",
+        "label": "另一类验收证据"
+      },
+      {
+        "from": "no-adjust",
+        "to": "verify",
+        "label": "必须识别缺少调整"
+      }
+    ],
+    "presentation": {
+      "kind": "gpu-fractioning-boundaries",
+      "panels": [
+        {
+          "title": "请求与解析",
+          "tone": "control",
+          "nodeIds": [
+            "request",
+            "parse",
+            "memory-error",
+            "compute-error"
+          ]
+        },
+        {
+          "title": "容器创建结果",
+          "tone": "control",
+          "nodeIds": [
+            "adjust",
+            "reject",
+            "no-adjust",
+            "fallback"
+          ]
+        },
+        {
+          "title": "执行与异步映射",
+          "tone": "compute",
+          "nodeIds": [
+            "runtime",
+            "driver",
+            "application",
+            "mapping"
+          ]
+        },
+        {
+          "title": "独立观测与验收",
+          "tone": "neutral",
+          "nodeIds": [
+            "metrics",
+            "slo",
+            "verify"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "pending",
+    "sourceIndices": [],
+    "title": "拟议四道验收门",
+    "caption": "原创非实测验收图。四门全部待执行；未满足时停止并定位问题，不表示任何自动生产放量。",
+    "nodes": [
+      {
+        "id": "identity",
+        "label": "栈身份确认",
+        "detail": "声明、实际版本和制品对应",
+        "column": 0,
+        "row": 0,
+        "shortLabel": "栈身份确认",
+        "tone": "control"
+      },
+      {
+        "id": "limit",
+        "label": "限制反例",
+        "detail": "越额与错误配置测试",
+        "column": 1,
+        "row": 0,
+        "shortLabel": "限制反例",
+        "tone": "control"
+      },
+      {
+        "id": "observability",
+        "label": "观测可解释",
+        "detail": "缺失与归属能够辨别",
+        "column": 2,
+        "row": 0,
+        "shortLabel": "观测可解释",
+        "tone": "control"
+      },
+      {
+        "id": "business",
+        "label": "双方SLO",
+        "detail": "达标之后再比较完整成本",
+        "column": 3,
+        "row": 0,
+        "shortLabel": "双方SLO",
+        "tone": "control"
+      },
+      {
+        "id": "stop",
+        "label": "停止并诊断",
+        "detail": "任一前提不成立先修正；没有自动放量",
+        "shortLabel": "停止诊断",
+        "tone": "danger",
+        "column": 1,
+        "row": 2
+      },
+      {
+        "id": "cost",
+        "label": "完整成本比较",
+        "detail": "全部验收成立之后，按可交付请求比较成本；仍不表示已批准上线",
+        "shortLabel": "比较成本",
+        "tone": "neutral",
+        "column": 3,
+        "row": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "identity",
+        "to": "limit",
+        "label": "身份确认后"
+      },
+      {
+        "from": "limit",
+        "to": "observability",
+        "label": "限制反例通过后"
+      },
+      {
+        "from": "observability",
+        "to": "business",
+        "label": "观测可解释后"
+      },
+      {
+        "from": "identity",
+        "to": "stop",
+        "label": "未满足"
+      },
+      {
+        "from": "limit",
+        "to": "stop",
+        "label": "未满足"
+      },
+      {
+        "from": "observability",
+        "to": "stop",
+        "label": "未满足"
+      },
+      {
+        "from": "business",
+        "to": "stop",
+        "label": "未满足"
+      },
+      {
+        "from": "business",
+        "to": "cost",
+        "label": "满足之后"
+      }
+    ],
+    "presentation": {
+      "kind": "gpu-fractioning-acceptance",
+      "panels": [
+        {
+          "title": "四项待验",
+          "tone": "control",
+          "nodeIds": [
+            "identity",
+            "limit",
+            "observability",
+            "business"
+          ]
+        },
+        {
+          "title": "独立处置",
+          "tone": "neutral",
+          "nodeIds": [
+            "stop",
+            "cost"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "diagram",
+    "basis": "inference",
+    "sourceIndices": [],
+    "title": "原创接入验收：修补不能跨版本提交",
+    "caption": "拟议验证图，不表示项目已有这些闸门；参考比较属于隔离验收路径，不能据此宣称生产逐请求双算。边表示证据/处理关系，不是时长。",
+    "nodes": [
+      {
+        "id": "text",
+        "label": "文本身份",
+        "detail": "租户、会话版本、模板与tokenizer配置形成接入身份。",
+        "column": 0,
+        "row": 0,
+        "shortLabel": "文本身份"
+      },
+      {
+        "id": "candidate",
+        "label": "候选修补",
+        "detail": "把修补结果看成针对特定旧版本的候选，不是通用追加片段。",
+        "column": 0,
+        "row": 1,
+        "shortLabel": "候选修补"
+      },
+      {
+        "id": "guard",
+        "label": "版本闸门",
+        "detail": "验证消费时的输入身份与候选旧版本仍相符。",
+        "column": 0,
+        "row": 2,
+        "shortLabel": "版本闸门"
+      },
+      {
+        "id": "reference",
+        "label": "参考编码",
+        "detail": "对同一最终文本与配置产生参考完整ID。",
+        "column": 1,
+        "row": 0,
+        "shortLabel": "参考编码"
+      },
+      {
+        "id": "apply",
+        "label": "应用修补",
+        "detail": "按接口替换尾段，禁止只把新ID接在末尾。",
+        "column": 1,
+        "row": 1,
+        "shortLabel": "应用修补"
+      },
+      {
+        "id": "compare",
+        "label": "逐ID比较",
+        "detail": "测试环境比较长度和每个ID；解码文本相同不足以通过。",
+        "column": 1,
+        "row": 2,
+        "shortLabel": "逐ID比较"
+      },
+      {
+        "id": "admit",
+        "label": "模型准入",
+        "detail": "只有经验证的最终输入进入引擎；记录被拒绝请求。",
+        "column": 2,
+        "row": 0,
+        "shortLabel": "模型准入"
+      },
+      {
+        "id": "serve",
+        "label": "服务观测",
+        "detail": "分开记录GPU排队、prefill与首token及完成情况。",
+        "column": 2,
+        "row": 1,
+        "shortLabel": "服务观测"
+      },
+      {
+        "id": "stop",
+        "label": "停止与回退",
+        "detail": "身份不符或ID不同即停；保留无敏感内容的诊断证据。",
+        "column": 3,
+        "row": 0,
+        "shortLabel": "停止与回退"
+      }
+    ],
+    "edges": [
+      {
+        "from": "text",
+        "to": "candidate",
+        "label": "生成候选"
+      },
+      {
+        "from": "candidate",
+        "to": "guard",
+        "label": "绑定旧版本"
+      },
+      {
+        "from": "guard",
+        "to": "apply",
+        "label": "版本匹配"
+      },
+      {
+        "from": "text",
+        "to": "reference",
+        "label": "同一最终输入"
+      },
+      {
+        "from": "reference",
+        "to": "compare",
+        "label": "参考ID"
+      },
+      {
+        "from": "apply",
+        "to": "compare",
+        "label": "候选ID"
+      },
+      {
+        "from": "compare",
+        "to": "admit",
+        "label": "测试一致"
+      },
+      {
+        "from": "admit",
+        "to": "serve",
+        "label": "实际服务"
+      },
+      {
+        "from": "guard",
+        "to": "stop",
+        "label": "版本不符"
+      },
+      {
+        "from": "compare",
+        "to": "stop",
+        "label": "发现差异"
+      }
+    ],
+    "presentation": {
+      "kind": "token-id-frontier",
+      "panels": [
+        {
+          "title": "输入身份",
+          "tone": "neutral",
+          "nodeIds": [
+            "text",
+            "candidate",
+            "guard"
+          ]
+        },
+        {
+          "title": "ID验收",
+          "tone": "compute",
+          "nodeIds": [
+            "reference",
+            "apply",
+            "compare"
+          ]
+        },
+        {
+          "title": "服务边界",
+          "tone": "neutral",
+          "nodeIds": [
+            "admit",
+            "serve"
+          ]
+        },
+        {
+          "title": "停止条件",
+          "tone": "danger",
+          "nodeIds": [
+            "stop"
+          ]
+        }
+      ]
+    }
+  }
+]

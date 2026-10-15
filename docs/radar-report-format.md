@@ -149,3 +149,12 @@ npm run content:verify
 ```
 
 `/api/radar.json` 保留全部 report 嵌套正文和图表数据；RSS 仍是摘要及详情入口。站点及 payload 只包含公开资料的原创解读，不包含私有日志或公司资料。
+
+
+### 专用机制图的严格契约
+
+新增六种原创构图：`lookup-rpc-failure-boundaries`（1/3/2/2）、`conv-checkpoint-window`（1/3/3）、`verify-plan-dispatch`（1/4/3/1）、`gpu-fractioning-boundaries`（4/4/4/3）、`gpu-fractioning-acceptance`（4/2）、`token-id-frontier`（3/3/2/1）。角色、面板顺序、语义颜色、原始坐标和有向边集合由 `src/lib/report-frontier-contracts.mjs` 精确约束；全局坐标范围及来源校验保持原规则。完整 fixture 位于 `tests/fixtures/frontier-figures.json`。
+
+这些类型使用各自的分支布局、槽带或图形符号，移动端保留全部声明关系及完整文字图例，不按视觉相邻自动补边。Mamba 类型固定描述一个原创六槽教学示例：K=4、S=3、W=3、P=6，首读起点为 0；新行尾三槽保留原值。该类型的示例文字也是契约的一部分，修改例子须同步评审契约、渲染和 fixture，不能借改标签宣称归零、缩容或端到端成功。
+
+FlashInfer 构图限定 CUDA Graph 的规划与捕获；不涵盖 eager，冻结图重放不会重新检查 Python 环境。Run:ai 驱动限制及四项独立证据面板保持待验。Delta 构图是拟议接入验收，不代表论文已有实现或生产逐请求双算。渲染短标签仅辅助阅读，全文节点、边、证据表和 caption 继续持久化。

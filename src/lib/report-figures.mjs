@@ -1,3 +1,4 @@
+import { renderFrontierFigure } from './report-frontier-figures.mjs';
 // Original responsive technical figures. Coordinates and SVG markup are generated here,
 // never imported from a payload; every payload label is XML-escaped.
 import { renderRecoveryFigure } from './report-recovery-figures.mjs';
@@ -117,6 +118,8 @@ export function renderNumericalFigure(chart, { compact = false, id = 'numerical-
 }
 
 export function renderTechnicalFigure(diagram, { compact = false, id = 'technical-figure' } = {}) {
+  const frontier = renderFrontierFigure(diagram, { compact, id, canvas, figurePalette });
+  if (frontier) return frontier;
   const ownershipKv = renderOwnershipKvFigure(diagram, { compact, id, canvas, figurePalette });
   if (ownershipKv) return ownershipKv;
   const restoreRdma = renderRestoreRdmaFigure(diagram, { compact, id, canvas });

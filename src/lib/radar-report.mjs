@@ -1,8 +1,10 @@
+import { frontierContracts } from './report-frontier-contracts.mjs';
 import { isOfficialCitation, canAttributeCitation } from './radar-sources.mjs';
 
 export const reportSectionIDs = ['conclusion', 'background', 'mechanism', 'evidence', 'tradeoffs', 'production', 'experiments', 'acceptance', 'pending'];
 export const basisNames = { official: '官方事实', author: '作者报告结果', inference: '推导 / 教学示例', pending: '待验证' };
 export const figureKinds = { 'request-lanes': [2, 2, 5], lifecycle: [4, 4], boundary: [3, 3], 'cache-routing': [2, 2, 1], 'pipeline-loop': [3, 3], 'memory-budget': [1, 4, 1], 'decision-gates': [1, 1, 1, 1], paths: [2, 2], 'build-runtime': [3, 3, 3, 1], 'causal-branches': [1, 3, 3, 2], 'acceptance-gates': [6, 2], 'kv-map': [2, 1, 1, 2], 'kv-zeroing': [3, 3, 3, 1], 'release-gates': [4, 2] };
+Object.assign(figureKinds, Object.fromEntries(Object.entries(frontierContracts).map(([kind, c]) => [kind, c.roles.map(ids => ids.length)])));
 const tones = ['compute', 'kv', 'communication', 'control', 'danger', 'neutral'];
 Object.assign(figureKinds, { 'state-lanes': [3, 3, 3, 3, 1], 'failure-settlement': [4, 3, 2, 2], 'peer-reload': [4, 3, 3, 1], 'constant-paths': [1, 3, 3, 1], 'source-containment': [2, 3, 2, 1], 'deployment-gates': [4, 1, 1] });
 Object.assign(figureKinds, { 'overload-sources': [2, 2, 1, 1, 1], 'choice-cleanup': [1, 3, 1, 1, 1, 1, 1, 1, 1], 'deployment-paths': [1, 2, 2, 4, 1, 1], 'release-evidence': [4, 3, 3, 1], 'preload-restart': [3, 4, 3, 1, 1], 'rollout-checks': [7, 1, 1, 1] });
@@ -103,6 +105,21 @@ export function validateReport(raw, sources, { keys, str, array, fail }) {
             }
             const connections = edges.map(e => `${e.from}→${e.to}`).sort();
             if (JSON.stringify(connections) !== JSON.stringify(contract.edges.map(([from, to]) => `${from}→${to}`).sort())) fail(`${b} 新图必须保留精确的已定义连线`);
+          }
+          const frontier = frontierContracts[block.presentation.kind];
+          if (frontier) {
+            for (const [i, panel] of panels.entries()) {
+              if (JSON.stringify(panel.nodeIds) !== JSON.stringify(frontier.roles[i]) || panel.tone !== frontier.tones[i]) fail(`${b} 专用图角色、顺序与语义颜色不符`);
+            }
+            for (const node of nodes) {
+              if (JSON.stringify([node.column, node.row]) !== JSON.stringify(frontier.positions[node.id])) fail(`${b} 专用图节点职责位置不符`);
+              // This kind depicts one fixed synthetic example, not arbitrary checkpoint data.
+              if (frontier.fixedExample) for (const [field, value] of Object.entries(frontier.fixedExample[node.id])) {
+                if (node[field] !== value) fail(`${b} 六槽教学示例必须保留宽度、历史位置与尾部原值语义`);
+              }
+            }
+            const actual = edges.map(e => `${e.from}→${e.to}`).sort();
+            if (JSON.stringify(actual) !== JSON.stringify(frontier.edges.map(e => e.join('→')).sort())) fail(`${b} 专用图必须保留精确连线，不得补边`);
           }
           out.presentation = { kind: block.presentation.kind, panels };
         }
