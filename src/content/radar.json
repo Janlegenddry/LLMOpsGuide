@@ -961,6 +961,1155 @@
   },
   {
     "schemaVersion": 1,
+    "id": "runai-gpu-fractioning-boundaries",
+    "kind": "analysis",
+    "title": "Run:ai 开源之后：GPU 分片的调度承诺与运行边界",
+    "summary": "10月13日全平台开源公告带来新的源码审查入口。本文核对GPU Fractioning正式标签，把调度、容器创建、驱动限制与观测拆开，并给出H20/SGLang隔离验证矩阵；不声称已有性能收益或Ascend兼容。",
+    "publishedAt": "2026-10-13",
+    "reviewedAt": "2026-10-14",
+    "topics": [
+      "服务调度",
+      "故障分析",
+      "SGLang"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "NVIDIA Run:ai 全平台开源公告",
+        "url": "https://developer.nvidia.com/blog/nvidia-runai-is-now-open-source-as-part-of-nvidia-dsx-ai-factory-platform",
+        "review": {
+          "category": "blog",
+          "publisher": "NVIDIA Technical Blog",
+          "status": "attributed",
+          "note": "已读正文并核验页面10/13日期和四组件说明；本文不是独立性能报告，平台公告不等于各组件首次发布。"
+        },
+        "publishedAt": "2026-10-13",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "GPU Fractioning v0.1.7 README",
+        "url": "https://github.com/kai-scheduler/gpu-fractioning/blob/2e09a1000b728342b844a73b819dc4dcc661ebe8/README.md",
+        "review": {
+          "category": "community",
+          "publisher": "kai-scheduler/gpu-fractioning",
+          "status": "attributed",
+          "note": "固定v0.1.7标签阅读依赖、模式和版本检查边界；与10/12 main快照逐字节相同；未运行H20。"
+        },
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "GPU Fractioning v0.1.7 容器创建与重连处理",
+        "url": "https://github.com/kai-scheduler/gpu-fractioning/blob/2e09a1000b728342b844a73b819dc4dcc661ebe8/fractioning-manager/fractiond/internal/plugin.go",
+        "review": {
+          "category": "community",
+          "publisher": "kai-scheduler/gpu-fractioning",
+          "status": "attributed",
+          "note": "已读CreateContainer/buildAdjustment/Synchronize，区分内存解析错误放行与计算模式回退；只读源码，未运行。"
+        },
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "GPU Fractioning v0.1.7 依赖检查",
+        "url": "https://github.com/kai-scheduler/gpu-fractioning/blob/2e09a1000b728342b844a73b819dc4dcc661ebe8/operator/internal/controller/dependency_checker.go",
+        "review": {
+          "category": "community",
+          "publisher": "kai-scheduler/gpu-fractioning",
+          "status": "attributed",
+          "note": "已读版本tag/default/digest分支与skipVersionChecks位置；跳过软件栈版本检查不跳过独立驱动检查。"
+        },
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "metricsd 指标口径",
+        "url": "https://github.com/kai-scheduler/gpu-fractioning/blob/90690e98acdc6a48b6603dbf15b2a575838574c0/fractioning-manager/metricsd/README.md",
+        "review": {
+          "category": "community",
+          "publisher": "kai-scheduler/gpu-fractioning",
+          "status": "attributed",
+          "note": "固定main快照阅读指标归属与归一化口径；未将该文件与正式标签比对，未实机验证。"
+        },
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "GPU Fractioning v0.1.7 release",
+        "url": "https://github.com/kai-scheduler/gpu-fractioning/releases/tag/v0.1.7",
+        "review": {
+          "category": "community",
+          "publisher": "kai-scheduler/gpu-fractioning",
+          "status": "attributed",
+          "note": "GitHub API核验published_at为2026-10-07T12:40:18Z，tags API对应提交2e09a1000b728342b844a73b819dc4dcc661ebe8；没有下载镜像或验签。"
+        },
+        "publishedAt": "2026-10-07",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "GPU指标设备归属测试",
+        "url": "https://github.com/kai-scheduler/gpu-fractioning/blob/90690e98acdc6a48b6603dbf15b2a575838574c0/test/e2e/tests/metrics/isolation_test.go",
+        "review": {
+          "category": "community",
+          "publisher": "kai-scheduler/gpu-fractioning",
+          "status": "attributed",
+          "note": "已读mock NVML设备归属测试，非mock环境跳过；没有运行，不能作为实机显存或租户安全隔离证据。"
+        },
+        "accessedAt": "2026-10-14"
+      }
+    ],
+    "claims": [
+      {
+        "status": "inference",
+        "text": "NVIDIA 10月13日原文宣布Run:ai全平台开源；GPU Fractioning v0.1.7标签日期为10月7日，不能将新公告写成分片机制当日首次发布。",
+        "sourceIndices": [
+          0,
+          5
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "维护方固定源码展示容器创建调整与独立观测映射；本轮逐文件核验不等于驱动隔离或H20性能复现。",
+        "sourceIndices": [
+          2,
+          4
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "H20目标栈、SGLang容量探测、同卡尾延迟和故障影响均待隔离环境验证；CUDA/MPS路径不外推Ascend910。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际镜像、驱动与运行时能否追溯到经过核验的组合？",
+      "越额分配和邻居突发时，限制与双方SLO能否分别成立？",
+      "观测缺失是否会被误读为零使用？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-10-14只读核验10/13官方公告、公开文档与固定源码。主要实现固定v0.1.7（10/7，2e09a1000b728342b844a73b819dc4dcc661ebe8）；metricsd文档和测试固定10/12 main快照90690e98acdc6a48b6603dbf15b2a575838574c0。未安装、未运行测试或GPU，无H20性能或隔离结果，无Ascend910实现证据。所有实验为计划。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：先验收边界，再讨论利用率",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "Run:ai 的新公告值得关注，但真正能帮助推理运维决策的，是公开组件允许我们分别检查“谁获得资源”“容器怎样得到限制”“运行时是否执行限制”“观测能否反映事实”。把这四个问题合成一个绿色状态，会使容量规划与故障判断同时失真。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "NVIDIA 于 10 月 13 日介绍全平台开源，并列出可单独采用的 KAI Scheduler、GPU Fractioning Operator、KAI Resource Management 和 Workload Map。 这是本轮新发现，不在已上线 21 条研究记录中。本文选取其中 GPU Fractioning 的可核验路径深入分析，避免把平台公告写成四个项目的宣传汇总。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议优先级：面向共享 H20 节点上的小模型、开发或低负载服务，作为隔离环境的候选课题；对已经占满整卡、跨卡协同或严格低尾延迟的主力服务，先建立独占基线。没有证据支持“分片一定省钱”“显存有限额就没有邻居干扰”或“H20 可直接套用默认配置”。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：资源账本与实际占用之间隔着运行时",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创场景：一张 GPU 同时部署服务 A 与服务 B。平台给 A 记了 30% 配额，给 B 记了 50%，图表看上去还有余量。但这个账本本身不回答三个问题：A 启动时到底看见哪张设备？A 的分配请求是否受到限制？B 遇到 A 的突发计算时，生成间隔是否仍能达标？"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "应区分四类边界："
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "配额边界：组织允许某团队占多少资源。",
+                "放置边界：调度器把哪个容器放到哪张设备。",
+                "执行边界：设备分配和内存限制在容器运行前后怎样落实。",
+                "服务边界：共同运行时，各服务的错误、延迟与恢复是否达标。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "前三者的存在不会自动证明第四者。即使内存分配被限制，不同租户仍可能竞争计算和数据搬运路径。本文不把资源份额解释为吞吐份额，更不将某一份额写成保证的 tokens/s。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "另一个容易混淆的点是引擎自己的 KV 内存预算。服务引擎计算可用容量的依据，可能与平台记账方式不同。因此验收必须同时记录容器可见总量、引擎实际申请量、运行中峰值和客户端行为；只看平台上“分了多少”不够。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：一道限额经过多层交接",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                2
+              ],
+              "text": "固定 v0.1.7 源码显示，fractiond 在 CreateContainer 路径解析容器注解，构造内存请求/上限环境变量及 MPS 挂载；在有设备分配信息时设置可见 GPU，配置允许时还请求相同设备的 CDI 项。内存注解解析错误且 fail-open 时返回空 adjustment；计算模式错误且 fail-open 时则回退 time-slicing，继续构造调整。正常映射记录是异步的，与容器修改分开。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这给出一个重要的原创验收推论：注解存在、环境变量存在、设备可访问、限制实际生效，是连续但不同的证据点。应为每个阶段保存独立结果，避免拿前一层的成功替后一层担保。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如何读机制图：承诺、执行和观测是不同证据"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下面的原创机制图将实际解析分支和运行责任分开；位置不表示时间或性能比例。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "请求与解析：份额、目标设备，以及两种不同的错误。",
+                "容器创建结果：生成调整、拒绝、空调整或计算模式回退。",
+                "执行与映射：运行时交接、驱动、应用和异步映射。",
+                "观测与验收：GPU 指标、客户端 SLO、独立验证。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                4
+              ],
+              "text": "主执行链与异步观测链承担不同责任。内存解析失败可因 fail-open 放行而没有调整；计算模式解析失败则可回退 time-slicing 后继续调整；两类错误在 fail-closed 时均拒绝创建。metricsd 的观测不能直接证明隔离成立。图是基于固定源码的原创抽象，不覆盖所有异常路径，也不表示实测时序。"
+            },
+            {
+              "type": "diagram",
+              "title": "GPU分片：创建分支、执行链与观测分开",
+              "caption": "原创非实测机制抽象。内存解析fail-open为空调整；计算模式fail-open回退后继续。异步映射是观测链，驱动与SLO节点均待实机验收。分层分支图不表示时间或比例。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3,
+                4
+              ],
+              "nodes": [
+                {
+                  "id": "request",
+                  "label": "请求与分配",
+                  "detail": "请求份额及目标GPU由上游带入；不是限制已生效的证据",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "请求与分配",
+                  "tone": "control"
+                },
+                {
+                  "id": "parse",
+                  "label": "解析容器注解",
+                  "detail": "固定源码的内存注解与计算模式解析",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "解析容器注解",
+                  "tone": "control"
+                },
+                {
+                  "id": "memory-error",
+                  "label": "内存注解错误",
+                  "detail": "与计算模式错误区分",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "内存注解错误",
+                  "tone": "danger"
+                },
+                {
+                  "id": "compute-error",
+                  "label": "计算模式错误",
+                  "detail": "例如不支持的模式值",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "计算模式错误",
+                  "tone": "danger"
+                },
+                {
+                  "id": "adjust",
+                  "label": "生成容器调整",
+                  "detail": "环境变量、MPS挂载与按配置请求的设备",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "生成容器调整",
+                  "tone": "control"
+                },
+                {
+                  "id": "reject",
+                  "label": "拒绝容器创建",
+                  "detail": "fail-closed路径；不继续启动",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "拒绝容器创建",
+                  "tone": "danger"
+                },
+                {
+                  "id": "no-adjust",
+                  "label": "放行但空调整",
+                  "detail": "内存解析失败且fail-open；不表示限制已应用",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "放行但空调整",
+                  "tone": "danger"
+                },
+                {
+                  "id": "fallback",
+                  "label": "回退时间分片",
+                  "detail": "计算模式失败且fail-open，继续构造内存等调整",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "回退时间分片",
+                  "tone": "control"
+                },
+                {
+                  "id": "runtime",
+                  "label": "运行时交接",
+                  "detail": "调整必须被实际运行时和对应依赖处理",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "运行时交接",
+                  "tone": "control"
+                },
+                {
+                  "id": "driver",
+                  "label": "驱动限制待验",
+                  "detail": "运行时设置与实机分配限制之间仍有验收门",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "驱动限制待验",
+                  "tone": "compute"
+                },
+                {
+                  "id": "application",
+                  "label": "应用实际行为",
+                  "detail": "分配、退出、清理与邻居影响均需测试",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "应用实际行为",
+                  "tone": "compute"
+                },
+                {
+                  "id": "mapping",
+                  "label": "异步映射尝试",
+                  "detail": "成功返回路径提交观测工作；是否记录由适配器解析决定，不保证每次形成映射，也不改变容器",
+                  "column": 2,
+                  "row": 3,
+                  "shortLabel": "异步映射尝试",
+                  "tone": "control"
+                },
+                {
+                  "id": "metrics",
+                  "label": "GPU观测",
+                  "detail": "进程数据结合映射，不能独自证明隔离",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "GPU观测",
+                  "tone": "control"
+                },
+                {
+                  "id": "slo",
+                  "label": "客户端SLO",
+                  "detail": "独立采集延迟、错误、成功请求",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "客户端SLO",
+                  "tone": "control"
+                },
+                {
+                  "id": "verify",
+                  "label": "独立验收",
+                  "detail": "限制反例、观测完整性、双方服务边界；未执行",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "独立验收",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "request",
+                  "to": "parse",
+                  "label": "创建时评估"
+                },
+                {
+                  "from": "parse",
+                  "to": "adjust",
+                  "label": "有效注解"
+                },
+                {
+                  "from": "parse",
+                  "to": "memory-error",
+                  "label": "内存解析失败"
+                },
+                {
+                  "from": "parse",
+                  "to": "compute-error",
+                  "label": "计算模式解析失败"
+                },
+                {
+                  "from": "memory-error",
+                  "to": "reject",
+                  "label": "fail-closed"
+                },
+                {
+                  "from": "memory-error",
+                  "to": "no-adjust",
+                  "label": "fail-open"
+                },
+                {
+                  "from": "compute-error",
+                  "to": "reject",
+                  "label": "fail-closed"
+                },
+                {
+                  "from": "compute-error",
+                  "to": "fallback",
+                  "label": "fail-open"
+                },
+                {
+                  "from": "fallback",
+                  "to": "adjust",
+                  "label": "继续生成调整"
+                },
+                {
+                  "from": "adjust",
+                  "to": "runtime",
+                  "label": "交给运行时"
+                },
+                {
+                  "from": "runtime",
+                  "to": "driver",
+                  "label": "能否实际限制待验"
+                },
+                {
+                  "from": "driver",
+                  "to": "application",
+                  "label": "实际分配结果"
+                },
+                {
+                  "from": "adjust",
+                  "to": "mapping",
+                  "label": "返回路径提交映射尝试"
+                },
+                {
+                  "from": "no-adjust",
+                  "to": "mapping",
+                  "label": "返回路径提交映射尝试"
+                },
+                {
+                  "from": "mapping",
+                  "to": "metrics",
+                  "label": "仅观测归属"
+                },
+                {
+                  "from": "application",
+                  "to": "slo",
+                  "label": "实际业务观测"
+                },
+                {
+                  "from": "metrics",
+                  "to": "verify",
+                  "label": "一类验收证据"
+                },
+                {
+                  "from": "slo",
+                  "to": "verify",
+                  "label": "另一类验收证据"
+                },
+                {
+                  "from": "no-adjust",
+                  "to": "verify",
+                  "label": "必须识别缺少调整"
+                }
+              ],
+              "presentation": {
+                "kind": "gpu-fractioning-boundaries",
+                "panels": [
+                  {
+                    "title": "请求与解析",
+                    "tone": "control",
+                    "nodeIds": [
+                      "request",
+                      "parse",
+                      "memory-error",
+                      "compute-error"
+                    ]
+                  },
+                  {
+                    "title": "容器创建结果",
+                    "tone": "control",
+                    "nodeIds": [
+                      "adjust",
+                      "reject",
+                      "no-adjust",
+                      "fallback"
+                    ]
+                  },
+                  {
+                    "title": "执行与异步映射",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "runtime",
+                      "driver",
+                      "application",
+                      "mapping"
+                    ]
+                  },
+                  {
+                    "title": "独立观测与验收",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "metrics",
+                      "slo",
+                      "verify"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据：新闻日期、源码标签与测试性质分别标注",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据分层：作者陈述、固定代码与本轮核验",
+              "columns": [
+                "证据",
+                "已确认",
+                "不能据此推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "10/13 NVIDIA 原文",
+                    "全平台开源公告；组件可分别采用",
+                    "各组件都是当日首次实现；用户已有集群可无改动采用"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "官方 GitHub 发布与标签",
+                    "最新所见 v0.1.7，发布时间 2026-10-07 12:40:18 UTC，标签提交 2e09a1000b728342b844a73b819dc4dcc661ebe8",
+                    "公告日期等于代码发布日期；制品已由本轮下载或部署验证"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定版本文档",
+                    "分片有跨层依赖；列明软件栈最低要求",
+                    "H20 特定镜像、驱动和运行时组合已通过验证"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "dependency_checker.go",
+                    "可解析 operand tag 直接比较；未指定版本借助 Operator 默认版本门槛；不可解析的已指定版本跳过该比较；skip 只跳过相应软件栈版本门，不跳过独立的驱动检查",
+                    "没有报错即所有二进制已核验；Opaque digest 自动等于兼容"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "metricsd 文档",
+                    "GPU 观测需要进程、容器、Pod 映射；归一化指标有独立口径",
+                    "一个数值能证明隔离、账单公平或 SLO"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "仓库测试文件",
+                    "所读多 GPU 测试验证模拟 NVML 数据的设备归属；非 mock 环境跳过",
+                    "H20 实机显存越界测试、故障隔离或性能复现"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    6
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                3,
+                5
+              ],
+              "text": "本轮还将 main 截止快照 90690e98acdc6a48b6603dbf15b2a575838574c0（10/12 12:10:32 UTC）的 README、dependency_checker.go、plugin.go 与 v0.1.7 对应文件逐字节比较，三者相同。这消除了“只在 main 看见、正式标签没有”的具体疑问，但不扩展到整个仓库或容器镜像。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                5
+              ],
+              "text": "CHANGELOG 使用 Unreleased 标题不适合单独判断某项是否未交付；本例应看正式标签实际文件。这也是本轮证据处理中的一次纠偏。这里没有论文作者性能数字，也没有经过独立复现的 H20 benchmark。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：显存上限、计算共享与可恢复性",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "固定 README 要求 Kubernetes 1.28+，支持 NRI 的容器运行时，r615/CUDA 13.4，container toolkit 至少 1.20.1、device plugin 至少 0.20.1；Operator 默认驱动未必满足。它区分默认 time-slicing 和可选 sm-sharing，并提示部分配置只影响以后创建的容器。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这些要求意味着试验成本可能来自底层软件栈升级，而不仅是新增一个 Helm release。候选组件的收益必须扣除部署、排障和恢复成本。本文不建议为了通过一个分片演示而改变生产驱动。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创选择原则："
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "以容量不足为瓶颈时，先确认共享后每个引擎仍有启动与动态增长余量。",
+                "以尾延迟为瓶颈时，邻居突发应进入负载模型，不能只做平均负载测试。",
+                "以冷启动为瓶颈时，将模型装载、编译、KV 预热分别计时；分片不是这些阶段的同义优化。",
+                "以组织公平为目标时，明确分母是显存份额、设备时间、成功请求还是货币成本。不同分母不能混算。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "“限制故障租户扩大显存占用”与“保证另一个租户完全无影响”是不同验收项。前者成功之后，仍需验证后者的错误率和恢复预算。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、生产关联：状态正常为何仍可能不够",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本节是可证伪假设，不代表用户已有事故，也不宣称已发现一个新的安全漏洞。"
+            },
+            {
+              "type": "table",
+              "caption": "原创故障假设与独立观测",
+              "columns": [
+                "现象",
+                "优先检查的独立证据",
+                "排除的草率结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "分片 Pod 启动，但内存额度可疑",
+                    "实际镜像 digest、依赖版本、创建事件、限制小试验",
+                    "不能因注解写了上限就宣布上限已生效"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GPU 统计持续为零",
+                    "真实请求是否运行、NVML 可访问性、映射/采样时间",
+                    "零不能直接表示没有 GPU 使用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "分片服务 TTFT/ITL 抖动",
+                    "邻居负载时间线、自己的队列、计算与数据搬运 span",
+                    "不能直接归因模型变慢或网络"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "修改共享方式后新旧 Pod 行为不同",
+                    "创建时间、实际挂载/设备、重建记录",
+                    "配置对象一致不代表所有现存容器状态相同"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "配额公平但服务表现不公平",
+                    "每类请求长度、SLO 达标率、成功请求资源成本",
+                    "相等份额不代表相等业务价值"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "通过依赖检查，但镜像是 digest 固定",
+                    "建议保存构建来源与显式版本映射",
+                    "无法解析版本不应在人类审计中被填成“已支持”"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议采用“证据缺口”而不是二元“成功/失败”来表示初始化验收。举例：调度和容器创建已通过，驱动限额待测，客户端 SLO 未测。这种表达能阻止把部分成功误传成整条链已完成。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、隔离环境实验矩阵：先做反例，再做效率",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下全部为拟议实验，未执行。使用不承载真实用户流量的节点与测试身份；生产环境权限与安全设置变更不在本研究授权内。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议隔离环境验证矩阵，全部未执行",
+              "columns": [
+                "组",
+                "唯一主要变量",
+                "记录内容",
+                "成功条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "A 独占基线",
+                    "固定模型、请求集、引擎与设备",
+                    "启动峰值、稳态内存、客户端延迟、错误",
+                    "形成可重复参照"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "B 同卡空闲邻居",
+                    "只增加一个已启动但空闲的服务",
+                    "A 的可见容量、可用 KV、延迟",
+                    "差异能由资源预算解释"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "C 同卡突发邻居",
+                    "B 的到达率按预定时间上升",
+                    "两服务逐请求分布、失败、设备时间线",
+                    "双方达到事先定义的业务预算"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "D 越额申请",
+                    "测试进程逐步申请超过自身额度",
+                    "分配返回、退出、邻居可用性与清理",
+                    "拒绝/终止边界明确且不错误记为正常"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E 依赖反例",
+                    "测试栈使用低于要求的受控组合",
+                    "条件 reason、容器创建状态",
+                    "检测与阻断符合固定版本预期"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "F 解析反例",
+                    "无效内存或 compute-mode 注解",
+                    "fail-closed/fail-open 实际创建结果",
+                    "不把放行路径误记为限制已应用"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "G 重连与重建",
+                    "节点代理受控重启",
+                    "前后容器身份、创建/映射事件、客户端影响",
+                    "解释旧实例与新实例的行为差异"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H 观测反例",
+                    "模拟映射缺失或监测不可用",
+                    "业务实际运行与图表之间的差异",
+                    "能识别缺数据，而非报“零使用”"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "每轮只改变一项，再做组合压力。至少保持模型 revision、SGLang commit、采样、输入输出分布、到达过程、预热规则与统计窗口一致。长期稳定性阶段应覆盖真实负载周期，而不是把一次短测试包装成稳定性结论。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、指标与验收：让状态、隔离和服务各自说话",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                4
+              ],
+              "text": "metricsd 的归一化 SM 利用率按其定义将观测 SM 利用率除以基于内存的份额，并封顶 100；部分信息缺失时使用份额 1。 因而它适合在明确口径下观察，不能被解释成“拥有相同比例的计算保证”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创验收账本建议包含："
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "部署身份：chart、镜像 digest、驱动与运行时实际版本、节点 GPU 型号；声明值与实际值分列。",
+                "限制证明：目标额度、测试分配规模、结果、是否清理、其他测试租户是否受影响。",
+                "观测完整性：有效采样覆盖率、Pod UID/GPU UUID 配对、缺失或归因失败次数。",
+                "服务交付：客户端 TTFT、ITL/TPOT、错误率、取消后清理、SLO goodput。输出少于两个 token 的 TPOT 单列。",
+                "成本：全部共置服务的有效请求产出、整节点成本与失败/重试成本；不得把账面份额直接当实际节省。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "验收的四类证据"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "栈身份确认、限制反例、观测可解释、双方服务 SLO 是四项不同验收。任一不成立，先停止并定位；全部成立之后才在固定负载下比较完整成本。本轮没有执行这些实验，也没有测得收益。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "提前约定判定标准，保存失败样本，报告所有测试组，而不是只挑共享后平均利用率最高的那组。对低延迟推理，减少空闲可能伴随长尾恶化；这应作为方案边界记录，而非隐藏在总体吞吐里。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议验收账本：各层分别提供证据，未执行",
+              "columns": [
+                "层次",
+                "记录",
+                "验收原则"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份",
+                    "chart、镜像digest、实际驱动与运行时",
+                    "声明值与实际值分开"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "限制",
+                    "分配规模、返回、清理和邻居影响",
+                    "越额反例边界符合预期"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "观测",
+                    "UID/UUID配对、覆盖率和缺失",
+                    "缺数据不冒充零使用"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务",
+                    "TTFT、ITL/TPOT、错误、goodput",
+                    "双方均达到事先约定的预算"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成本",
+                    "整节点成本、失败和重试",
+                    "以可交付结果比较，而非账面份额"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "diagram",
+              "title": "拟议四道验收门",
+              "caption": "原创非实测验收图。四门全部待执行；未满足时停止并定位问题，不表示任何自动生产放量。",
+              "basis": "pending",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "identity",
+                  "label": "栈身份确认",
+                  "detail": "声明、实际版本和制品对应",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "栈身份确认",
+                  "tone": "control"
+                },
+                {
+                  "id": "limit",
+                  "label": "限制反例",
+                  "detail": "越额与错误配置测试",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "限制反例",
+                  "tone": "control"
+                },
+                {
+                  "id": "observability",
+                  "label": "观测可解释",
+                  "detail": "缺失与归属能够辨别",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "观测可解释",
+                  "tone": "control"
+                },
+                {
+                  "id": "business",
+                  "label": "双方SLO",
+                  "detail": "达标之后再比较完整成本",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "双方SLO",
+                  "tone": "control"
+                },
+                {
+                  "id": "stop",
+                  "label": "停止并诊断",
+                  "detail": "任一前提不成立先修正；没有自动放量",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "停止诊断",
+                  "tone": "danger"
+                },
+                {
+                  "id": "cost",
+                  "label": "完整成本比较",
+                  "detail": "全部验收成立之后，按可交付请求比较成本；仍不表示已批准上线",
+                  "column": 3,
+                  "row": 2,
+                  "shortLabel": "比较成本",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "identity",
+                  "to": "limit",
+                  "label": "身份确认后"
+                },
+                {
+                  "from": "limit",
+                  "to": "observability",
+                  "label": "限制反例通过后"
+                },
+                {
+                  "from": "observability",
+                  "to": "business",
+                  "label": "观测可解释后"
+                },
+                {
+                  "from": "identity",
+                  "to": "stop",
+                  "label": "未满足"
+                },
+                {
+                  "from": "limit",
+                  "to": "stop",
+                  "label": "未满足"
+                },
+                {
+                  "from": "observability",
+                  "to": "stop",
+                  "label": "未满足"
+                },
+                {
+                  "from": "business",
+                  "to": "stop",
+                  "label": "未满足"
+                },
+                {
+                  "from": "business",
+                  "to": "cost",
+                  "label": "满足之后"
+                }
+              ],
+              "presentation": {
+                "kind": "gpu-fractioning-acceptance",
+                "panels": [
+                  {
+                    "title": "四项待验",
+                    "tone": "control",
+                    "nodeIds": [
+                      "identity",
+                      "limit",
+                      "observability",
+                      "business"
+                    ]
+                  },
+                  {
+                    "title": "独立处置",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "stop",
+                      "cost"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、待验证与采用顺序：保持硬件和日期边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本轮结论是一份可审查的候选机制研究。建议采用顺序为：盘点当前实际栈 → 核对正式制品 → 隔离环境验证限制与失败 → 同卡负载实验 → 再决定是否值得制定生产变更计划。这里没有提出已获授权的生产变更。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "仍待验证："
+            },
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "H20 的目标驱动、具体容器镜像与 NRI 组合是否受支持且可复现；本轮不借用其他 NVIDIA GPU 的结果。",
+                "SGLang 如何在受限可见容量下计算静态/动态内存预算，模型加载和 CUDA graph 高水位是否越界。",
+                "同卡服务混合长短输入、取消、重启时的稳定性，以及邻居失败的传播范围。",
+                "chart 与所有镜像是否对应所读标签；本文只比对三个关键文本文件，不宣称供应链完整验证。",
+                "默认运行模式与显式共享模式下，业务要求的尾延迟与资源成本是否同时改善。",
+                "Ascend910 只能借鉴分层验收方法；本研究没有 CANN/HCCL/torch_npu 对应实现的证据，不能提供适用性承诺。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "这次新增价值在于打开可读的实现边界，将“提高利用率”变成一组可以失败、可以复查的实验。新公告与已有代码的日期差异应保留，避免把 10 月 7 日的标签能力重新标成 10 月 13 日新优化。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-bidirectional-kv-eligibility",
     "kind": "analysis",
     "title": "vLLM 双向 KV：上一轮的缓存，下一轮真的还能用吗",
