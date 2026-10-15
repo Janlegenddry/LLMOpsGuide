@@ -1,6 +1,800 @@
 [
   {
     "schemaVersion": 1,
+    "id": "sglang-decode-radix-ownership",
+    "kind": "analysis",
+    "title": "SGLang Decode Radix：请求都成功之后，KV 为什么仍可能双重归属",
+    "summary": "10月14日合入的 #40857 将插入后所有权与 SWA 命中资格分开。固定源码拆解 bigram 页边界、canonical 索引重绑和 EAGLE3 准入；用多轮空闲审计与逐页验收设计解释为何 HTTP 200 不足以证明安全。",
+    "publishedAt": "2026-10-14",
+    "reviewedAt": "2026-10-15",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "PD 分离",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang 固定修复提交 d3dc14e（10 月 14 日）",
+        "url": "https://github.com/sgl-project/sglang/commit/d3dc14eb3869adcf2291b40c6903a40a77fc6f76",
+        "publishedAt": "2026-10-14",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "SGLang #40857：作者故障记录与修复说明",
+        "url": "https://github.com/sgl-project/sglang/pull/40857",
+        "publishedAt": "2026-09-23",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · unified_radix_cache.py",
+        "url": "https://github.com/sgl-project/sglang/blob/d3dc14eb3869adcf2291b40c6903a40a77fc6f76/python/sglang/srt/mem_cache/unified_radix_cache.py",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · radix_cache.py",
+        "url": "https://github.com/sgl-project/sglang/blob/d3dc14eb3869adcf2291b40c6903a40a77fc6f76/python/sglang/srt/mem_cache/radix_cache.py",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · swa.py",
+        "url": "https://github.com/sgl-project/sglang/blob/d3dc14eb3869adcf2291b40c6903a40a77fc6f76/python/sglang/srt/mem_cache/unified_cache/components/swa.py",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · test_unified_radix_cache_unittest.py",
+        "url": "https://github.com/sgl-project/sglang/blob/d3dc14eb3869adcf2291b40c6903a40a77fc6f76/test/registered/unit/mem_cache/test_unified_radix_cache_unittest.py",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · speculative_hook.py",
+        "url": "https://github.com/sgl-project/sglang/blob/d3dc14eb3869adcf2291b40c6903a40a77fc6f76/python/sglang/srt/arg_groups/speculative_hook.py",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · pd_disaggregation_hook.py",
+        "url": "https://github.com/sgl-project/sglang/blob/d3dc14eb3869adcf2291b40c6903a40a77fc6f76/python/sglang/srt/arg_groups/pd_disaggregation_hook.py",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "固定源码 · disagg.py",
+        "url": "https://github.com/sgl-project/sglang/blob/d3dc14eb3869adcf2291b40c6903a40a77fc6f76/python/sglang/srt/arg_groups/fields/disagg.py",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "SGLang #40857：作者故障记录与修复说明",
+        "url": "https://github.com/sgl-project/sglang/pull/40857",
+        "review": {
+          "category": "community",
+          "publisher": "GitHub · SGLang PR #40857 作者",
+          "status": "attributed",
+          "note": "已读PR作者故障说明，核对1P/1D、gpt-oss-120b、SWA页64、EAGLE3及多轮响应后idle审计失败的描述。作者现场数据未独立复现；与来源1为同一作品，不增加独立性或引用额度。"
+        },
+        "publishedAt": "2026-09-23",
+        "accessedAt": "2026-10-15"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "固定修复提交改用插入路径的规范索引进行重绑，并要求覆盖整段页对齐插入。",
+        "sourceIndices": [
+          2
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "decode radix cache 仍默认关闭；固定源码在算法解析后允许 None、DSPARK、EAGLE、EAGLE3。",
+        "sourceIndices": [
+          6,
+          8
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "尚未独立运行 GPU 或 Ascend 回归；合入不能证明已部署版本、精度或性能。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "结束后的池审计是否覆盖树持有页与空闲页的交集？",
+      "测试是否真正经过 short-SWA-tail、bigram 页边界及多轮自身输出前缀？",
+      "运行镜像是否包含修复，最终解析算法是否在允许集合？"
+    ],
+    "related": [
+      {
+        "title": "Unified Radix Cache：复用边界",
+        "path": "/radar/unified-radix-cache/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "核对于 2026-10-15。基于官方 #40857、固定 merge SHA d3dc14eb3869adcf2291b40c6903a40a77fc6f76 的缓存实现、参数钩子与测试源码。作者现场数据均标 author；原创模型与诊断标 inference；实验和平台结果均 pending。未运行 GPU/NPU 测试、未核实 CI 终态、未确认正式版本收录。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：复用资格与释放责任，必须分别记账",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这次值得关注的是 decode 侧缓存生命周期，而不是一个新的吞吐成绩。设想缓存树已接管一段请求 KV，随后一次“这段还能用于新请求吗”的查询返回更短前缀。如果系统据此缩短“请求不再有权释放的范围”，就把读资格错误地当成了所有权证明。本文建议把缓存准入、请求结束、空闲池审计连成一次完整验收；请求成功返回只能覆盖其中一站。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "固定提交 d3dc14e 已存在于官方仓库，提交时间为 2026-10-14 21:19:51 UTC；PR 记录的合并时间晚一秒。本文按该提交核对实现，不把合入等同于任何正式版本或运行镜像已包含修复。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "此前 [Unified Radix Cache 阅读条目](/radar/unified-radix-cache/) 聚焦多组件复用边界。本篇独立讨论 PD decode 插入之后的所有权交接：为何未命中仍可能持有树资产、怎样构造短窗口回归，以及怎样在请求完成后发现双重归属。不是对旧条目的改名重发。",
+              "title": "阅读范围与判重"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "建议先在隔离环境比较修复父提交与固定修复提交，证明页归属和终态回收，再评估开启 decode radix cache 的传输收益。H20 与 Ascend 均未执行平台回归；本文没有可用于容量规划的实测加速比。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：HTTP 200 为什么不能替空闲池签字",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                9
+              ],
+              "text": "作者报告：1P/1D、gpt-oss-120b、SWA、64-token 页与 EAGLE3 的多轮请求均返回 HTTP 200，随后 decode scheduler 在空闲审计中失败。其 FULL 池出现 6 页、SWA 池 1 页同时被树引用和空闲链表持有。作者的单轮对照没有触发同类错误；这些是作者现场描述，本站未独立复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "多轮负载和独立单轮负载，最大的区别未必是平均输入长度。前者把上轮 decode 生成的内容重新纳入下一轮输入，让“刚写过、刚挂树、又被匹配”的路径高频重逢。只压相同长度的随机 prompt，即使达到相同 token 吞吐，也可能绕开这个状态交接。测试设计应保留真实 token 历史，不能只让字符串看起来相似。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "接口结束、请求对象释放、缓存保留和 allocator 空闲不是同一事件。缓存是有意留下来的已用资源，不能期待每轮结束后空闲量完全恢复；相反，也不能因为树里还留有可驱逐页就放弃守恒检查。正确的问题是：每个物理页此刻由谁负责，允许谁发起最终释放，下一次分配会不会把它交给另一个请求。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "树内部计数自洽，只说明树自己讲得通；空闲链表没有重复页，只说明分配器自己讲得通。两个集合各自干净，也可能有交集。审计必须跨越对象边界，验证同一个物理页不能同时是树资产和可重新分配的空闲资源。",
+              "title": "两个容易混淆的“通过”"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：树已经拥有，不代表窗口已经可复用",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "固定实现不再用插入后的 _match_tree 结果决定重绑节点，而采用 insert 返回的 last_device_node。path_device_indices 从该节点收集至根的设备索引；断言同时检查插入重叠长度不越界、索引数等于 page_aligned_len。随后写回请求索引，迁移锁并更新 cache_protected_len。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "SWA 的普通匹配验证器遇到缺失组件数据会重置有效累计长度，再以滑动窗口大小判断边界；源码也有 host-backed 与 per-request ring 的特殊处理。因此本文的“短窗口会被拒绝”限定在对应设备树状态，不能套到所有 SWA 存储模式。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "RadixKey 的 bigram 视图对 n 个原始 token 产生 max(n−1,0) 个键；page_aligned 按键长度向下取整到页粒度。这里对齐的是键空间，不是把原始 token 数直接除以页长。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "取教学参数 n=256、页长 P=64，普通键可插入长度是 256，bigram 键则是 floor(255/64)×64=192。若某个假想请求仅在 [160,256) 持有活的 SWA 内容，插入区间内的活尾就从 96 缩到 32。假设所需完整窗口为 64，这个尾部不足以支持新的匹配，却不否定此前完成的插入交接。数字只说明离散边界效应，不复刻作者现场或实际传输分配。",
+              "title": "原创数值推导：减一可能少整页"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意：插入归属与未来命中是两条问题线",
+              "caption": "原创非实测机制图。旧路径表示风险推导，新路径表示修复责任链；独立查询不拥有释放决定权，箭头不代表时间比例或性能。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                4,
+                5
+              ],
+              "nodes": [
+                {
+                  "id": "insert",
+                  "label": "插入接管",
+                  "detail": "插入完成后的路径是所有权事实；不是新请求的复用资格。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "oldmatch",
+                  "label": "旧：重新匹配",
+                  "detail": "缺少完整 SWA 活窗时，匹配可以停在更短位置。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "oldprotect",
+                  "label": "旧：保护不足",
+                  "detail": "教学风险：把更短命中当作释放责任边界。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "conflict",
+                  "label": "潜在双重归属",
+                  "detail": "请求清理释放仍属树的页；需要集合交集证明。",
+                  "column": 3,
+                  "row": 0
+                },
+                {
+                  "id": "path",
+                  "label": "新：插入路径",
+                  "detail": "从 insert 最终节点收集 canonical indices。",
+                  "column": 1,
+                  "row": 2
+                },
+                {
+                  "id": "cover",
+                  "label": "新：覆盖断言",
+                  "detail": "索引长度应覆盖整段 page-aligned insert。",
+                  "column": 2,
+                  "row": 2
+                },
+                {
+                  "id": "protect",
+                  "label": "新：绑定与保护",
+                  "detail": "更新请求索引、锁和保护长度，归属跟随插入。",
+                  "column": 3,
+                  "row": 2
+                },
+                {
+                  "id": "query",
+                  "label": "独立复用查询",
+                  "detail": "新请求仍按组件有效性匹配；可以没有命中。",
+                  "column": 0,
+                  "row": 3
+                }
+              ],
+              "edges": [
+                {
+                  "from": "insert",
+                  "to": "oldmatch",
+                  "label": "旧逻辑重查"
+                },
+                {
+                  "from": "oldmatch",
+                  "to": "oldprotect",
+                  "label": "可能缩短"
+                },
+                {
+                  "from": "oldprotect",
+                  "to": "conflict",
+                  "label": "后续清理风险"
+                },
+                {
+                  "from": "insert",
+                  "to": "path",
+                  "label": "以插入结果为准"
+                },
+                {
+                  "from": "path",
+                  "to": "cover",
+                  "label": "校验全覆盖"
+                },
+                {
+                  "from": "cover",
+                  "to": "protect",
+                  "label": "成功后更新"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此应该分清至少三个长度：原始输入覆盖长度、页对齐后插入键长度、对某次查询可复用的前缀长度。还有一个独立事实是 canonical 物理索引序列：发生重复前缀合并时，请求原来分配的页未必就是树最终持有的页。只更新计数而不重绑地址，或只重绑地址而不更新保护范围，都没有完成交接协议。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这并不意味着“把保护长度永远拉满”就是通用修法。插入可能存在拒绝分支，组件也可能对可缓存长度施加限制。正确目标是仅覆盖已经被该次插入实际接管的规范路径，并在继续清理之前验证覆盖关系；不能拿希望写入的长度替代已完成的所有权事实。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：最小回归故意保留零命中",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "新增定向测试使用 SWA、无 Mamba、page_size=1、window=4；构造 8-token 请求，先释放 [0,6) 的 SWA，只留两个活 token。checkpoint 后检查完整插入保护，另做新匹配仍期望 device_prefix_len=0；结束请求后核对 FULL/SWA 的 available+evictable 各回到初始容量。本文只阅读测试，没有运行或推定 CI 结果。"
+            },
+            {
+              "type": "table",
+              "caption": "固定来源分别证明什么；不能用其中一项替代其余项",
+              "columns": [
+                "证据",
+                "支持的结论",
+                "不能推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "固定提交",
+                    "修复身份可冻结，便于构造版本 A/B",
+                    "正式发行版、容器或部署已收录"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "插入后路径重绑与覆盖断言",
+                    "责任边界来自完成的插入路径",
+                    "所有 allocator/backend 组合都安全"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "短窗定向测试",
+                    "零匹配与完整保护可以同时成为期望值",
+                    "真实 64-token 页和 PD 传输已验证"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者现场记录",
+                    "存在“响应完成后才暴露”的故障报告",
+                    "本站复现、普遍触发率或性能改善"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "本文的所有权集合审计设计",
+                    "能区分计数漂移与页身份冲突",
+                    "已运行的观测结果"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "定向回归最有价值的地方是没有把“提高命中”当成修复条件。如果新的测试靠放宽 SWA 匹配规则来通过，就可能从资源错误换成上下文缺失：资源不再被早释放，但后续计算读取了不足的历史窗口。这里应分别验证两条不变量，一条守护未来计算的输入完整性，另一条守护过去插入的资源责任。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "未运行测试、未核实 CI 终态、未核实发布标签，都是证据缺口。不要把 PR 合并、测试文件存在、某次普通压测成功拼成“生产问题已解决”的合成结论。",
+              "title": "负证据也要保留"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：允许启动只是准入第一关",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "固定 speculative_hook 在别名解析后检查最终算法：decode radix cache 允许 None、DSPARK、EAGLE、EAGLE3。NEXTN 通常映射为 EAGLE；Gemma4 assistant draft 可将 NEXTN/EAGLE 转为 FROZEN_KV_MTP，因此不能仅凭用户输入的别名判断可用。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7,
+                8
+              ],
+              "text": "对应字段的 decode radix cache 默认值仍为 False。PD hook 保留与 HiSparse、fake transfer 的冲突检查，并把启用状态标为 experimental；DP attention 场景还提示需要 prefix-aware rank routing 才有理想命中。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对多轮 agent、会话续写或长历史重复请求，D 侧保留前缀的潜在价值是少搬运已经在 D 的 KV。但多保留一页，也意味着少一页能立即承接新请求。最终应按真实峰值并发下的服务目标决策，而不是把更高 hit rate 或更少传输字节直接折算为用户可见加速。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "比较时建议分离四个因素：缓存开关、投机开关、请求历史重用程度、页/窗口相对边界。一次同时换模型、后端和投机深度的升级，即便性能更好，也难以解释收益来自哪里；即便稳定性变差，也容易错怪这条所有权修复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "H20 的实际显存压力、目标模型支持与通信路径需要独立配置验证；Ascend 还应分别确认分支实现、算子和 PD 后端支持。共享 Python 逻辑或算法 allowlist 都不能替代端到端平台证据。Mamba、ring、HiCache 恢复、retraction 等扩展组合也不在这条小型回归的证明范围。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产推演：不要等下一次空闲才留证",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下列均为原创故障假设与拟议诊断路径，不代表已观察到的新漏洞。建议在隔离回归中用页身份、池类型与分配世代构建事件账本；不要只记录总 token 数。FULL 与 SWA 的相同数值索引不能当成同一物理页，分配器重用同一页号后的新世代也应与旧世代分开。"
+            },
+            {
+              "type": "table",
+              "caption": "原创诊断树：从症状追到能反驳假设的证据",
+              "columns": [
+                "假设与症状",
+                "要保存的证据",
+                "如何区分/反驳"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "H1：插入后保护变短，空闲时容量超账",
+                    "checkpoint 前后插入长度、规范索引、保护长度；tree/free 集合快照",
+                    "若交集为空且守恒项完整，不能断言双重归属；转查计量口径"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H2：重叠前缀重绑错误，输出偶发异常",
+                    "原始与规范页映射、token 历史哈希、命中分支、独立无缓存参考",
+                    "只看保护长度正确不足以排除此项；地址与历史必须同时一致"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H3：总量看似正常但页已跨请求重用",
+                    "allocate/free/insert/rebind 的页世代时间线",
+                    "一增一减可能抵消计数；逐页重叠所有权比总和更有判别力"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H4：取消或异常分支绕过交接",
+                    "取消时间、插入返回、锁迁移、cleanup 与释放事件",
+                    "只在取消出现时失败，不能外推成普通完成路径都失败"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H5：保护不再过短但页面过度保留",
+                    "活动请求、树锁、可驱逐/被保护页与 idle 后趋势",
+                    "零双重释放不能证明无泄漏；排除合法长期缓存后检查不可驱逐残留"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "观测窗口应越过最后一个客户端响应：先等请求和传输队列安静，拍一次快照；再执行受控驱逐或新一轮复用，拍第二次快照。这样能够分开“资源归属错误”与“错误尚未变成可见覆盖”。若只能在故障后抓取现场，重复分配可能已经覆盖了第一个冲突的证据。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "逐页跟踪会改变时序并增加开销，应保留轻量计数模式与深度审计模式两套回归，不能拿审计模式的延迟评估正式性能。日志只存合成请求编号、页身份和 token 历史摘要；不需要上传真实会话正文。",
+              "title": "诊断开销与数据边界"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若检测到树持有页同时进入空闲集合，隔离该实例并保留证据应优先于继续压测。不要把释放同一页第二次当作“纠正计数”；不要通过关闭断言掩盖不变量失败。回退目标应是已验证基线，而不是任意关闭投机后就宣称根因消除。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先激发边界，再观察完整生命周期",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                0
+              ],
+              "text": "全部实验待执行。版本 A 取修复提交的实际父提交 12dc62310288926b0f38e33ff2d466dee2bf6bb9，版本 B 取 d3dc14e；构建需保存完整 SHA、镜像摘要、依赖与启动解析结果。先做不涉及设备的结构核查，再在可用平台运行单位回归和 PD 服务压测。使用父提交只是为了缩小代码差异，仍须确认两版可在同一测试栈运行。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议矩阵：每个维度都回答一个独立问题",
+              "columns": [
+                "实验层",
+                "参数或负载",
+                "关键观测",
+                "停止/结论条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "启动资格",
+                    "None / EAGLE / EAGLE3 / DSPARK；NEXTN 与 Gemma4 draft 单独测",
+                    "最终解析算法、radix flag、冲突错误",
+                    "拒绝组合不能作为可用配置进入后续比较"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "已有最小回归",
+                    "仅匹配其明确 fixture：SWA、无 Mamba、页 1、窗 4",
+                    "零新匹配、完整保护、FULL/SWA 守恒",
+                    "失败时先定位，不直接跑压力测试"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "页边界放大",
+                    "目标部署页长 P；合成 n=kP−1、kP、kP+1；活尾 W−1、W、W+1",
+                    "原始长度、bigram 长度、插入长度、保护长度",
+                    "每个有效用例检查规范地址与保护覆盖"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "1P/1D 多轮",
+                    "后一轮严格包含前一轮输入与输出；固定种子，普通与投机分开",
+                    "树命中、每池交集、响应后 idle 审计",
+                    "复现期先用小池提高压力；不把失败轮数当通用概率"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "完成路径扰动",
+                    "普通结束、提前终止、入队取消、运行取消；隔离执行",
+                    "锁归属、已接管范围、释放次数、终态",
+                    "任何重复归属或无法解释的不可驱逐残留即停"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "独立计算正确性",
+                    "固定历史和确定性配置，与无缓存参考比较",
+                    "输出 token/允许数值误差及首处分歧",
+                    "非确定性配置另定义统计口径，不能要求逐 token 恒等"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "实际收益",
+                    "相同到达过程、冷热比例与并发；关闭深度审计",
+                    "传输字节、TTFT、TPOT、端到端延迟、吞吐、占用",
+                    "安全门通过后再评估；H20 与 Ascend 分开记账"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "为了避免“旧版没有失败，所以补丁无用”的错误结论，先检查实验有没有真正经过短窗口插入、重叠重绑和后续释放。一个完全没有触达目标分支的长压测，证明力低于一次明确命中边界的定向测试。反过来，也不能只做故障触发：修复后要保留同一观测点，确认新路径不是通过跳过缓存或取消请求来避开错误。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "执行计划分两段保存结果：第一段保留带审计的每轮状态证据，直到预先定义的所有边界和终态组合均覆盖；第二段再按既定服务峰值与稳态周期做性能比较。所有重试都保留原失败记录，不以“最后一次成功”覆盖先前失败。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：守恒之外，还要证明身份互斥",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下是实施前建议写入测试计划的门槛，不是已达到的成绩。时间、延迟与吞吐门槛应由现有业务 SLO 和基线波动共同决定；本文不凭空给出跨平台百分比。安全门采用明确零容忍，性能门采用提前冻结的允许区间，两者不可相互抵消。"
+            },
+            {
+              "type": "table",
+              "caption": "预定义验收表；所有结果当前待测",
+              "columns": [
+                "门",
+                "口径",
+                "通过条件",
+                "失败处理"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "运行进程对应提交、依赖、配置与目标代码位置",
+                    "实际运行产物可追溯，确认修复存在",
+                    "停止性能归因，先纠正构建"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "插入覆盖",
+                    "canonical 索引长度与实际 page-aligned insert；重叠长度不越界",
+                    "所有目标用例均满足，未把短命中当保护范围",
+                    "冻结最小失败输入"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "页身份安全",
+                    "按 FULL/SWA 池和分配世代求 tree-owned ∩ free",
+                    "每个安全快照交集为空；同一世代无非法重复释放",
+                    "隔离实例，保存事件账本"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源守恒",
+                    "互斥分类后的容量总和；保护/可驱逐不可重复相加",
+                    "静止时等于池可用总容量；每项口径明确",
+                    "区分计数漂移、漏记在途与真实归属冲突"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "终态资源",
+                    "完成/取消/异常后请求持有、锁和在途对象",
+                    "回到预期基线；树保留缓存须可解释且可驱逐",
+                    "检查未覆盖清理分支"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "计算正确性",
+                    "固定历史的无缓存参考，预先规定精度与采样口径",
+                    "无新增错误或不可解释输出分歧",
+                    "停止放量，定位首次差异"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务价值",
+                    "相同负载下 TTFT/TPOT/端到端尾延迟、错误率、有效吞吐",
+                    "满足原 SLO 且收益足以覆盖容量与复杂度成本",
+                    "保留修复但是否启用功能另行决定"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "守恒表必须是互斥分类。树上被锁定的页可能仍由活动请求引用，但这不等于两个可自由释放的所有者；“引用”与“释放责任”要分别定义。对可驱逐页、被保护页和会话持有页，应依实际实现明确是否包含关系，再决定如何求和。直接照抄告警里的几个数字相加，很容易制造假泄漏。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议最终交付一份证据包：版本身份、解析后配置、边界覆盖清单、首个冲突事件或空集合快照、结束后的池状态、独立正确性对照与服务指标。没有这样的证据包，最诚实的结论只能是“指定测试暂未触发”，不能升级成“所有 PD 投机配置可安全启用”。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "未闭合项：合入、启动、运行与收益分别回答",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "尚未确认哪些正式 release、预编译包或镜像包含此 SHA；发布日不能代替包含关系。",
+                "尚未执行新增单元测试、64-token 页 PD 回归、取消/异常终态或高压力多轮试验。",
+                "作者现场触发经过人工放宽旧 guard；不能把当时可启动理解为旧版本正式支持。",
+                "尚未核实该提交 CI 的最终状态；测试源码只能证明检查设计存在。",
+                "尚未获得 H20 与 Ascend 的实机数据、目标模型兼容清单、投机效果与通信收益。",
+                "Mamba、SWA ring、HiCache、会话引用、DP routing 与不同传输后端的交叉覆盖仍需独立证据。",
+                "本报告没有精度、吞吐或稳定运行时长的新测量，不为未测配置填写推测成绩。"
+              ]
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "先固定产物与允许配置，再运行短窗口所有权回归，再检验多轮与终态资源，最后测性能并决定是否开启功能。这个顺序的目的，是避免让一个看似更高的命中率掩盖更深的页归属错误。",
+              "title": "落地顺序"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "flashinfer-uniform-verify-sm90",
     "kind": "analysis",
     "title": "FlashInfer 等长验证提示：先证明路径命中，再谈 H20 收益",
