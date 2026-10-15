@@ -961,6 +961,534 @@
   },
   {
     "schemaVersion": 1,
+    "id": "mooncake-uring-short-completion",
+    "kind": "analysis",
+    "title": "Mooncake 短 I/O：有完成通知，还不等于拿到了整块 KV",
+    "summary": "#4618合入主干，纠正TENT io_uring短完成的字节记账和READ尾部覆盖。把完成事件、整块有效性与重试权限分开验证；不外推原子WRITE、目标wheel或H20收益。",
+    "publishedAt": "2026-10-13",
+    "reviewedAt": "2026-10-15",
+    "topics": [
+      "KV Cache",
+      "故障分析",
+      "GPU 通信"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Mooncake #4618 · 首发与合入状态",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4618",
+        "publishedAt": "2026-10-13",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "#4618 · 作者测试范围",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/4618",
+        "review": {
+          "category": "community",
+          "publisher": "Mooncake PR #4618 作者",
+          "status": "attributed",
+          "note": "读取官方仓库闭合PR列表中的完整作者正文和合并元数据，并核对固定实现与测试。作者CPU/真实CQE结果未独立复现，不是GPU、实际磁盘O_DIRECT或满盘验证。"
+        },
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "完成字节与资源回收",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/4012f2a56f696db93269ab334c822b75d3934605/mooncake-transfer-engine/tent/src/transport/io_uring/io_uring_transport.cpp",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "真实CQE回归与注入边界",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/4012f2a56f696db93269ab334c822b75d3934605/mooncake-transfer-engine/tent/tests/io_uring_transport_test.cpp",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "隔离测试注册",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/4012f2a56f696db93269ab334c822b75d3934605/mooncake-transfer-engine/tent/tests/CMakeLists.txt",
+        "accessedAt": "2026-10-15"
+      },
+      {
+        "title": "Mooncake 发布目录",
+        "url": "https://github.com/kvcache-ai/Mooncake/releases",
+        "accessedAt": "2026-10-15"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#4618于2026-10-14合入main；固定实现仅在完成字节等于请求长度时报告整项完成。",
+        "sourceIndices": [
+          0,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "目标制品包含情况、GPU路径、真实磁盘和服务恢复尚未验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "调用链实际使用TENT io_uring还是其他存储/传输后端？",
+      "FAILED但已有部分字节时，谁负责阻止整块消费？",
+      "部分WRITE之后允许怎样恢复，是否有独立幂等与提交协议？"
+    ],
+    "related": [
+      {
+        "title": "Mooncake RDMA结算与回调生命周期",
+        "path": "/radar/mooncake-rdma-sparse-completion/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "截至2026-10-15 03:33 UTC的公开研究。事件窗口为10月14日至本轮；PR首发10月13日，10月14日03:50:43 UTC合入。固定提交4012f2a56f696db93269ab334c822b75d3934605。只阅读官方元数据、固定源码与测试，未执行实验、未安装制品、未发布。图与操作建议为原创。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：整块有效性必须有独立门槛",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2
+              ],
+              "text": "#4618在10月14日03:50:43 UTC合入main。固定源码将CQE实际完成字节纳入结果：只有长度满足整项请求才标完成；短READ的暂存拷贝限定到真正读到的前缀。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对存储分层或KV外溢链路，先确认确实走TENT io_uring，再做负例回归。不能仅因模型跑在H20上便认定该修复适用。最重要的部署问题是：传输失败后，上层会不会仍把整块缓冲区交给后续计算。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：从磁盘到内存仍有短完成",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一次完成队列事件回答“这个操作返回了什么”，应用请求则可能要求“完整取得L字节”。这两个口径不同。工程上可把读取目标分为有效前缀和未读区域，但KV消费者通常需要一个完整、一致的逻辑对象，不能自行把前缀当作可消费缓存。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "作者报告CPU构建使用真实liburing内核接口验证短完成；并未报告GPU、物理磁盘O_DIRECT或性能结果。本站未执行这些测试。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：用实际字节划分有效前缀",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "READ存在暂存缓冲时，仅复制CQE给出的有效字节；负错误记失败并报告零字节。无论成功或失败，回收暂存缓冲。短WRITE也报告失败和实际字节数，不会把已经发生的前缀写入撤销。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创例子：计划读取8个单位，完成事件只证明前3个单位已读。目标后5个单位仍保留原内容，不能据此称8个单位有效。尾部不被污染是一条内存保护性质；整块不能发布是另一条应用准入性质。两者必须分别验收。"
+            },
+            {
+              "type": "diagram",
+              "title": "一条短READ：前缀保护与整块准入分开",
+              "caption": "原创机制示意，非测量。上下是旧风险与候选责任链；最终消费门为待验上层契约，不是本补丁已经实现的保证。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-event",
+                  "label": "非负完成",
+                  "detail": "旧风险示意：只看返回非负",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "非负完成"
+                },
+                {
+                  "id": "old-copy",
+                  "label": "扩成整块",
+                  "detail": "旧风险：将部分证据当成完整输入",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "扩成整块"
+                },
+                {
+                  "id": "old-tail",
+                  "label": "尾部受污染",
+                  "detail": "暂存未读区可能覆盖目标尾部",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "尾部受污染"
+                },
+                {
+                  "id": "old-use",
+                  "label": "错误准入",
+                  "detail": "上层可能误消费不完整对象",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "错误准入"
+                },
+                {
+                  "id": "new-event",
+                  "label": "实际字节",
+                  "detail": "候选：保存实际完成长度",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "实际字节"
+                },
+                {
+                  "id": "new-prefix",
+                  "label": "只认前缀",
+                  "detail": "READ暂存只拷确实读到的数据",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "只认前缀"
+                },
+                {
+                  "id": "new-fail",
+                  "label": "整项失败",
+                  "detail": "不足请求长度仍不能标完整",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "整项失败"
+                },
+                {
+                  "id": "new-gate",
+                  "label": "消费待验",
+                  "detail": "上层拒绝整块准入须独立验证",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "消费待验"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-event",
+                  "to": "old-copy",
+                  "label": "误认充分"
+                },
+                {
+                  "from": "old-copy",
+                  "to": "old-tail",
+                  "label": "潜在污染"
+                },
+                {
+                  "from": "old-tail",
+                  "to": "old-use",
+                  "label": "错误可能传播"
+                },
+                {
+                  "from": "new-event",
+                  "to": "new-prefix",
+                  "label": "限定有效区"
+                },
+                {
+                  "from": "new-prefix",
+                  "to": "new-fail",
+                  "label": "长度不足"
+                },
+                {
+                  "from": "new-fail",
+                  "to": "new-gate",
+                  "label": "应阻止消费"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧风险：通知被当作整块证明",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-event",
+                      "old-copy",
+                      "old-tail",
+                      "old-use"
+                    ]
+                  },
+                  {
+                    "title": "候选：有效前缀与整项状态分离",
+                    "tone": "control",
+                    "nodeIds": [
+                      "new-event",
+                      "new-prefix",
+                      "new-fail",
+                      "new-gate"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：实现、注入与结论分别记账",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "固定代码与测试各自支持的范围",
+              "columns": [
+                "来源",
+                "核对事实",
+                "不能外推"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "完成处理",
+                    "成功条件是实际字节与请求长度相等",
+                    "有正字节数就等于整块有效"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "READ测试",
+                    "对齐与暂存路径检查内容、尾部哨兵和重复查询",
+                    "GPU拷贝及其流同步已验证"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "WRITE测试",
+                    "缩短iovec产生真实零/短CQE",
+                    "真实磁盘满盘或写入原子性"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "测试注册",
+                    "文件相关case分进程注册",
+                    "整仓库和目标发行制品已通过"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：失败更准确，不代表恢复更容易",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "准确失败可能让业务层看到更多失败与重试，这未必是回归：过去的“成功”可能把不完整输入隐藏了。评估时必须同时看正确结果数和错误数。若把历史误成功纳入吞吐分母，所谓性能改善会失去意义。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "部分WRITE是另一项责任：失败返回不能证明远端未改变，盲目重放整个请求也不必然安全。本文不建议绕过已有恢复策略；应由对象身份、偏移、版本与提交协议决定是否允许重试。没有该证据时，先隔离候选数据并向上层传播失败。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产：先定位谁消费了不完整对象",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "诊断假设一：内容偶发错误但传输计数正常，可能是业务把“收到通知”当作“对象可见”。记录请求长度、完成长度、最终状态与对象发布时点，避免只留成功率。假设二：修复后尾部哨兵正确而模型仍错，应继续查上层是否误发布失败对象，不能把尾部保护当作全部正确性的证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "诊断假设三：短WRITE之后重试出现混合版本，检查每次尝试的对象版本和写入范围。假设四：失败风暴下内存增加，分别追踪暂存缓冲释放、上层KV对象驻留和重试队列；传输缓冲已释放不代表缓存对象或业务请求已回收。所有假设都需要现场证据，本文没有确认生产故障。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：把正例、负例和恢复拆开",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创验证矩阵，未执行",
+              "columns": [
+                "维度",
+                "对照与故障",
+                "必须保存的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "路径选择",
+                    "确认USE_TENT及实际io_uring路由；其他后端作不受影响对照",
+                    "构建SHA、配置、调用栈或追踪"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "READ长度",
+                    "0、短于L、等于L；对齐与非对齐缓冲",
+                    "逐字节前缀、尾部哨兵、实际计数、重复查询"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "WRITE边界",
+                    "测试缝注入与真实目标盘故障分别执行",
+                    "最终文件字节、状态、是否发生重放"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源回收",
+                    "成功、短完成、负错误；重复高并发",
+                    "每次分配/释放数量及停止提交后的残留"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "目标H20",
+                    "确认GPU暂存路线；实际流/事件依赖；独立CPU参考",
+                    "错误请求不被消费，完整请求输出一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务对照",
+                    "固定版本、负载、对象命中率及失败注入率",
+                    "正确结果goodput、TTFT/ITL分位、资源峰值"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：数据门槛先于性能门槛",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预定义验收门，运行前冻结预算",
+              "columns": [
+                "门",
+                "建议通过条件",
+                "不通过时"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "整项状态",
+                    "非空请求的短/零完成不能标COMPLETED",
+                    "禁止扩大灰度"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据边界",
+                    "READ有效前缀正确、未读尾部逐字节保持哨兵",
+                    "定位拷贝与目标范围"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "消费隔离",
+                    "FAILED对象零发布；重复轮询不重复发布",
+                    "修复上层准入"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "WRITE恢复",
+                    "记录已写范围；重试须有独立安全依据",
+                    "隔离对象，不盲目全量重放"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回收与服务",
+                    "无暂存残留；预先约定的正确goodput与延迟预算达标",
+                    "保留证据，回退固定基线"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "未决：制品、设备和业务责任链",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "发布目录最新仍为v0.3.14-rc1。本轮没有证据证明目标wheel、容器或推理框架已经包含10月14日修复，合入main不等于已经部署。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "尚待目标硬件验证：GPU拷贝完成关系、实际盘及文件系统、故障后服务恢复、性能和关闭路径。此报告仅处理TENT io_uring短完成；classic TCP元数据发送停滞#4451及回调对象保活#4569是独立边界，不应视为本修复已经覆盖。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "runai-gpu-fractioning-boundaries",
     "kind": "analysis",
     "title": "Run:ai 开源之后：GPU 分片的调度承诺与运行边界",
