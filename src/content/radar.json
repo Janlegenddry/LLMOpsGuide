@@ -1,6 +1,966 @@
 [
   {
     "schemaVersion": 1,
+    "id": "flashinfer-uniform-verify-sm90",
+    "kind": "analysis",
+    "title": "FlashInfer 等长验证提示：先证明路径命中，再谈 H20 收益",
+    "summary": "#6144 已合入 main，但 v0.7.1 与 v0.7.2rc3 固定源码未含此实现，SGLang EAGLE 接线仍开放。拆开规划提示与专用 SM90 kernel，核对形状、图捕获、回滚和 H20 待验边界。",
+    "publishedAt": "2026-10-13",
+    "reviewedAt": "2026-10-14",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "投机解码",
+      "推理编译",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "FlashInfer #6144 · 固定合并提交",
+        "url": "https://github.com/flashinfer-ai/flashinfer/commit/a8e747c3c1f7dfe5d51fab3883824b15da6829b7",
+        "publishedAt": "2026-10-13",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "FlashInfer #6144 · 作者原文及实验边界",
+        "url": "https://github.com/flashinfer-ai/flashinfer/pull/6144",
+        "review": {
+          "category": "community",
+          "publisher": "FlashInfer PR #6144 作者 Brandon Zhang",
+          "status": "attributed",
+          "note": "已读取完整 PR 正文、合入元数据与固定源码/测试。仅摘录特定 H200 实验的两个服务指标；作者成绩未独立复现，不是 H20 结果，历史测量分支也不同于 main。"
+        },
+        "publishedAt": "2026-10-06",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定合并提交 · prefill 规划与路由",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/a8e747c3c1f7dfe5d51fab3883824b15da6829b7/flashinfer/prefill.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定合并提交 · SM90 CUDA 实现",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/a8e747c3c1f7dfe5d51fab3883824b15da6829b7/csrc/eagle_verify_fp8kv_sm90.cu",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定 scheduler · 图规划分支",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/a8e747c3c1f7dfe5d51fab3883824b15da6829b7/include/flashinfer/attention/scheduler.cuh",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "固定回归测试 · 数值、准入与捕获",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/a8e747c3c1f7dfe5d51fab3883824b15da6829b7/tests/attention/test_eagle_verify_fp8kv_sm90.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "v0.7.1 · 固定 prefill 源码",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/v0.7.1/flashinfer/prefill.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "v0.7.2rc3 · 固定 prefill 源码",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/v0.7.2rc3/flashinfer/prefill.py",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "SGLang #44115 · 尚开放的 EAGLE 接线",
+        "url": "https://github.com/sgl-project/sglang/pull/44115",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "NVIDIA · CUDA Graphs 在线指南",
+        "url": "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html",
+        "review": {
+          "category": "community",
+          "publisher": "NVIDIA 公开技术文档",
+          "status": "attributed",
+          "note": "已读取 NVIDIA 自有公开页面。该精确路径未列入本站官方来源注册表，因此以显式引用记录，不冒用 registered official 等级。用于图定义/执行语义或公开 CC 表条目核对，不是 GPU 实测，CC 表未列 H20。"
+        },
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "FlashInfer · 发布列表",
+        "url": "https://github.com/flashinfer-ai/flashinfer/releases",
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "NVIDIA · GPU Compute Capability 表",
+        "url": "https://developer.nvidia.com/cuda/gpus",
+        "review": {
+          "category": "community",
+          "publisher": "NVIDIA 公开技术文档",
+          "status": "attributed",
+          "note": "已读取 NVIDIA 自有公开页面。该精确路径未列入本站官方来源注册表，因此以显式引用记录，不冒用 registered official 等级。用于图定义/执行语义或公开 CC 表条目核对，不是 GPU 实测，CC 表未列 H20。"
+        },
+        "accessedAt": "2026-10-14"
+      },
+      {
+        "title": "SGLang #34670 · 历史位置参数兼容",
+        "url": "https://github.com/sgl-project/sglang/pull/34670",
+        "accessedAt": "2026-10-14"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "FlashInfer #6144 已于 2026-10-13 合入固定提交 a8e747c3c1f7dfe5d51fab3883824b15da6829b7；合入不是正式发布或部署证明。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本站尚未在 H20 或其他 GPU 上复现；真实调用接线、图覆盖、正确性与服务收益仍待独立验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际安装产物、调用接线与 graph 节点是否一致？",
+      "H20 每 rank 形状和语义能否满足专用准入？",
+      "禁用专用实现后，旧 CUDA graph 是否已重建并证实执行 stock？"
+    ],
+    "related": [
+      {
+        "title": "FlashInfer 0.7.1 交付与图状态分析",
+        "path": "/radar/flashinfer-v0-7-1-operations/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "截至 2026-10-14 02:53 UTC，核对 FlashInfer #6144 固定合并源码、测试、v0.7.1/v0.7.2rc3 文件、SGLang #44115 与历史 #34670，以及 NVIDIA 官方图语义。仅公开资料；未运行 GPU、未复现作者性能结果、未修改或发布站点。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：值得进入验证队列，尚不构成升级收益承诺",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2,
+                3
+              ],
+              "text": "FlashInfer #6144 已于 10 月 13 日 16:10:42 UTC 合入。它把投机解码验证阶段的等长 query 信息交给规划器，并新增一条受严格约束的 SM90 FP8-KV 实现。固定合并提交为 a8e747c3c1f7dfe5d51fab3883824b15da6829b7。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                6,
+                7,
+                8
+              ],
+              "text": "运维上应把它拆成三个问题：服务调用方有没有传信息；规划器有没有利用信息；最终执行的是哪条 kernel。三个问题都不能用“已经升级 FlashInfer”来代答。当前读到的 v0.7.1 与 v0.7.2rc3 固定文件没有这项实现；对应 SGLang EAGLE 接线 PR #44115 仍开放。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对 H20，合理动作是建立小范围候选验证，而非把 H200 作者成绩写进容量计划。设备能力、每 rank 形状、量化语义、图执行路径和实际产物缺一不可。本文的主要价值也不是复述加速比，而是把这五项变成可否决的准入条件。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "两级收益不能混算",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "第一层收益来自更准确的计划，第二层才来自专用实现。为区分二者，建议设计三个实验臂：A 不传提示；B 传提示但禁用专用实现；C 提示与专用实现同时启用。其余输入、模型、调度策略和图桶保持一致。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "作者报告在 8×H200 的特定 agentic 工作负载中，组合方案相对控制组 ITL p50 下降 19.4%、输出吞吐上升 6%；这是作者结果，非 H20 实测。作者同时声明性能测量基于较早发布分支后再迁移到 main，因此数据与当前制品不能直接画等号。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "分析上，单次 attention 减时只能减少它占据的那部分请求时间。服务总延迟还包含排队、其他算子、通信与调度。某个 kernel 的倍数提升无法直接乘到整机吞吐。更值得关心的是 B→C 的边际收益能否覆盖额外 JIT、工作区、图生命周期与回退复杂度。如果 B 已达到 SLO，C 的价值需由实际流量证明。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：等长信息在哪里丢失",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                4
+              ],
+              "text": "通用 paged attention 接口用前缀和描述各请求 query 区间。这个表达能容纳不等长请求，却不会自然承诺每次图重放都等长。固定 scheduler 源码在图模式下区分“有等长承诺”和“没有承诺”两条 tile 规划路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原理解读：假如一批请求在验证阶段各有相同数量的候选 token，接口只交出一个可变长容器，相当于把业务已经知道的约束丢给下游重新保守估计。新提示不是创造新的模型知识，而是把一个调用方可验证的不变量显式传递下去。这里重要的不是参数短，而是承诺必须贯穿每次计划和图的使用周期。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "机制分为三个职责层："
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "服务层：验证批次 → 构造 query 边界 → 核验每个请求长度",
+                "规划层：提示缺失/不成立 → 通用规划；提示成立 → 更精确的 FA2 规划",
+                "执行层：通过全部专用条件 → split-KV attention → 同 stream merge；任一条件不成立 → stock 路径"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "调用方接线尚未合入，库的能力不能误读成生产默认。CPU 计划/捕获与 GPU replay 是不同执行阶段，不能理解成每次 replay 重新检查 Python 条件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "下图仅画 CUDA Graph 模式。Eager 模式不会向 FA2 规划器转发这项图规划提示，但专用入口会独立核验 host query 长度，仍可能命中专用实现。因此不能把 FA2 收到非零提示当作所有执行模式下的专用入口必要条件。"
+            },
+            {
+              "type": "diagram",
+              "title": "CUDA Graph 模式下的计划与专用执行",
+              "caption": "仅表示 CUDA Graph 计划/捕获路径，不涵盖 eager 分支。原创机制示意，依据固定源码与 CUDA Graphs 语义；非实测时间线。CPU 计划/捕获与 GPU replay 分离，指向重放的边表示捕获后重放，不表示每次 replay 重新核验 Python 条件。专属构图 verify-plan-dispatch 按四种职责呈现；非实测性能或自动恢复承诺。",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3,
+                4,
+                9
+              ],
+              "nodes": [
+                {
+                  "id": "batch",
+                  "label": "EAGLE 验证批次",
+                  "detail": "调用方提供实际 query 边界；专用 EAGLE 接线仍待合入。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "promise",
+                  "label": "等长承诺核验",
+                  "detail": "只在承诺与 host 边界吻合时使用提示。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "stockplan",
+                  "label": "通用规划",
+                  "detail": "缺失或不成立的提示保留通用计划。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "hintplan",
+                  "label": "等长 FA2 规划",
+                  "detail": "可单独验证规划收益，不等于已选择专用实现。",
+                  "column": 1,
+                  "row": 2,
+                  "tone": "control"
+                },
+                {
+                  "id": "gates",
+                  "label": "专用条件检查",
+                  "detail": "形状、dtype、语义、设备、缓冲与准备状态全部满足。",
+                  "column": 1,
+                  "row": 3,
+                  "tone": "control"
+                },
+                {
+                  "id": "stock",
+                  "label": "Stock 执行",
+                  "detail": "任一准入未通过时走既有路径。",
+                  "column": 2,
+                  "row": 0,
+                  "tone": "compute"
+                },
+                {
+                  "id": "split",
+                  "label": "Split-KV attention",
+                  "detail": "通过准入后执行专用注意力，写入持久工作区。",
+                  "column": 2,
+                  "row": 1,
+                  "tone": "compute"
+                },
+                {
+                  "id": "merge",
+                  "label": "同流 Merge",
+                  "detail": "依赖前一计算完成；图捕获记录两节点。",
+                  "column": 2,
+                  "row": 2,
+                  "tone": "compute"
+                },
+                {
+                  "id": "replay",
+                  "label": "已捕获图重放",
+                  "detail": "重放已捕获的通用或专用节点；不会重新执行 Python guard 或环境变量检查。图重建和切换仍须显式验证。",
+                  "column": 3,
+                  "row": 0,
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "batch",
+                  "to": "promise",
+                  "label": "计划阶段"
+                },
+                {
+                  "from": "promise",
+                  "to": "stockplan",
+                  "label": "提示缺失或不成立"
+                },
+                {
+                  "from": "promise",
+                  "to": "hintplan",
+                  "label": "提示成立"
+                },
+                {
+                  "from": "stockplan",
+                  "to": "stock",
+                  "label": "通用路径"
+                },
+                {
+                  "from": "hintplan",
+                  "to": "gates",
+                  "label": "专用入口核验"
+                },
+                {
+                  "from": "gates",
+                  "to": "stock",
+                  "label": "任一条件不满足"
+                },
+                {
+                  "from": "gates",
+                  "to": "split",
+                  "label": "全部条件通过"
+                },
+                {
+                  "from": "split",
+                  "to": "merge",
+                  "label": "stream 依赖"
+                },
+                {
+                  "from": "merge",
+                  "to": "replay",
+                  "label": "捕获并实例化后的重放"
+                },
+                {
+                  "from": "stock",
+                  "to": "replay",
+                  "label": "已捕获通用图的重放"
+                }
+              ],
+              "presentation": {
+                "kind": "verify-plan-dispatch",
+                "panels": [
+                  {
+                    "title": "服务语义输入",
+                    "tone": "control",
+                    "nodeIds": [
+                      "batch"
+                    ]
+                  },
+                  {
+                    "title": "Host 计划与准入",
+                    "tone": "control",
+                    "nodeIds": [
+                      "promise",
+                      "stockplan",
+                      "hintplan",
+                      "gates"
+                    ]
+                  },
+                  {
+                    "title": "GPU 计算与顺序",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "stock",
+                      "split",
+                      "merge"
+                    ]
+                  },
+                  {
+                    "title": "已捕获图重放",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "replay"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "发布和兼容性账本",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6,
+                7,
+                10
+              ],
+              "text": "本次核对的发布页中，最新稳定是 v0.7.1，v0.7.2rc3 是候选；两者固定 prefill.py 都未出现所查提示解析与 SM90 专用实现。不能单靠日期或提交数推定包含关系。这里使用固定文件内容作直接证据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                8,
+                12
+              ],
+              "text": "SGLang #44115 的拟议接线仍开放；其兼容策略是检查目标 API 是否显式接受提示，再对 EAGLE verify 接入。 这只是待合入实现的事实，不能表述为 SGLang 稳定版已默认启用。历史 PR #34670 已于 8 月 13 日合入，涉及 fast_prefill_plan 的低层位置参数兼容；它不能证明这次 EAGLE 语义提示已经接线。 因此本文不作“所有 SGLang 路径都没有 uniform_q_len”的绝对断言。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "交付建议：每份基准附上“服务提交 + FlashInfer 提交/版本 + 安装文件哈希 + CUDA/驱动 + graph 配置 + 模型量化配置”。只记录一个 Python 版本号不足以定位本次双层优化。升级时还应验证历史图缓存和 JIT 缓存是否随实际部署流程正确失效。"
+            },
+            {
+              "type": "table",
+              "caption": "证据分层：源码、作者实验、接线与交付分别判断",
+              "columns": [
+                "证据",
+                "已核对事实",
+                "不能代替"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合并提交 a8e747c",
+                    "2026-10-13 合入本项改动",
+                    "正式版本或已部署产物"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.7.1 / v0.7.2rc3 固定文件",
+                    "未含所查提示解析及专用实现",
+                    "不能以发布日期推断包含关系"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6,
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "SGLang #44115",
+                    "仍开放，拟议 EAGLE 调用接线",
+                    "不能当作稳定服务默认"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    8
+                  ]
+                },
+                {
+                  "cells": [
+                    "H200 作者实验",
+                    "组合方案 ITL p50 -19.4%、输出吞吐 +6%",
+                    "不代表 H20 或本站实测"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "数值与捕获测试源码",
+                    "存在 guard、参考和图相关测试",
+                    "测试存在不等于本站或所有部署已通过"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "适用矩阵：H20 应从事实记录开始",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "固定 wrapper 的专用入口要求：本地 Q/KV heads 恰为 4/1，head dimension 为 256，page size 为 1，NHD，BF16 Q/O、E4M3 KV，custom mask、每请求 query 长度 4，设备能力为 9.0；不支持的语义或布局回 stock。 注意“恰为 4/1”不同于任意 4:1 比例。"
+            },
+            {
+              "type": "table",
+              "caption": "本站提出的条件判断与验收；非已执行实验",
+              "columns": [
+                "场景",
+                "处理建议",
+                "必须提供的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "H20 候选实例",
+                    "条件性验证",
+                    "运行时 CC、SM 数、实际 tensor 形状和 dtype"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H100/H200",
+                    "可作为参考验证硬件",
+                    "仍须核对安装产物、调用接线与图命中"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Blackwell/Rubin",
+                    "不套用本专用路径收益",
+                    "按该设备实际 backend 另测"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "NPU/其他后端",
+                    "不适用本 CUDA 专用实现",
+                    "不能以类似名称代替实现证据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "其他 TP 切分",
+                    "重新检查本地 heads",
+                    "总模型 heads 相同不能证明 rank 内形状相同"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "量化缩放、窗口或输出语义不同",
+                    "先查回退原因",
+                    "不能为追求命中删除模型必需语义"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                11
+              ],
+              "text": "NVIDIA 当前公开 CC 表明确列 H100/H200 为 9.0，但该表没有 H20 条目；因此这里不从那张表推定 H20 已获此实现验证。 建议实测运行时能力并记录驱动、CUDA、编译器与 FlashInfer 固定提交。即使架构条件吻合，也只说明跨过了一道门，不能说明性能或数值结果相同。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "图与回滚：Python 开关不等于已捕获图的热切换",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                2,
+                3,
+                9
+              ],
+              "text": "固定实现将准备工作放到计划阶段，专用计算与合并形成两个 stream-ordered kernel；入口存在禁用开关 FLASHINFER_DISABLE_EAGLE_VERIFY_FP8KV_SM90。 CUDA 官方说明，图定义与执行相分离，实例化后可以反复启动已定义的操作。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "据此推导的运维要点：若专用 kernel 已被捕获进 graph，仅改变 Python 进程环境不能据此断言现有 graph 节点已经替换。可靠回滚应走服务框架支持的停流、排空、重新计划/捕获或进程替换流程，再用 trace 验证 stock 节点。反过来，若首次捕获走了 fallback，后来准备好 JIT 也不意味着旧图自动升级。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "Python dispatch 计数更适合证明普通调用和捕获时选择了什么，不能未经验证地当作每次 GPU replay 的执行次数。监控应把“命中过专用入口”和“生产 token 实际由专用图执行”分开。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "此外，回退必须发生在安全边界。运行前 guard 失败可以转 stock；GPU 已经发生执行故障时，不应假设重复跑一个 stock kernel 就能修复进程状态。本文没有看到足以支持“所有运行错误自动恢复”的证据，不能如此宣传。"
+            },
+            {
+              "type": "table",
+              "caption": "原创故障假设：需要证据才能归因",
+              "columns": [
+                "现象",
+                "先取证",
+                "不能直接下的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "升级后性能完全不变",
+                    "API 签名、调用 kwargs、路由计数、捕获节点",
+                    "不能先断言 kernel 无收益"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2,
+                    8
+                  ]
+                },
+                {
+                  "cells": [
+                    "部分图桶未命中",
+                    "每桶形状、mask 对齐、tail slack、fallback 原因",
+                    "不能删除语义条件强制命中"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "禁用后仍观察到专用节点",
+                    "graph 重建记录与 GPU trace",
+                    "不能把改环境变量当成热回滚完成"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2,
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "低并发变快而服务尾部变差",
+                    "同负载 A/B/C、队列等待、JIT/工作区开销",
+                    "不能用微基准倍数承诺整机收益"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "正确性：从“结果接近”走到业务可接受",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                5
+              ],
+              "text": "固定测试同时覆盖 guard、数值参考和图捕获路径；测试文件中的参考误差门限、对 stock 的相似度门限，与 PR 描述中的作者实验指标不是同一套验收量。 不应把两者混写成已经证明逐 token 一致。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本站建议验收分四层，而非只跑一份问答集："
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "张量层：记录有限值检查、误差分布和异常 mask；零有效元素、边界页、奇数 split、长短上下文混合都应有预期处理。",
+                "算法层：检查 draft 接受长度分布、拒绝位置和回退频率；仅平均接受长度一致会掩盖少量长尾异常。",
+                "模型层：用配对输入比较任务成功率和输出长度；允许浮点路径变化并不等于允许业务质量无界漂移。",
+                "服务层：固定超时/错误预算，检查不同批次、并发和 graph bucket 是否存在集中失败。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "所有新增验收是本文建议，并非声称上游已经覆盖。测试通过也不能证明任意业务流量安全。验收应保留原始请求集合、随机种子和两组输出，便于定位某一类形状是否被聚合平均值掩盖。"
+            },
+            {
+              "type": "table",
+              "caption": "待执行实验矩阵：每项都要保存输入、产物与结果；本站未执行",
+              "columns": [
+                "维度",
+                "对照与变化",
+                "观测与停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "A/B/C 分层",
+                    "无提示 / 提示+禁专用 / 提示+专用",
+                    "实际路由不符则停止归因"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "图与输入",
+                    "逐图桶变更合法输入；eager 与 replay 比较",
+                    "错值、超时、停滞任一出现立即停止"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20 环境",
+                    "运行时 CC、SM 数、相同模型与 TP",
+                    "任一准入不满足保留 stock"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期",
+                    "JIT 冷/热、工作区增长、图重建",
+                    "旧图未切换不得宣布回滚完成"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "负载",
+                    "短/长上下文、低/高并发、固定到达模式",
+                    "以预先定义的 SLO 与错误预算否决"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "灰度验收：建立可以叫停的比较",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议从离线形状回放开始，再到低比例同类流量，最后才考虑容量调整。下表是本站提出的验证计划，不是已完成的测试报告。"
+            },
+            {
+              "type": "table",
+              "caption": "本站提出的条件判断与验收；非已执行实验",
+              "columns": [
+                "关卡",
+                "通过依据",
+                "不通过时动作"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "制品",
+                    "固定提交、源码特征、加载路径一致",
+                    "停止性能归因，先修交付链"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "接线",
+                    "验证批次真正传入提示，未误及其他模式",
+                    "回到调用方定位"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "路由",
+                    "逐 bucket 记录专用/stock 与原因",
+                    "保留回退，禁止强行改语义"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数值",
+                    "满足预先约定的误差与任务质量预算",
+                    "停止扩大灰度，保留失败样本"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "图",
+                    "全桶可捕获、变输入 replay 正确、无停滞",
+                    "重建图并检验回退路径"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "A/B/C 同日同机同流量，ITL 尾部不退化",
+                    "不按微基准调整容量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回滚",
+                    "已证明停止新流量、排空、替换与恢复",
+                    "未通过不得进入生产灰度"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "应额外记录 JIT 冷启动时间、工作区峰值、图数量及命中比例。这些成本不会自动体现在热态单 kernel 微基准中。容量收益应采用服务指标，并保留相同吞吐下的尾延迟或相同 SLO 下的可持续吞吐，避免比较不同负载点。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议验收口径：实验开始前冻结，未执行；业务数值预算需部署方填写",
+              "columns": [
+                "对象",
+                "口径",
+                "预先否决规则"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正确性",
+                    "有限值、逐请求误差与配对任务成功率",
+                    "任何新 NaN/Inf 或业务质量越界即拒绝"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可靠性",
+                    "相同请求集下新增错误、超时与图停滞",
+                    "出现新增不可解释错误或停滞即拒绝"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "路由真实性",
+                    "逐 graph bucket 的节点与实际运行 trace",
+                    "宣称启用却无法证明命中则不做性能归因"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "同到达率的 ITL p50/p99；同 SLO 的持续输出吞吐",
+                    "SLO 越界或 B→C 无可重复净收益则不扩大灰度"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可恢复性",
+                    "停流、排空、图替换、stock 恢复证据",
+                    "任一环节未验证则不进入生产灰度"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待核实问题与本次决策",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本候选值得独立分析，原因在于它把一个可迁移到 H20 验证的调度信息问题，与一条不可泛化的专用实现放在了同一改动里。把这两层拆清，比重复“某卡快了多少”更有工程价值。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "仍待核实：H20 目标机器的全部准入条件、main 对应可复现构建、服务接线最终合入状态、真实业务图覆盖、不同模型/TP 的有效形状占比、负载变化下的边际收益、完整回滚演练。上述任一项未满足，都不影响保留原 stock 路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次建议：进入候选实验清单；不要写成已发布升级指令，不提前兑现 H20 吞吐收益。首个实验的目标应是证明 A/B/C 三条路径确实不同且结果可接受，然后才回答哪一层值得启用。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-bidirectional-kv-eligibility",
     "kind": "analysis",
     "title": "vLLM 双向 KV：上一轮的缓存，下一轮真的还能用吗",
