@@ -1,4 +1,5 @@
 import { renderFrontierFigure } from './report-frontier-figures.mjs';
+import { renderLifecycleFigure } from './report-lifecycle-figures.mjs';
 // Original responsive technical figures. Coordinates and SVG markup are generated here,
 // never imported from a payload; every payload label is XML-escaped.
 import { renderRecoveryFigure } from './report-recovery-figures.mjs';
@@ -118,6 +119,8 @@ export function renderNumericalFigure(chart, { compact = false, id = 'numerical-
 }
 
 export function renderTechnicalFigure(diagram, { compact = false, id = 'technical-figure' } = {}) {
+  const lifecycle = renderLifecycleFigure(diagram, { compact, id, canvas, figurePalette });
+  if (lifecycle) return lifecycle;
   const frontier = renderFrontierFigure(diagram, { compact, id, canvas, figurePalette });
   if (frontier) return frontier;
   const ownershipKv = renderOwnershipKvFigure(diagram, { compact, id, canvas, figurePalette });
@@ -307,21 +310,6 @@ export function renderTechnicalFigure(diagram, { compact = false, id = 'technica
     c.line([[674, 372], [674, 436], [448, 436], [448, 190], [582, 190], [582, 174]], '下一轮生成', 'control', true, [555, 436]);
     c.card(groups[2].nodes[4], 460, 466, 244, 64, 'kv'); c.line([[708, 129], [732, 129], [732, 498], [708, 498]], '流式输出', 'kv', false, [693, 455]);
     c.text(302, 340, 'KV 跨实例交接', 13, '#aa7d35'); return [finish(c)];
-  }
-
-  if (kind === 'lifecycle') {
-    return groups.map((g, panelIndex) => {
-      const c = canvas(W, compact ? 490 : 246, `${id}-${panelIndex}`), tone = panelIndex ? 'kv' : 'danger';
-      c.panel(12, 12, W - 24, compact ? 466 : 222, g.title, tone);
-      g.nodes.forEach((n, i) => {
-        const x = compact ? 30 : 30 + i * 184, y = compact ? 62 + i * 96 : 74, w = compact ? 236 : 148;
-        c.card(n, x, y, w, compact ? 72 : 90, i === 3 ? tone : (n.tone || 'neutral'));
-        if (i < 3) c.line(compact ? [[148, y + 76], [148, y + 92]] : [[x + 152, y + 45], [x + 180, y + 45]], edge(n, g.nodes[i + 1]), tone, false, compact ? [211, y + 87] : [x + 166, y - 10]);
-      });
-      if (compact) { c.rect(284, 64, 8, 358, tone, 4); c.text(160, 456, panelIndex ? '确认 / 异常路径满足后释放' : '页已复用，旧写入仍可能迟到', 13, figurePalette[tone][1]); }
-      else { c.rect(panelIndex ? 30 : 214, 188, panelIndex ? 514 : 516, 24, tone, 4, !panelIndex); c.text(panelIndex ? 287 : 472, 205, panelIndex ? '页和元数据暂留：不能提前复用' : '危险窗口：页面已属于 B，A 仍可能写入', 13, figurePalette[tone][1]); }
-      return finish(c, ` · ${g.title}`);
-    });
   }
 
   if (kind === 'cache-routing') {

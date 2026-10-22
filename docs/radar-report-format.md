@@ -56,10 +56,12 @@
 
 技术图可选 `presentation: {kind, panels: [{title, tone, nodeIds}]}`。分组必须恰好覆盖全部节点一次，不能引用不存在或重复节点。站点根据语义分组生成原创 SVG；桌面适合阅读栏宽度，手机拆分面板或改为纵向布局，无需横向拖动。节点可选 `shortLabel`、`subtitle`、`tone`，连线可选 `shortLabel`，图内短文字不替换原始 label / detail。推荐短标题 2–8 字、副标题 4–12 字；完整计算语义继续写在原字段中。
 
+`lifecycle` 的两组各四节点仅定义职责分组，不限定 KV 页面、释放或恢复语义。桌面按组呈现，手机纵排，均完整绘制 `edges` 中的组内、跨组、逆向和跳过关系，不按节点相邻位置补边。分组标题、节点颜色及说明取自 payload；显式标注待验或拟议的节点保持空心。图内编号与完整关系图例对应，原始节点详情和 caption 继续保留在可展开说明中。
+
 | presentation.kind | panels 的节点数量 | 用途 |
 | --- | --- | --- |
 | request-lanes | 2 / 2 / 5 | 入口、P 实例、D 实例；D 内草稿、验证、提交回路 |
-| lifecycle | 4 / 4 | 风险与保护两条生命周期 |
+| lifecycle | 4 / 4 | 两组四角色的生命周期；关系仅由 edges 定义 |
 | boundary | 3 / 3 | 跨阶段计算责任对比 |
 | cache-routing | 2 / 2 / 1 | 入口、核心分支、共同状态 |
 | pipeline-loop | 3 / 3 | 普通及投机 PP 回传 |
