@@ -1,6 +1,734 @@
 [
   {
     "schemaVersion": 1,
+    "id": "dynamo-sidecar-migration-error-boundaries",
+    "kind": "analysis",
+    "title": "Dynamo sidecar 请求迁移：引擎退出、尾token与重放边界",
+    "summary": "#17710 补齐清理取消与断流的迁移分类。本文交叉核对实现、测试和滞后文档，区分请求续写、worker撤销、进程重启及生产验收。",
+    "publishedAt": "2026-11-04",
+    "reviewedAt": "2026-11-04",
+    "topics": [
+      "故障分析",
+      "服务调度"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Dynamo #17710 最终合入差异",
+        "url": "https://github.com/ai-dynamo/dynamo/commit/665cb8df84874d06dae46953e7364ab4cb07fc19",
+        "publishedAt": "2026-11-04",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "清理终态适配器",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/665cb8df84874d06dae46953e7364ab4cb07fc19/lib/backend-common/src/adapter.rs",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "sidecar错误分类与Tonic边界",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/665cb8df84874d06dae46953e7364ab4cb07fc19/lib/sidecar/common/src/error.rs",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "前端迁移资格与token账本",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/665cb8df84874d06dae46953e7364ab4cb07fc19/lib/llm/src/migration.rs",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "同提交sidecar支持说明",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/665cb8df84874d06dae46953e7364ab4cb07fc19/lib/sidecar/SUPPORT_NOTES.md",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "双worker迁移回归源码",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/665cb8df84874d06dae46953e7364ab4cb07fc19/lib/sidecar/testkit/tests/router_sidecar_mocker_integration.rs",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "真实引擎故障payload源码",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/665cb8df84874d06dae46953e7364ab4cb07fc19/tests/utils/payloads.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "SGLang状态监督 #17972",
+        "url": "https://github.com/ai-dynamo/dynamo/commit/2a0cc9a39358d936c179f00acdf9732e979e0bcb",
+        "publishedAt": "2026-11-03",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "TensorRT-LLM存活监督 #17973",
+        "url": "https://github.com/ai-dynamo/dynamo/commit/37144cc68d0b2cbd0793977add1198054dad1aa9",
+        "publishedAt": "2026-11-03",
+        "accessedAt": "2026-11-04"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "本条分析11月4日合入的固定源码，不等于正式版或预发布制品已经交付。",
+        "sourceIndices": [
+          0
+        ]
+      }
+    ],
+    "questions": [
+      "实际制品是否包含修改？",
+      "受控故障验证能否通过预先约定的正确性和SLO门槛？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-04核验665cb8df84874d06dae46953e7364ab4cb07fc19的适配器、错误映射、迁移资格/重放相关实现、CPU测试及真实引擎故障payload；同时读11月3日SGLang/TRTLLM状态监督差异。main合入，不声称已发布。仅代码/文档阅读，未运行测试；支持说明早闭流条款与最终实现不一致已明确标注。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：可以重新调度，不等于恢复了全部生成状态",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "Dynamo 于 2026-11-04 02:15:01 UTC 合入 #17710，固定提交 665cb8df84874d06dae46953e7364ab4cb07fc19，为 sidecar 引擎退出或清理时的在途请求补齐迁移错误路径。本文分析main，不把它写成正式发行或已验证的生产能力。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最有价值的变化是错误不再只表示“生成停止”，还区分“客户端不想继续”与“引擎不能继续但客户端仍在等待”。前者应结束，后者才可能换worker续写。生产决策要同时检查迁移资格、已交付token账本和剩余重试预算。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2,
+                3,
+                4
+              ],
+              "text": "同提交文档仍称部分早闭流不可迁移，代码已将StreamIncomplete纳入迁移资格。两者不一致，本文以最终实现与测试解释边界。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "没有运行CPU mock或GPU故障测试，也没有证明H20、某模型、PD分离组合或结构化输出无损恢复。迁移请求、撤销worker、sidecar退出和编排器重启是不同控制动作，不能合成一句“故障自动修好了”。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：进程存活、可调度与请求完成不等价",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "sidecar把引擎进程与服务发现和前端协议拆开，使原生引擎能够挂入统一路由。但这种拆分产生了多份状态：引擎能否提供服务、worker是否仍登记、当前流是否结束，以及客户端已经收到了哪些内容。只观察其中一份，可能得到“请求失败但worker还活着”或“worker已撤销但旧请求仍挂起”的组合。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个实用思维实验是：客户已经看见若干token，旧worker随后退出。新worker不能从空白重新向客户发送整段结果，也不能假定只恢复KV就获得了全部采样器、解码器或约束状态。把已交付前缀作为上下文续写只是恢复策略的一部分，必须把可恢复状态和不可恢复状态明确列出。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此这里不讨论通用检查点恢复，也不把影子引擎切换与请求迁移视为同一功能。前者关注进程/设备状态或热备容量，后者关注一个仍活跃请求能否用已有前缀重新派发；测试与SLO分母都不同。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：先分类终止原因，再维护已交付前缀",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "适配器仅在“取消类终态、引擎cleanup已开始、客户端未stop/kill”同时满足时转成EngineShutdown。若取消终态仍携带token，先清除其结束标记并交付这些token，再发迁移错误，避免把最后一批输出丢在交接处。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "公共gRPC错误映射区分带底层transport source的断流和引擎主动返回的状态。前者映射Disconnected；Unavailable已有CannotConnect语义。Tonic 0.14缺少最终grpc-status trailer的特定情况映射StreamIncomplete，而不是笼统Unknown。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "前端资格表包括EngineShutdown与StreamIncomplete等原因；客户端取消、期限耗尽等原因阻止迁移。固定worker、guided decoding、多结果及generation-artifact等路径存在额外限制。代码还注明采样惩罚与thinking预算等状态并未形成完整重放契约。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创交接推导：迁移控制面至少需要三份账本。交付账本记录客户已看见的token；尝试账本记录每次派发及失败；资格账本记录这次失败是否允许换worker。完成一次新派发不证明输出没有重复，累计迁移次数上升也不证明业务成功。"
+            },
+            {
+              "type": "diagram",
+              "title": "两条错误入口，分别形成迁移依据",
+              "caption": "原创非实测控制示意。上轨强调清理取消必须保留尾部token，下轨强调transport来源与资格门。图不表示任何错误均可恢复，也不表示等待时间或KV数据复制。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "cleanup",
+                  "label": "开始清理",
+                  "detail": "worker进入引擎cleanup，对适配器发布清理状态。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "开始清理",
+                  "tone": "control"
+                },
+                {
+                  "id": "cancel",
+                  "label": "取消类终态",
+                  "detail": "仅客户端仍在等待时可转换为引擎退出。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "取消类终态",
+                  "tone": "control"
+                },
+                {
+                  "id": "tail",
+                  "label": "先交付尾token",
+                  "detail": "若终态含token，移除结束标记后先交付。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "先交付尾token",
+                  "tone": "control"
+                },
+                {
+                  "id": "shutdown",
+                  "label": "报告引擎退出",
+                  "detail": "后续错误供前端评估，不直接宣告成功。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "报告引擎退出",
+                  "tone": "control"
+                },
+                {
+                  "id": "broken",
+                  "label": "观测断流",
+                  "detail": "检查transport错误来源或缺少终态。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "观测断流",
+                  "tone": "communication"
+                },
+                {
+                  "id": "classify",
+                  "label": "分类错误",
+                  "detail": "区分Disconnected、StreamIncomplete与主动业务拒绝。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "分类错误",
+                  "tone": "communication"
+                },
+                {
+                  "id": "gate",
+                  "label": "核对迁移资格",
+                  "detail": "还需预算、请求模式和目标约束允许。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "核对迁移资格",
+                  "tone": "communication"
+                },
+                {
+                  "id": "replay",
+                  "label": "续写仍待验",
+                  "detail": "从已交付前缀重新派发；正确性与SLO独立验收。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "续写仍待验",
+                  "tone": "communication"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "cleanup",
+                  "to": "cancel",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "cancel",
+                  "to": "tail",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "tail",
+                  "to": "shutdown",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "broken",
+                  "to": "classify",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "classify",
+                  "to": "gate",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "gate",
+                  "to": "replay",
+                  "label": "路径步骤"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "清理路径：先保留已生成内容",
+                    "tone": "control",
+                    "nodeIds": [
+                      "cleanup",
+                      "cancel",
+                      "tail",
+                      "shutdown"
+                    ]
+                  },
+                  {
+                    "title": "断流路径：错误类型不等于放行",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "broken",
+                      "classify",
+                      "gate",
+                      "replay"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码、文档与测试必须交叉核对",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据分级与矛盾处理",
+              "columns": [
+                "材料",
+                "已读的窄结论",
+                "不能据此宣称"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#17710差异",
+                    "错误适配与测试路径发生变化",
+                    "正式版已经发布该能力"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "错误映射和迁移资格实现",
+                    "StreamIncomplete进入允许评估的类别",
+                    "所有截断都能重试成功"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定提交支持说明",
+                    "仍含vLLM/TRTLLM早闭流不重试说法",
+                    "文档表格可以替代最终源码"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "CPU集成测试",
+                    "两个worker、首token前后故障及SIGTERM场景",
+                    "真实引擎与设备测试已执行"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "CPU测试使用两个受控worker，迁移上限为3，要求总token数为8、以length结束、幸存worker收到请求。它给出了可检查的迁移形状，但计数相等本身不证明真实文本、logprobs或采样序列等价。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "真实引擎测试payload在流已有输出后终止服务进程，要求length终态、completion_tokens符合预算并观察ongoing_request迁移计数增加。它也承认可能先重试尚未撤销的故障worker，因此一次故障不保证只有一次迁移。这里仅阅读其源码，没有执行或引用通过成绩。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "文档矛盾是版本管理问题，不是将未经测试能力升级为保证的理由。实际使用应冻结实现、依赖和说明的版本，并为目标错误形状复现；若复现不符，停止传播“支持”标签并保存可定位证据。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：恢复可用性可能增加计算与尾延迟",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "token前缀重放可能需要重算上下文。可用性提高时，prefill计算、排队、网络和缓存压力也可能增加。一次真实故障引发多次尝试会放大负载，最坏情况下恢复请求与正常请求竞争剩余worker。不能只看成功率而忽略恢复期间goodput和长尾。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "允许迁移的错误必须窄而可解释。把所有Unknown变成重试，会把坏参数、明确拒绝或不可重建状态重复发送；禁止所有早闭流则会丢掉可恢复机会。这里的关键是错误来源、协议完整性和请求语义共同判定，而非错误文本出现“断开”两个字。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "流式客户的感知连续性不同于模型统计等价。保持已交付前缀、避免重复chunk、正确计费是必要条件，但不能推出迁移前后的随机采样完全一致。验收需要事先说明要求的是前缀一致、格式有效、任务质量还是逐token重现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "同固定版本文档把迁移列为显式启用、默认关闭，并提醒bounded drain不证明引擎KV传输已经结束。SLA autoscaling、GMS与shadow failover也各有独立集成边界，不应因一次迁移通过就放开这些组合。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：请求恢复与worker撤销分别报警",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "相邻 #17972 为SGLang订阅WatchEngineState：流结束或失败可形成engine-lost；healthy=false或pause本身不被当作丢失，服务不支持该RPC时缺少此检测能力。它是11月3日独立合入，不应冒称本次迁移补丁新增。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8
+              ],
+              "text": "相邻 #17973 为TensorRT-LLM监视liveness服务。NOT_SERVING、流结束或失败可触发丢失路径；旧引擎无该服务时不能假定检测有效。相关测试强调先撤销登记，再让sidecar以错误退出；外部编排重启仍是另一层职责。"
+            },
+            {
+              "type": "table",
+              "caption": "原创诊断矩阵",
+              "columns": [
+                "观测",
+                "下一项证据",
+                "避免误判"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "迁移增加但错误率不降",
+                    "重试耗尽、目标容量、同一故障worker重复选中",
+                    "迁移计数就是恢复成功数"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "客户取消后又有新派发",
+                    "取消类型、客户端状态、清理时刻",
+                    "所有取消都应重试"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "最后一批输出缺失",
+                    "取消终态是否含token、错误发送顺序",
+                    "引擎token生成一定错误"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "退出后仍选中旧worker",
+                    "注册撤销时间、路由收敛与旧连接",
+                    "请求迁移补丁已经解决发现一致性"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "PD模式排空结束后异常",
+                    "在途传输完成证据与资源生命周期",
+                    "bounded drain结束代表KV安全释放"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "文档说不支持但源码重试",
+                    "固定revision、依赖Tonic版本和具体错误分类",
+                    "当前主分支行为等于发行保证"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议把时间线分成故障发生、错误分类、路由撤销、下一次派发、首个续写token、最终终态。如此可以分辨是检测慢、选择慢、重算慢还是生成慢。公开报告只给这些证据类型，不包含用户内部日志，也没有执行终止线上引擎的操作。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：先测token交接，再测故障风暴",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下为未执行计划。先冻结Dynamo、sidecar、原生引擎和Tonic版本；用CPU mock验证分类，再用隔离GPU测试目标模型。H20、不同精度、多模态、PD与投机解码应分开列项，不以单个小模型通过覆盖全部组合。"
+            },
+            {
+              "type": "table",
+              "caption": "原创实验设计",
+              "columns": [
+                "场景",
+                "对照条件",
+                "应保留证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "首token前引擎退出",
+                    "迁移关闭/开启、相同尝试上限",
+                    "错误类别、派发次数、最终终态"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "首token后退出",
+                    "确定性合成token流，故障点逐步移动",
+                    "前缀无重复无遗漏，剩余token预算准确"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "cleanup尾token",
+                    "有/无token的取消终态，客户仍活跃",
+                    "尾token先送达，随后只有一次迁移错误"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "客户同时取消",
+                    "stop/kill与cleanup交错",
+                    "不因引擎清理而复活已取消请求"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "协议早闭与主动拒绝",
+                    "无trailer、transport断开、引擎Unknown分开",
+                    "分类符合固定实现，不一概重试"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "不支持重放模式",
+                    "guided decoding、固定worker、多结果",
+                    "按策略拒绝迁移且错误清晰"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障worker尚未撤销",
+                    "保留短暂旧登记，控制幸存容量",
+                    "尝试预算有限、错误率与恢复时间可解释"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真实GPU与PD",
+                    "分别聚合/分离，缓存冷热固定",
+                    "输出校验、KV交接、尾延迟与资源回收"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：先交付正确，再判断恢复是否划算",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创验收门",
+              "columns": [
+                "指标",
+                "分母或范围",
+                "预先约定的通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "交付完整性",
+                    "客户已收到的token/chunk序列",
+                    "没有新增重复或遗漏；终态唯一"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "迁移成功率",
+                    "可迁移且实际进入迁移的请求",
+                    "独立统计成功与耗尽，不能混入全部流量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "尝试放大",
+                    "同一完成请求的实际派发次数",
+                    "不超过配置预算；失败worker重复选择可定位"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复时延",
+                    "故障到下一有效token以及最终完成",
+                    "满足服务预算，同时报告失败样本"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消正确性",
+                    "客户取消与引擎清理交错集合",
+                    "已取消请求不被重新派发"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成本与容量",
+                    "固定到达率、幸存worker数、冷热缓存",
+                    "重算/队列不挤垮正常请求goodput"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "文档与制品",
+                    "实际加载版本与已读固定提交",
+                    "包含关系和错误语义可复核"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "使用真实模型时，逐token相等不总是合理的跨故障指标，但已交付前缀保持、终态一致和计数正确应作为协议门。任务质量与统计差异需要另设评估集；不能用“内容看着像正常回答”替代自动验收。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：发布包含、文档修订与状态重放能力",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "尚未确认任何正式/预发布制品包含这批提交；未执行CPU集成、真实GPU、H20、PD、多模态或投机解码实验。固定支持说明中的早闭流限制与代码存在差异，仍需后续文档修订或针对所用镜像复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "没有证明所有sampling/decoder状态能够重放，没有证明bounded drain已经等待KV传输完成，也没有证明sidecar退出后编排器必然重启成功。应把这些作为独立未闭合项，而不是在标题里暗示端到端无损恢复。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "pytorch-nccl2-async-barrier-stream-deadlock",
     "kind": "analysis",
     "title": "PyTorch nccl2 异步 barrier：一位标志如何形成宿主与GPU等待环",
@@ -677,6 +1405,691 @@
   },
   {
     "schemaVersion": 1,
+    "id": "sglang-nixl-worker-device-binding",
+    "kind": "analysis",
+    "title": "SGLang NIXL 的线程设备身份：DCP 打包前先绑定 rank GPU",
+    "summary": "解读 #47255 的线程入口修复：避免仅依靠有条件的事件等待来设置设备，区分设备身份、生产完成、网络完成和缓冲区复用四道边界。",
+    "publishedAt": "2026-11-04",
+    "reviewedAt": "2026-11-04",
+    "topics": [
+      "SGLang",
+      "GPU 通信",
+      "PD 分离"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang #47255 固定提交",
+        "url": "https://github.com/sgl-project/sglang/commit/b9f5d7000c0f69a67c497c363555f9977f053cb0",
+        "publishedAt": "2026-11-04",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "NIXL 线程创建与传输路径",
+        "url": "https://github.com/sgl-project/sglang/blob/b9f5d7000c0f69a67c497c363555f9977f053cb0/python/sglang/srt/disaggregation/nixl/conn.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "线程绑定辅助函数",
+        "url": "https://github.com/sgl-project/sglang/blob/b9f5d7000c0f69a67c497c363555f9977f053cb0/python/sglang/srt/disaggregation/common/utils.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "DCP pack 数据准备与同步",
+        "url": "https://github.com/sgl-project/sglang/blob/b9f5d7000c0f69a67c497c363555f9977f053cb0/python/sglang/srt/disaggregation/common/dcp_pack.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "公共管理器的 pack buffer 初始化",
+        "url": "https://github.com/sgl-project/sglang/blob/b9f5d7000c0f69a67c497c363555f9977f053cb0/python/sglang/srt/disaggregation/common/conn.py",
+        "accessedAt": "2026-11-04"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "固定提交将 NIXL transfer_worker 的线程入口改为 run_on_device，传入该 rank 的 gpu_id。",
+        "sourceIndices": [
+          0
+        ]
+      }
+    ],
+    "questions": [
+      "无 wait_event 的首个 DCP chunk 是否在正确设备上执行？",
+      "实际产物是否包含该提交，且多卡首次传输与复用回归通过？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验日 2026-11-04；原文提交时间 2026-11-04 01:43:50 UTC。读取 main 固定提交 b9f5d7000c0f69a67c497c363555f9977f053cb0 的完整补丁及相关 NIXL、公共线程/缓冲与 DCP pack 函数。仅确认源码合入，未确认进入正式或预发布标签。未执行上游测试、GPU/H20 或网络实验；本文图与实验设计均非实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：设备身份应在工作线程入口建立",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这是一项部署正确性修复，不是吞吐优化公告。对多卡 P/D 分离环境，不能把“进程已经选择 GPU”当成“随后创建的每个工作线程都在该 GPU 上”。建议把非零设备、首次传输和无等待事件三者组合成升级回归重点，先证明执行身份，再讨论带宽。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "补丁把 NIXL 的 transfer_worker 包装在 run_on_device 中，在线程运行时传入 kv_args.gpu_id。补丁只修改一个实现文件，未新增测试。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要将这个结论扩大为所有 NIXL 故障已解决。设备选择、KV 写入完成、远端传输完成以及临时缓冲可重用分别需要证据；本提交只收紧其中第一道入口。没有 H20 实测，也没有可据此引用的吞吐或显存节省数字。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：通信线程也可能发起设备计算",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "“通信线程”容易让人联想到纯 CPU socket 或 RDMA 描述符处理，但准备数据时也可能执行设备上的重排、聚合与 stream 切换。一个看似只搬运地址的后台任务，会在第一次遇到需要打包的请求时触碰运行时上下文。此时主计算路径正常，并不能证明后台路径身份正确。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "公共辅助函数通过 current_platform 选择指定设备，再调用目标函数；平台未实现该接口时捕获 NotImplementedError。该抽象的存在不等于所有后端都提供相同绑定保证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学场景：GPU 0 与 GPU 3 分别有工作线程，先在 GPU 3 进程中跑普通传输，再第一次触发 DCP pack。若只观察普通请求的成功率，就可能错过冷路径的设备初始化行为。这里的 0 和 3 是逻辑示例，应同时记录可见设备重映射和物理 UUID，不能把编号当物理槽位。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：入口绑定不依赖某个 chunk 恰好带事件",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "旧传输循环内仍有一个局部 device_bound 标记：只有 chunk 携带 wait_event 且 room 未失败，才先设置设备再等待事件。新的线程入口绑定覆盖整个 worker 调用，而不依赖这条条件分支是否首次执行。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意一：旧入口的两种首次任务",
+              "caption": "非实测。两组是互斥场景，不是同一请求连续走两遍；无事件场景不会经过旧的局部绑定。两组终点都只是继续处理，不是传输成功。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "y0",
+                  "label": "进入旧 worker",
+                  "detail": "工作线程开始处理第一个 chunk。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "y1",
+                  "label": "事件分支成立",
+                  "detail": "wait_event 存在且 room 未失败。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "y2",
+                  "label": "局部设置设备",
+                  "detail": "旧循环在此分支中设置 rank 设备并等待事件。",
+                  "column": 0,
+                  "row": 2,
+                  "tone": "control"
+                },
+                {
+                  "id": "y3",
+                  "label": "继续处理 chunk",
+                  "detail": "有事件路径离开等待分支后继续。",
+                  "column": 0,
+                  "row": 3,
+                  "tone": "communication"
+                },
+                {
+                  "id": "z0",
+                  "label": "进入旧 worker",
+                  "detail": "与上组相同入口的另一种场景。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "z1",
+                  "label": "没有等待事件",
+                  "detail": "不满足进入等待分支的条件。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "z2",
+                  "label": "跳过局部绑定",
+                  "detail": "不经过上组的设置设备与事件等待。",
+                  "column": 1,
+                  "row": 2,
+                  "tone": "control"
+                },
+                {
+                  "id": "z3",
+                  "label": "仍可继续处理",
+                  "detail": "可能随后遇到需要设备上下文的打包操作，需真实验证。",
+                  "column": 1,
+                  "row": 3,
+                  "tone": "communication"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "y0",
+                  "to": "y1",
+                  "label": "检查本任务"
+                },
+                {
+                  "from": "y1",
+                  "to": "y2",
+                  "label": "条件成立"
+                },
+                {
+                  "from": "y2",
+                  "to": "y3",
+                  "label": "等待后继续"
+                },
+                {
+                  "from": "z0",
+                  "to": "z1",
+                  "label": "检查本任务"
+                },
+                {
+                  "from": "z1",
+                  "to": "z2",
+                  "label": "条件不成立"
+                },
+                {
+                  "from": "z2",
+                  "to": "z3",
+                  "label": "直接继续"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "首任务带等待事件",
+                    "tone": "control",
+                    "nodeIds": [
+                      "y0",
+                      "y1",
+                      "y2",
+                      "y3"
+                    ]
+                  },
+                  {
+                    "title": "首任务没有等待事件",
+                    "tone": "control",
+                    "nodeIds": [
+                      "z0",
+                      "z1",
+                      "z2",
+                      "z3"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意二：修复入口与打包责任分开",
+              "caption": "非实测。第一组是修复后的启动顺序；第二组展开第一组末节点里的 DCP 打包分支。组间为包含关系，不是额外并发任务。第二组末节点不表示网络完成或缓冲可复用。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "n0",
+                  "label": "传入 rank 设备",
+                  "detail": "线程参数携带 kv_args.gpu_id。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "n1",
+                  "label": "在线程内绑定",
+                  "detail": "调用 run_on_device 的平台绑定入口。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "n2",
+                  "label": "执行 worker",
+                  "detail": "设备绑定尝试完成后调用工作函数。",
+                  "column": 0,
+                  "row": 2,
+                  "tone": "communication"
+                },
+                {
+                  "id": "n3",
+                  "label": "处理数据任务",
+                  "detail": "按当前 chunk 条件选择普通发送、打包或其他路径。",
+                  "column": 0,
+                  "row": 3,
+                  "tone": "compute"
+                },
+                {
+                  "id": "k0",
+                  "label": "选取私有缓冲",
+                  "detail": "按 worker_index 选择 pack buffer 并检查所需容量。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "kv"
+                },
+                {
+                  "id": "k1",
+                  "label": "建立生产依赖",
+                  "detail": "gather stream 等待 producer stream。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "k2",
+                  "label": "采集源 KV 行",
+                  "detail": "在 gather stream 上拷贝指定 token 行。",
+                  "column": 1,
+                  "row": 2,
+                  "tone": "compute"
+                },
+                {
+                  "id": "k3",
+                  "label": "本地打包完成",
+                  "detail": "同步 gather stream 后返回源地址；远端完成仍独立。",
+                  "column": 1,
+                  "row": 3,
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "n0",
+                  "to": "n1",
+                  "label": "启动目标线程"
+                },
+                {
+                  "from": "n1",
+                  "to": "n2",
+                  "label": "绑定后调用"
+                },
+                {
+                  "from": "n2",
+                  "to": "n3",
+                  "label": "按任务执行"
+                },
+                {
+                  "from": "k0",
+                  "to": "k1",
+                  "label": "容量合格的打包路径"
+                },
+                {
+                  "from": "k1",
+                  "to": "k2",
+                  "label": "生产依赖建立后"
+                },
+                {
+                  "from": "k2",
+                  "to": "k3",
+                  "label": "完成采集并同步"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "修复后的线程入口",
+                    "tone": "control",
+                    "nodeIds": [
+                      "n0",
+                      "n1",
+                      "n2",
+                      "n3"
+                    ]
+                  },
+                  {
+                    "title": "DCP 打包的内部顺序",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "k0",
+                      "k1",
+                      "k2",
+                      "k3"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "DCP pack 代码在 gather stream 上等待 producer stream，完成行拷贝后同步 gather stream，再返回打包地址。容量不足会返回回退信号，而不是继续越界打包。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4,
+                1
+              ],
+              "text": "公共管理器按 transfer queue 数量初始化 pack buffers，并按设备类型构造。NIXL 路径按 worker_index 选择对应缓冲、为目标 DCP rank 准备源地址后调用发送。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "由此可把诊断顺序分成四问：当前线程是谁、输入何时写完、网络何时读完、该缓冲何时允许覆盖。入口绑定回答第一问；gather 同步只涉及本地数据准备，不能被拿来回答第三和第四问。即使打包内容正确，过早复用仍可能导致独立错误，因此本报告不省略后续资源检查。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：短补丁改变入口，周边源码限定含义",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已读证据及证明边界",
+              "columns": [
+                "证据",
+                "可确认",
+                "不能由此推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#47255 固定补丁",
+                    "线程入口传入 rank gpu_id",
+                    "正式发行已包含、所有后端均已验证"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "common/utils.py",
+                    "绑定后才执行目标；未实现平台接口有例外处理",
+                    "设备设置失败在所有平台都显式报错"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "NIXL worker",
+                    "事件路径有条件绑定；DCP 路径会调用 pack",
+                    "只有带事件的请求才需要正确设备"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "dcp_pack.py",
+                    "本地生产/采集 stream 关系与 pack 完成同步",
+                    "远端读取已结束或缓冲已可重用"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "common/conn.py",
+                    "pack buffers 初始化与队列数量关联",
+                    "所有线程共享缓冲都不存在竞争"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次未运行测试；补丁没有新增定向回归不代表仓库没有任何相关测试，也不能被解读成已知线上事故率。需要在构建身份固定后补足真实多设备证据。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：更早建立身份，但不替代生命周期治理",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "把条件性操作提升为线程入口不变量，主要收益是覆盖更容易推理：每个启动的 worker 都经过同一个入口。代价和风险应在启动失败、平台未实现和设备映射变更上审计，而不是想当然认为多一次调用必然产生可测性能损失。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "入口绑定也不能允许后续代码随意改变当前设备。如果工作线程或底层库在运行中切换设备，入口时正确不等于每次调用前都正确。是否需要断言、日志或上下文恢复，要由实际平台契约和观测成本决定，不能在未测情况下推荐逐 kernel 加同步。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "H20 生产环境应关注本地 GPU 编号与物理设备、容器可见设备之间的映射。单卡容器常把目标物理卡映为逻辑 0，可能遮住多可见卡环境才出现的问题。因此单卡成功只能作为基础检查，不能成为多卡准入的替代。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：先查上下文归属，再查传输链路",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创故障假设：某些非零逻辑设备的进程在首个 DCP 请求时出现额外上下文、初始化延迟或设备相关错误，而普通 KV 发送正常。先收集线程入口设备、buffer 所属设备、stream 身份与首个 chunk 类型，再决定是否调查网卡、NIXL 后端或带宽；这里列的是诊断假设，不是已确认根因。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "固定驱动、运行时、NIXL、SGLang 提交与容器设备映射；只改变该补丁或一个明确变量。",
+                "记录冷启动与稳定期分布，分别观测非零 rank、wait_event 有无、DCP 重排有无。",
+                "用公开合成 token 和 KV 校验数据验证，不上传内部 prompt、客户日志或身份信息。",
+                "发现设备归属不一致、数据校验失败或安全复用门不满足就停止放量；不得仅增加超时掩盖异常。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：覆盖冷路径，而不只重复热请求",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟执行矩阵，均未执行",
+              "columns": [
+                "环境/变量",
+                "动作",
+                "主要证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU 替身：旧入口/新入口",
+                    "记录 set_device 与 worker 调用顺序，模拟未实现接口",
+                    "先绑定再调用；例外语义明确"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "多可见 GPU：逻辑 0/非零",
+                    "每个 worker 首任务无 wait_event，触发 DCP pack",
+                    "当前设备、buffer/stream 归属一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "同上，有/无事件",
+                    "相同数据分别走生产事件等待及无事件路径",
+                    "输出和 KV 校验一致，冷启动行为可解释"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "容量边界与并发队列",
+                    "足够/不足 pack capacity，多 worker、多目标 DCP rank",
+                    "回退正确，缓冲互不污染，无提前覆盖"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20 隔离测试环境",
+                    "冷启动重复、持续负载、取消/失败注入",
+                    "正确性、上下文/显存分布、TTFT/TPOT与尾延迟"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "实验先验证确定性错误门，再看性能。每轮重新启动进程捕获首次上下文行为；热请求阶段采用相同到达过程和长度分布。单独记录打包耗时与完整请求墙钟，不能将若干重叠 kernel 时间相加后声称服务延迟改善。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：设备一致性是门槛，不是业务完成指标",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议事先冻结的验收口径",
+              "columns": [
+                "指标",
+                "口径",
+                "准入"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "设备身份不一致次数",
+                    "每个线程首次设备调用与该 rank 预期设备比较",
+                    "所有测试组合为 0"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "KV 内容与结果",
+                    "独立参考与传输后逐项核验",
+                    "零内容污染；精度门满足既定容差"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "上下文与资源",
+                    "进程/设备关系，峰值占用和重复启动残留",
+                    "没有无法解释的跨设备上下文或持续增长"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "异步复用安全",
+                    "远端完成前禁止覆盖的实际时序证据",
+                    "不能用本地 pack 同步替代"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务性能",
+                    "固定负载下 TTFT/TPOT p50/p99、吞吐及错误率",
+                    "不超过预先约定回退预算，不臆造提升"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：标签包含与真实硬件证据尚未闭合",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "未核实正式/预发布标签包含该提交；不得据此称 v0.5.23 已修复。",
+                "未执行上游或新增测试，没有 H20、NIXL 实际设备错误复现与修复对照。",
+                "平台 NotImplementedError 路径、底层库后续设备切换和容器可见设备映射需分别核查。",
+                "没有把本地 pack 完成扩张为 RDMA 完成、取消安全或全系统资源释放保证。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-held-decode-abort-inventory",
     "kind": "analysis",
     "title": "SGLang 暂停后的取消边界：无 KV 的 held 请求仍需要终态",
@@ -1225,6 +2638,677 @@
                 "已读单元测试但没有执行；多 rank、网络异常、host staging 和缓存后端组合仍待真实环境验证。",
                 "request_lists 的“每请求至多一处”契约是否覆盖全部可选组件，需要进一步动态不变量检查。",
                 "本文没有证明全系统恰好一次取消、瞬时释放或性能收益；不会将源码变化包装成 H20 基准结论。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "vllm-ascend-recoverssm-pcp-global-step",
+    "kind": "analysis",
+    "title": "Ascend RecoverSSM 的 PCP 边界：切分计算，不切碎请求的状态账",
+    "summary": "解读 #20723：PCP prefill 保留原始上下文，合并局部注意力与全局递归状态元数据后登记步骤；区分 mock 字节重组、作者 A3 短输入结果与生产准入。",
+    "publishedAt": "2026-11-03",
+    "reviewedAt": "2026-11-04",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "PD 分离",
+      "投机解码"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Ascend #20723 固定提交及作者验证摘要",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/1bf75989c152c353ae0254b3e2aefa717d74f982",
+        "publishedAt": "2026-11-03",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "RecoverSSM 配置守卫",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/1bf75989c152c353ae0254b3e2aefa717d74f982/vllm_ascend/models/glm5next/recoverssm_config.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "PCP 元数据保留",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/1bf75989c152c353ae0254b3e2aefa717d74f982/vllm_ascend/models/glm5next/recoverssm_metadata.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "混合模型全局元数据与步登记",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/1bf75989c152c353ae0254b3e2aefa717d74f982/vllm_ascend/worker/v2/model_states/mamba_hybrid.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "元数据替换回归测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/1bf75989c152c353ae0254b3e2aefa717d74f982/tests/ut/models/test_glm5next_recoverssm_metadata.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "全局请求与单次登记测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/1bf75989c152c353ae0254b3e2aefa717d74f982/tests/ut/worker/test_model_runner_v2_mamba.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "PCP8 状态重组测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/1bf75989c152c353ae0254b3e2aefa717d74f982/tests/ut/kv_offload/mooncake_v2/test_pull_worker.py",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "固定版本投机解码指南",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/1bf75989c152c353ae0254b3e2aefa717d74f982/docs/source/user_guide/feature_guide/speculative_decoding.md",
+        "accessedAt": "2026-11-04"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "固定源码保留原始 PCP 上下文，并让合并元数据路径经过 RecoverSSM record_step 后再返回。",
+        "sourceIndices": [
+          2,
+          3
+        ]
+      }
+    ],
+    "questions": [
+      "长 prefill、warm prefix 与 P 侧图模式能否维持全局请求状态一致？",
+      "实际 Ascend/vLLM/CANN 与状态布局是否满足双侧协议？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验日 2026-11-04；原文提交时间 2026-11-03 14:07:42 UTC。读取 main 固定提交 1bf75989c152c353ae0254b3e2aefa717d74f982 的完整补丁、配置/元数据/模型状态相关函数、PCP 测试与固定指南相关章节。仅源码合入，正式或预发布标签包含情况未确认；未运行单测或 NPU 实验。作者硬件验证不是本报告独立复现，所有原创图和实验矩阵均非实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：PCP 扩展的是计算分工，不是递归状态提交的次数",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次修复的重点不是让更多设备参与就自动获得加速，而是保证一个逻辑请求在被切成局部计算后，仍按原始请求语义登记状态。对混合注意力模型，局部输入长度、全局序列位置和投机提交资格不能共用一个未经解释的 batch 概念。建议先验证元数据身份与提交次数，再测吞吐。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "固定变更为 PCP prefill producer 放开受限配置，并修复原始 PCP 上下文传递及合并元数据后的步骤登记。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文讨论 Ascend NPU，不能迁移成 H20 性能结论。作者给出的硬件样本主要是短输入；这不足以支持长 prefill、warm prefix 或任意图模式升级。当前应将它视为可测试的功能边界扩展，而不是全面生产可用声明。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：一个请求可以有局部计算视图，却只能有一致的历史",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "传统注意力可按分片组织计算，但递归状态代表的是按顺序消化历史后的结果。若 PCP 把一个请求拆成多个局部片段，片段数量不能直接变成状态提交次数；同样，图捕获为了填满形状增加的假行，也不能变成真实请求。这里的关键对象不是张量大小，而是“这些元素属于谁、处于哪个逻辑位置”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "配置守卫要求投机解码、PP=1、DCP=1；PCP>1 限 TP=1 且为 Mooncake producer。它还约束 cache mode 和 stochastic rounding。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学例：长度 16 的请求分给两个工作单元，每个看到部分 token；如果登记层把两个局部段当成两条完整历史，最终状态可能推进两次或丢失次序。这个例子只解释身份关系，不模拟真实 PCP 切片算法，也不声称该提交曾造成某种具体线上输出错误。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：先合并正确视图，再登记一次步骤",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "模型状态构建把非 Mamba 组交给局部 batch，把 Mamba 组交给 PCP 的 global batch、block tables 和 slot mappings；合并后进入公共 record_step 路径，不再提前返回。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意一：局部与全局各自贡献同一份元数据",
+              "caption": "非实测。图中两处 M 是同一个合并对象的重复视图，不是两个合并操作，也不是两次 record_step。关系为局部普通注意力→M 与全局递归状态→同一个 M；M→一次登记由下一图展开。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "l0",
+                  "label": "局部 batch",
+                  "detail": "普通注意力按局部输入构造。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "compute"
+                },
+                {
+                  "id": "l1",
+                  "label": "同一对象 M",
+                  "detail": "贡献普通注意力项；与右侧 M 是同一实际对象。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "compute"
+                },
+                {
+                  "id": "g0",
+                  "label": "全局请求视图",
+                  "detail": "使用 global batch、block tables 与 slot mappings。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "kv"
+                },
+                {
+                  "id": "g1",
+                  "label": "同一对象 M",
+                  "detail": "贡献递归状态项；与左侧 M 是同一实际对象。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "l0",
+                  "to": "l1",
+                  "label": "构造并贡献普通项",
+                  "shortLabel": "普通项"
+                },
+                {
+                  "from": "g0",
+                  "to": "g1",
+                  "label": "构造并贡献状态项",
+                  "shortLabel": "状态项"
+                }
+              ],
+              "presentation": {
+                "kind": "paths",
+                "panels": [
+                  {
+                    "title": "普通注意力贡献",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "l0",
+                      "l1"
+                    ]
+                  },
+                  {
+                    "title": "递归状态贡献",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "g0",
+                      "g1"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意二：上下文保留与单次步骤登记",
+              "caption": "非实测。上组保留原始 PCP 身份，末节点成为下组合并对象 M 中递归状态项的内容；下组只出现一次登记。分组分别描述构造内部字段与调用方控制顺序，不是两次执行请求。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "r0",
+                  "label": "原始 PCP 上下文",
+                  "detail": "从原始 common_attn_metadata 取得上下文。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "r1",
+                  "label": "规范化与替换",
+                  "detail": "构造过程可能替换元数据对象并丢失动态附加字段。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "r2",
+                  "label": "显式恢复上下文",
+                  "detail": "从原始对象重新取回 pcp_context。",
+                  "column": 0,
+                  "row": 2,
+                  "tone": "control"
+                },
+                {
+                  "id": "r3",
+                  "label": "返回带身份的项",
+                  "detail": "该项随后作为同一对象 M 的递归状态部分。",
+                  "column": 0,
+                  "row": 3,
+                  "tone": "control"
+                },
+                {
+                  "id": "m0",
+                  "label": "合并对象 M",
+                  "detail": "接收前图普通项和带原始上下文的递归状态项。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "m1",
+                  "label": "登记输入就绪",
+                  "detail": "完整 M 已赋给本步 self.attn_metadata。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "m2",
+                  "label": "仅登记一次",
+                  "detail": "RecoverSSM 开启时 record_step 使用完整 M。",
+                  "column": 1,
+                  "row": 2,
+                  "tone": "control"
+                },
+                {
+                  "id": "m3",
+                  "label": "返回本步元数据",
+                  "detail": "登记后返回；不声称传输、设备执行或提交已完成。",
+                  "column": 1,
+                  "row": 3,
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "r0",
+                  "to": "r1",
+                  "label": "保留原始参照"
+                },
+                {
+                  "from": "r1",
+                  "to": "r2",
+                  "label": "构造后补回身份"
+                },
+                {
+                  "from": "r2",
+                  "to": "r3",
+                  "label": "字段随结果返回"
+                },
+                {
+                  "from": "m0",
+                  "to": "m1",
+                  "label": "赋值为本步元数据"
+                },
+                {
+                  "from": "m1",
+                  "to": "m2",
+                  "label": "以完整 M 登记"
+                },
+                {
+                  "from": "m2",
+                  "to": "m3",
+                  "label": "登记后返回"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "构造内部的身份保留",
+                    "tone": "control",
+                    "nodeIds": [
+                      "r0",
+                      "r1",
+                      "r2",
+                      "r3"
+                    ]
+                  },
+                  {
+                    "title": "调用方的步骤账",
+                    "tone": "control",
+                    "nodeIds": [
+                      "m0",
+                      "m1",
+                      "m2",
+                      "m3"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                4
+              ],
+              "text": "RecoverSSM metadata builder 从原始 common_attn_metadata 取回 pcp_context。相关测试专门模拟 replace 丢掉动态字段，分别检查 graph 与非 graph 情况下上下文仍为同一对象。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "为什么“取回原始对象上的字段”有意义？数据类替换通常擅长复制声明字段，不一定保留运行时附加的解释信息。张量 shape 和数值即使没变，也可能已经丢掉与全局请求对应的语义。这里应把上下文当成计算契约，而不是可有可无的调试附件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "源码测试断言 RecoverSSM 开启时，对合并 metadata 的 record_step 恰调用一次，覆盖 for_capture 两种设置；这仍是调用层测试，不是设备上每一步状态都已正确提交。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码、CPU 替身与作者硬件结果逐层分开",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已读证据表",
+              "columns": [
+                "来源",
+                "支持范围",
+                "限制"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "配置守卫",
+                    "PCP producer 的明确准入组合",
+                    "不代表所有通过 guard 的配置已硬件验证"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "metadata 与模型状态源码",
+                    "原始上下文保留，合并后进入登记",
+                    "不证明端到端数值一致"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "元数据测试",
+                    "模拟字段丢失，检查上下文身份",
+                    "非真实 NPU graph 运行"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "模型状态测试",
+                    "局部/全局视图区分，登记一次",
+                    "mock 调用证据不等于设备状态提交"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "pull worker 测试",
+                    "CPU 张量模拟 PCP8 四类状态重组，目标内容精确且相邻页哨兵保留",
+                    "未执行 RDMA、CANN 或真实并发"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定指南",
+                    "实验性功能及 P/D 配置、布局边界",
+                    "使用指南不是性能或正确性基准"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    7
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "提交作者报告 A3、W8A8 GLM-5.3-Flash、MTP5 的配对验证：P 为 TP1/PCP8/DP1/EP8 且 target/draft eager，D 为 TP1/PCP1/DP8/EP8 且 FULL_DECODE_ONLY。30 道 AIME2026 中两种对照均有 24 个正确自然结束、6 个输出上限终止、0 个传输失败；输入不超过 385 token。使用共同额外 norm-bias 修正，并非仅切换本补丁；作者未声称性能或精度优势，本报告未复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此不能把 24/30 简化为“完整作答准确率 80% 且无损”，也不能把零传输失败变成稳定性承诺。达到输出上限、自然结束、答案正确与传输成功是四种不同标签，分母必须在实验前定义。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：双侧布局一致优先于并行度好看",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "固定指南要求 P/D 权重、投机窗口、cache dtype、卷积布局及 RecoverSSM 设置匹配；head shard 数不同时用 SD 卷积布局。示例 D 的 DP rank 各自接收完整请求状态，而不是共同切分同一个请求。指南标明功能实验性，其他 P 图配置需另验。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "并行度有两种容易混淆的意义：分担同一请求的计算，以及分配不同请求的服务责任。把 DP 数量误当成单请求状态分片数，会让“总设备数相同”掩盖实际恢复协议不同。上线清单应明确每种并行维度作用于模型、token、head 还是请求。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "恢复类路径可能减少某些重算成本，却也增加元数据、状态布局与图形状的组合复杂度。这里没有读到可外推到用户负载的成本曲线，因此不建议默认打开。先以原生路径作参考，再通过相同输入、相同输出预算和相同停止定义测实际收益。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：检查状态账是否按请求而非局部段推进",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创故障假设：短冷请求可用，但长 prefill、prefix 命中或批次形状变化后输出偏离。应检查实际请求数与 padded 行数、局部/全局序列位置、上下文是否保留以及 step 登记次数；不应先把偏差归因为量化误差或网络丢包。只有对照实验能缩小归因。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "以固定提交、vLLM 对应身份、CANN/驱动、量化与布局组成可复现实验清单；不能只记录模型名和设备数。",
+                "保留公开合成请求的逻辑位置、状态页身份与提交计数；对比 prefix 开/关、PCP1/PCP8 和原生/RecoverSSM。",
+                "把输入截断、输出上限、取消、失败和自然停止分别计数，不将超长输出达上限归到正确自然结束。",
+                "出现状态页哨兵被改写、漏登记/重复登记或不支持组合未拒绝，停止放量并回到已验证基线。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：把未测的长输入和图模式变成明确矩阵",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟执行；本报告未运行",
+              "columns": [
+                "测试层与环境",
+                "变量",
+                "观察与参考"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU 配置与元数据",
+                    "PCP1/8、TP1/2、producer/consumer、capture开关",
+                    "拒绝矩阵、原始上下文身份、登记次数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "CPU 状态地址重组",
+                    "不同 shard 数、页号、dtype、非目标页哨兵",
+                    "独立完整状态参考、覆盖字节与越界写"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "A3 隔离环境短输入",
+                    "重现作者 P/D 组合，固定相同源码与额外修正",
+                    "复现与未复现明确区分，输出终止类型分开"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "长 prefill 与 prefix",
+                    "跨 chunk 长度、冷/热 prefix、不同缓存命中比例",
+                    "状态连续性、数值参考、首 token 与状态恢复时延"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "图与故障组合",
+                    "P eager/实际图模式，D capture/replay，取消/重试",
+                    "padded 行不提交、失败后状态不污染后续请求"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议采用两阶段设计：先用小规模确定性合成输入验证状态地址和推进次数，再用公开真实任务评估质量与服务 SLO。数值容差、停止规则、输出预算、采样参数及统计置信方式在运行前固定，不根据结果事后改变分母。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：每个证据层都有独立失败条件",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议准入门，不是已取得结果",
+              "columns": [
+                "指标",
+                "定义",
+                "准入"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "配置拒绝正确性",
+                    "不支持角色/并行组合在执行前失败",
+                    "负向矩阵全部符合预期"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "步骤身份与次数",
+                    "同一逻辑请求/步骤登记对应全局元数据",
+                    "没有局部段重复登记或漏登记"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "状态与非目标页",
+                    "重组结果对独立参考，哨兵页不变",
+                    "零越界写、零错误页复用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "模型质量",
+                    "自然完成任务的正确性与全样本终止分布",
+                    "满足预设精度门；上限样本单列"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务与成本",
+                    "相同负载下 TTFT/TPOT尾延迟、吞吐、峰值状态内存",
+                    "先过正确性门，再满足预设成本/SLO预算"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：正式版本、长输入和独立复现仍缺证据",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "未确认正式或预发布标签包含 #20723；release backport 提及不等于已发布。",
+                "没有运行 CPU 单测或 A3 实验；作者 520 项测试与硬件摘要均不能当作本报告执行结果。",
+                "长 prefill、warm prefix 和不同 P 图配置没有由本文建立硬件证据，不能从短输入成绩外推。",
+                "FP16 KV、跨版本双侧布局、崩溃重启及状态迁移的完整兼容性仍需专门核查。",
+                "没有 H20/GPU 结果，也没有性能优势结论；本报告不替代运行前的模型质量评估。"
               ]
             }
           ]
