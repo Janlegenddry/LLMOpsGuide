@@ -1,0 +1,27 @@
+docs/radar-report-format.md
+  s_2f6ef9aecfdae7::t_efc064213ee216 61-62
+src/content/radar.json
+  s_2f6ef9aecfdae7::t_3b14077bf29adf 678-2444
+src/lib/report-lifecycle-figures.mjs
+  s_2f6ef9aecfdae7::t_1fccd3dd0bcaba 16-29,40,45-46,49-53,56-59,81-108,110-120,122,124
+tests/fixtures/nov3-lifecycle-routing.json
+  s_2f6ef9aecfdae7::t_3ca440d91ad81b 1-411
+tests/report-lifecycle-figures.test.mjs
+  s_2f6ef9aecfdae7::t_e62ae3b8051633 7-11,67-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f52c7b19a42a040f8bacf8ba5defba62d2030908",
+  "prompts": {},
+  "sessions": {
+    "s_2f6ef9aecfdae7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16361-80eb-7e40-a398-52927bf07d52",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "观至 <liguanzhi.lgz@antgroup.com>"
+    }
+  }
+}
