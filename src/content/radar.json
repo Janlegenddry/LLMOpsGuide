@@ -1,6 +1,670 @@
 [
   {
     "schemaVersion": 1,
+    "id": "mooncake-rdma-fork-state-ownership",
+    "kind": "analysis",
+    "title": "Mooncake MR 注销回退：fork 状态应由 libibverbs 统一记账",
+    "summary": "解读 #5241 移除注销后的直接 MADV_DOFORK，保留错误处理，并说明日志减少为何不能证明 VMA 泄漏已被彻底解决。",
+    "publishedAt": "2026-11-06",
+    "reviewedAt": "2026-11-06",
+    "topics": [
+      "KV Cache",
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Mooncake #5241 合入提交",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/5474d9b2374ffb1092c6ba5a9bd6bb4865d0ac1f",
+        "publishedAt": "2026-11-06",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "冻结 classic RDMA 注销实现",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/5474d9b2374ffb1092c6ba5a9bd6bb4865d0ac1f/mooncake-transfer-engine/src/transport/rdma_transport/rdma_context.cpp",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "冻结 TENT RDMA 注销实现",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/5474d9b2374ffb1092c6ba5a9bd6bb4865d0ac1f/mooncake-transfer-engine/tent/src/transport/rdma/context.cpp",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "rdma-core v47.0 注销参考实现",
+        "url": "https://github.com/linux-rdma/rdma-core/blob/v47.0/libibverbs/verbs.c",
+        "review": {
+          "category": "community",
+          "publisher": "linux-rdma / rdma-core",
+          "status": "attributed",
+          "note": "已读取 v47.0 的 ibv_dereg_mr，确认普通非 ODP MR 注销成功后调用 ibv_dofork_range。仅参考上游标签，不证明作者 MLNX_OFED 分发二进制完全相同，也未运行 RDMA。"
+        },
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "rdma-core v47.0 fork 范围记账",
+        "url": "https://github.com/linux-rdma/rdma-core/blob/v47.0/libibverbs/memory.c",
+        "review": {
+          "category": "community",
+          "publisher": "linux-rdma / rdma-core",
+          "status": "attributed",
+          "note": "已读 ibv_madvise_range 的页对齐、互斥与引用计数，以及 ibv_dofork_range。用于解释上游版本机制；实际机器库和 fork 模式待核对。"
+        },
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Mooncake #5241 作者实验记录",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/5241",
+        "publishedAt": "2026-11-04",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Mooncake v0.3.14 classic 实现对照",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14/mooncake-transfer-engine/src/transport/rdma_transport/rdma_context.cpp",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Mooncake v0.3.14 TENT 实现对照",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14/mooncake-transfer-engine/tent/src/transport/rdma/context.cpp",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Mooncake 正式版列表",
+        "url": "https://github.com/kvcache-ai/Mooncake/releases",
+        "accessedAt": "2026-11-06"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#5241 从 classic 与 TENT 注销路径移除额外 MADV_DOFORK；TENT 的预先缓存地址/长度和 deregistration 失败返回仍保留。",
+        "sourceIndices": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "警告减少、VMA 长期趋势、重叠 MR fork 保护与实际传输正确性必须分开验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "运行中的 libibverbs 来自哪个 rdma-core/OFED 构建，是否启用 fork 相关记账？",
+      "目标内存属于普通 host MR、ODP、设备 peermem 还是 DMA-BUF？",
+      "是否存在重叠 MR、尚未完成的 RDMA、注销失败或先销毁上层登记的情况？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-06 核验。PR 显示 main 已合入 #5241，固定提交 5474d9b，Atom 提交时间 03:02:14 UTC。已读 classic/TENT 最终差异、作者实验、v0.3.14 对照和上游 rdma-core v47.0 的 verbs.c、memory.c。未在目标 MLNX_OFED 栈、CPU host MR、设备内存或 DMA-BUF 上执行测试。库源码作为显式归属技术引用，不能代替实际二进制核验。所有图为原创机制示意。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：删除重复操作，保留责任边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这次回退值得关注，因为它纠正了一个很常见的运维思路：看到资源数量增长，就在上层再补一次底层清理。如果底层库已经维护区间引用和页属性，绕过它直接恢复状态可能既制造警告，又破坏仍在使用该区间的其他注册。应先识别谁拥有这项状态，再决定在哪一层修复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "#5241 删除 classic 与 TENT 注销成功后的额外 madvise(MADV_DOFORK)。TENT 仍在注销前缓存日志所需地址/长度，并在底层注销失败时返回 −1。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议把它视为主分支上的注销路径修正，而不是“RDMA 内存泄漏已解决”或“性能提升”。作者给出的主要证据是特定栈上的警告计数和进程映射数量；本报告没有执行传输实验，也没有证明正式镜像已经包含该提交。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：MR 生命期和 fork 页属性不是同一本账",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "MR 是网络设备对一段内存的注册描述；VMA 是进程地址空间中的映射区域。两者可能相互影响，但一个 MR 并不等于一个 VMA，注销一个 MR 也不意味着应无条件改变整段地址的 fork 属性。分配器切分、页对齐和重叠注册都能让简单的一对一推断失效。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                3
+              ],
+              "text": "上游 rdma-core v47.0 在普通、非 ODP MR 的底层注销成功后调用 ibv_dofork_range；它不是对所有类型统一发一次原始 madvise。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此排查流程应至少保留三条记录：注册/注销返回值、地址空间映射趋势，以及是否仍有在途传输或其他 MR 依赖同一内存。日志归零只能证明某条日志不再触发，无法同时证明这三件事。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "原理：按页区间引用计数决定何时恢复属性",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                4
+              ],
+              "text": "v47.0 的范围管理先做页对齐，在互斥锁下更新引用计数，仅在相应计数边界调用 madvise。ibv_dofork_range 在记账树存在时才进入该逻辑。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学例子：两个普通 host MR A、B 覆盖同一页，且 fork 保护记账处于启用状态。登记两次后计数为 2；注销 A 后变成 1，B 仍依赖该页。只有最后一个相关引用退休，底层才应恢复对应属性。如果上层在 A 注销后直接执行 MADV_DOFORK，它没有消费或检查这本区间账。这个例子说明所有权风险，不代表本报告在硬件上触发过损坏。"
+            },
+            {
+              "type": "diagram",
+              "title": "重叠页的退休由底层区间账决定",
+              "caption": "原创非实测示意。假设普通 host MR、有效 fork 保护、A/B 共享一页。左组是引用计数路径；右组是已删除的绕过路径及独立验收门。连线只描述责任与条件，不表示观测到的数据损坏。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "regs",
+                  "label": "A 与 B 登记",
+                  "detail": "同一页上的两个注册建立两个相关引用。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "A 与 B 登记",
+                  "tone": "control"
+                },
+                {
+                  "id": "dropa",
+                  "label": "注销 A 留 1",
+                  "detail": "正常记账在 A 成功注销后仍保留 B 的引用。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "注销 A 留 1",
+                  "tone": "control"
+                },
+                {
+                  "id": "dropb",
+                  "label": "注销 B 归零",
+                  "detail": "最后相关引用成功退休才到计数边界。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "注销 B 归零",
+                  "tone": "control"
+                },
+                {
+                  "id": "restore",
+                  "label": "按条件恢复",
+                  "detail": "底层按 MR 类型、fork 模式、页范围和计数执行对应处理。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "按条件恢复",
+                  "tone": "control"
+                },
+                {
+                  "id": "raw",
+                  "label": "旧上层直接调用",
+                  "detail": "A 注销后额外调用 MADV_DOFORK，不经过底层范围引用判断。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "旧上层直接调用",
+                  "tone": "danger"
+                },
+                {
+                  "id": "risk",
+                  "label": "仍有 B 的风险",
+                  "detail": "若调用有效，可能提前更改 B 仍依赖的页属性；这是推导风险而非实测结论。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "仍有 B 的风险",
+                  "tone": "danger"
+                },
+                {
+                  "id": "fix",
+                  "label": "修复移除调用",
+                  "detail": "新源码去掉这条额外操作，不是去掉 libibverbs 的 fork 处理。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "修复移除调用",
+                  "tone": "danger"
+                },
+                {
+                  "id": "verify",
+                  "label": "真实栈待验",
+                  "detail": "运行库、MR 类型、注销错误、在途 I/O 和业务正确性仍需独立验证。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "真实栈待验",
+                  "tone": "danger"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "regs",
+                  "to": "dropa",
+                  "label": "引用 2→1",
+                  "shortLabel": "引用 2→1"
+                },
+                {
+                  "from": "dropa",
+                  "to": "dropb",
+                  "label": "最后引用",
+                  "shortLabel": "最后引用"
+                },
+                {
+                  "from": "dropb",
+                  "to": "restore",
+                  "label": "条件恢复",
+                  "shortLabel": "条件恢复"
+                },
+                {
+                  "from": "dropa",
+                  "to": "raw",
+                  "label": "旧额外操作",
+                  "shortLabel": "旧额外操作"
+                },
+                {
+                  "from": "raw",
+                  "to": "risk",
+                  "label": "绕过区间账",
+                  "shortLabel": "绕过区间账"
+                },
+                {
+                  "from": "fix",
+                  "to": "verify",
+                  "label": "仍须验证",
+                  "shortLabel": "仍须验证"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "libibverbs 区间账",
+                    "tone": "control",
+                    "nodeIds": [
+                      "regs",
+                      "dropa",
+                      "dropb",
+                      "restore"
+                    ]
+                  },
+                  {
+                    "title": "删除绕过与独立验收",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "raw",
+                      "risk",
+                      "fix",
+                      "verify"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里不能把 DMA-BUF 偏移或设备地址一概当作普通主机虚拟地址。删除上层“统一补一次”的操作，正是为了不在错误的地址语义上补救。另一方面，保留注销错误返回不意味着上层调用者已正确重试，更不能由返回路径推出在途 DMA 已排空。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：以注销源码为主，数字仅归属于作者",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据与结论边界",
+              "columns": [
+                "材料",
+                "核对结果",
+                "边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "classic 最终源码",
+                    "底层注销成功后删除登记并返回；额外 madvise 已移除",
+                    "不证明其他网络后端行为相同"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "TENT 最终源码",
+                    "缓存地址/长度后调用注销；失败仍返回错误",
+                    "不是通用重试或在途完成保证"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者 2000 次循环",
+                    "旧路径约 1.76–1.78 万警告；回退后两个样本为 0",
+                    "仅指定 MLNX_OFED/内核/NIC 组合"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者 maps 对照",
+                    "旧增长 24；回退增长 12/14；无注册对照增长 133",
+                    "这些数量不足以归因全部长期 VMA 增长"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.3.14 两条路径",
+                    "都仍有额外 madvise 调用",
+                    "不能把当前 main 修正说成该标签已有"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6,
+                    7
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                5
+              ],
+              "text": "作者使用 libibverbs 47.0、MLNX_OFED 23.10-4.0.9.1，内核 4.18.0-372.9.1.el8 和 mlx5 NIC。不同栈应重新验证，不直接套用计数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文还检查了上游 v47.0 的代码以解释机制，但上游标签与发行商打包的二进制不能视为同一物件。部署时需要实际库路径、包版本和构建信息；只记录“装了 OFED”会丢失最关键的复现条件。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：少一条警告不等于少一个资源泄漏",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "好处是移除了重复、可能使用错误地址语义的系统调用，降低无效告警对真正注销错误的遮蔽。代价是不能继续依赖这条上层调用替特定旧栈“兜底”；若某个真实组合仍有 fork/VMA 问题，需要收集该组合的证据，而不是未经验证恢复全局 workaround。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8
+              ],
+              "text": "正式版页面当前标记 v0.3.14 为 Latest；本报告的修正是后续 main 提交。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要将 maps 的绝对增量单独设为零容忍指标：分配器和库初始化本就可能建立映射。更有诊断力的是同一负载经过预热后，每单位注册循环的增长斜率、是否平台化、停止负载后的残留，以及无注册但相同分配模式的控制组。并且这些仍与传输内容正确性分开。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：把伪告警和真正失败分流",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设与证据",
+              "columns": [
+                "观察",
+                "可检验假设",
+                "采集及处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "deregister 已成功但不断警告",
+                    "旧额外 madvise 使用不合适地址或重复恢复",
+                    "关联返回码、内存类型、地址对齐与告警位置"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "没有警告但 maps 持续上升",
+                    "分配器或真实区间未退休，不能用日志归零排除",
+                    "同分配无注册对照、长期斜率、MR 数量和进程 maps"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "注销失败后资源状态不明",
+                    "底层失败与上层 bookkeeping 先后不匹配",
+                    "记录失败 MR 身份与重试路径，暂停复用对应缓冲"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "重叠区间行为异常",
+                    "不同注册共享页但额外操作绕过底层计数",
+                    "隔离实验逐次退休 A/B，验证仍活跃者的契约"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "故障注入应在隔离环境做，不要在生产进程中随意 fork、改页属性或提前注销活跃内存。采集 maps 和错误返回就能先缩小范围；危险的生命周期实验需要专门测试程序和确认已排空 I/O 的控制点。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验计划：按内存类型和软件栈分层验证",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "待执行实验矩阵",
+              "columns": [
+                "实验",
+                "变量",
+                "需要观察"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物与动态库确认",
+                    "classic/TENT、实际 commit、libibverbs/OFED、内核与固件",
+                    "执行文件和库路径可追溯，不只看安装包清单"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "分配器控制组",
+                    "同种 torch/host 分配模式，有注册与无注册并行对照",
+                    "预热后 maps 斜率、注册/注销返回码、日志计数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "地址与类型分层",
+                    "页对齐/非对齐 host、ODP、DMA-BUF、设备内存按实际支持拆组",
+                    "不得把一组的零警告外推到另一组"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "重叠 host MR",
+                    "同页 A/B，A 先退/B 先退、不同长度和页边界",
+                    "剩余活跃注册契约保持；最后退休才恢复相应属性"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "注销错误与长期循环",
+                    "受控返回错误、重试、配合明确 drain 后再注销",
+                    "错误传播、资源可解释，不出现提前复用"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "业务回归",
+                    "固定 KV 数据校验与请求负载",
+                    "端到端内容、失败率、延迟和长期内存分别达标"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "运行顺序应从普通 host MR 和无在途传输的简单场景开始，再进入重叠和设备路径。否则一个配置错误就可能同时触发多种失败，失去判断“删掉上层调用是否正确”的对照条件。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：注销成功、资源稳定和业务正确分别计分",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预定义验收口径",
+              "columns": [
+                "门槛",
+                "统计方式",
+                "建议通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份",
+                    "运行产物、动态库和硬件组合逐次记录",
+                    "每个结果可重复定位到实际组合"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "错误分类",
+                    "按注册、注销、额外操作、业务四类归档",
+                    "不再出现已删除路径的警告；真实错误完整保留"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源趋势",
+                    "预热后固定循环窗口 maps 斜率与 MR 余额",
+                    "不出现不可解释的单调增长；与控制组差异有归因"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期",
+                    "错误注入、重叠 MR、排空后释放",
+                    "活跃引用不被提前破坏；失败路径不提前归还缓冲"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "业务正确性",
+                    "固定数据 checksum/模型结果、失败率与 SLO",
+                    "正确性先通过，再评估尾延迟；无吞吐收益承诺"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若 maps 趋势不达标，不能把 vm.max_map_count 调高当作本修复的验收。增加限额可能暂时延后资源耗尽，却没有解释增长来自哪一层。若必须临时扩容，应作为单独的风险决策，并持续追踪源头。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：正式产物、真实栈和退化路径",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "本报告没有运行 RDMA、fork、内存注册、设备内存或模型服务测试；作者数字均非独立复现。",
+                "上游 rdma-core v47.0 仅用于解释记账机制，实际 MLNX_OFED 构建和更早/更晚版本仍需核对。",
+                "TENT 注销失败后的完整调用者恢复、共享 MR 所有权与在途操作仍未证明。",
+                "主分支合入不等于 v0.3.14、wheel 或线上容器已包含。",
+                "该报告与此前批量注册去重、MemFabric batch 生命周期、TENT 请求/尝试配对计数不同，不替代那些安全门。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-lazy-page-reuse-forward-fence",
     "kind": "analysis",
     "title": "SGLang lazy 页复用的完成边界：页表准备之后谁还在读 KV",
@@ -965,7 +1629,7 @@
                 "源码事件传播已核对；所有后端的侧流覆盖、事件生命周期和缺失事件条件没有逐一审计。",
                 "GitHub API 与 PyTorch 文档站请求返回 403，均未重试；公开提交 Atom、补丁、PR 页面和冻结源码可读取。PyTorch API 说明采用 v2.9.0 源码，不代表部署版本。本次不是全量 PR 或全部历史提交扫描。",
                 "去重已覆盖当前 29 条 live radar 和本地可读的 20 个 SGLang 历史报告 ID；完整跨主题待发队列由总包另行对账。",
-                "图是原创非实测示意。结构校验和 SVG 审查不等于整个站点的构建、浏览器验收或线上发布；本报告尚未发布。"
+                "图是原创非实测示意。结构校验和 SVG 审查不等于整个站点的构建、浏览器验收或线上发布。"
               ]
             },
             {
@@ -973,6 +1637,1538 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "后续最有价值的证据不是再补一张 throughput 图，而是一份能把旧物理读、完成事件和新代覆盖放到同一时间轴的最小 GPU 回归。它既能验证这一补丁，也能约束以后更激进的压缩和调度重叠优化，使性能讨论始终立足于可证明的数据交接。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "vllm-acceptance-estimator-complement-stability",
+    "kind": "analysis",
+    "title": "vLLM 自适应验证 为什么有限的置信分数仍可能失真",
+    "summary": "从接受率估计器的尾质量修复出发，解释浮点消减、跨块尺度和并列最大值的身份边界；区分最终源码、作者自测、CPU 算术演示与未执行的服务验收。",
+    "publishedAt": "2026-11-06",
+    "reviewedAt": "2026-11-06",
+    "topics": [
+      "vLLM",
+      "投机解码",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM #65229 最终合入差异",
+        "url": "https://github.com/vllm-project/vllm/commit/61968a50d578ba9078dcf036eaf16d688d10cc46",
+        "publishedAt": "2026-11-06",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "固定提交 acceptance estimator 计算实现",
+        "url": "https://github.com/vllm-project/vllm/blob/61968a50d578ba9078dcf036eaf16d688d10cc46/vllm/v1/worker/gpu/spec_decode/acceptance_estimator.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "固定提交 acceptance estimator 回归测试",
+        "url": "https://github.com/vllm-project/vllm/blob/61968a50d578ba9078dcf036eaf16d688d10cc46/tests/v1/spec_decode/test_acceptance_estimator.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "固定提交 DraftModelSpeculator 调用及观测顺序",
+        "url": "https://github.com/vllm-project/vllm/blob/61968a50d578ba9078dcf036eaf16d688d10cc46/vllm/v1/worker/gpu/spec_decode/speculator.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "固定提交投机解码配置与组合校验",
+        "url": "https://github.com/vllm-project/vllm/blob/61968a50d578ba9078dcf036eaf16d688d10cc46/vllm/config/speculative.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "v0.33.0 标签中的 acceptance estimator",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/v1/worker/gpu/spec_decode/acceptance_estimator.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "PR 作者自测与审阅后的实现调整",
+        "url": "https://github.com/vllm-project/vllm/pull/65229",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM PR 作者与审阅者",
+          "status": "attributed",
+          "note": "阅读描述、H100 单测陈述、CPU 模型统计及后续性能评论，并与最终合入代码核对。作者基准指向较早 PR revision；不认定为最终提交独立复现。描述中的额外 partial 不再符合最终实现。"
+        },
+        "accessedAt": "2026-11-06"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "固定合入提交修订了接受率估计器的尾量计算和针对性测试。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "核对的 v0.33.0 标签文件仍保留旧的相减路径，不等于已部署制品检查。",
+        "sourceIndices": [
+          5
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "GPU、模型、上游单测与服务效果未独立复现。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际服务是否进入此估计器，而非其他 confidence 路径？",
+      "多块与并列最大输入是否只排除一个 token？",
+      "特征修复是否在目标负载上通过数值、校准与 SLO 三层验收？"
+    ],
+    "related": [
+      {
+        "title": "DSpark 验证预算与服务成本",
+        "path": "/radar/dspark-verify-budget/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-06 核对 vLLM #65229 的固定最终差异、完整 estimator 与测试、相关 speculator/config 及 v0.33.0 标签文件。执行一组 CPU 标量 binary32 舍入教学演示；没有执行 GPU、Triton、模型、上游测试或服务基准。图、诊断与验收方案为原创。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一 结论与升级判断",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "vLLM 于 11 月 6 日合入 #65229，固定提交 61968a5。补丁修正自适应验证所用接受率估计器的尾量计算，并补充小尾量、多词表块及并列最大值测试。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对已实际启用此估计器的服务，优先检查置信特征是否被错误压到上限，再判断验证预算、在线拟合和服务效率是否改善。数值修复值得独立验收，但它不是新的接受判定器，也不直接承诺输出质量、接受率或吞吐提升。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本次完成源码核对和一组 CPU 标量 binary32 舍入教学演示。没有执行上游测试、Triton kernel、GPU、模型推理或端到端服务实验；正式制品包含和目标平台效果仍待验证。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二 从草稿置信度到验证预算",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "固定 speculator 仅在相关开关生效时创建估计器；预测接收 logits、请求映射、草稿位置及温度。目标模型给出上一轮结果后，应先观测再进行会覆盖特征的下一次 propose。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "配置中的 enable_adaptive_verification 默认关闭，并明确拒绝需要 logits 的估计路径与 use_local_argmax_reduction 同时开启。具体方法的支持还须核对所选 speculator。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里至少有三种不同的“概率”：草稿分布对词表 token 的概率、估计器输出的下一位置被接受概率、真实验证产生的接受事件。草稿模型对某个词非常确信，不代表目标模型一定认同；因此把草稿分布直接命名为真实接受率，会把代理信号与监督结果混为一谈。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以把估计器看作验证预算决策之前的一层测量。测量损坏时，后续拟合可能部分补偿，却无法仅凭同一个饱和值重建被抹平的区别。修复测量仍不保证策略在全部负载上更快，因为额外验证成本、模型一致性、批处理和目标模型耗时共同决定最终收益。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要仅因服务使用了投机解码便认定补丁命中。应记录 runner、draft 方法、是否采用专门 confidence head、是否实例化 OnlineAcceptanceEstimator，以及真正执行的预测调用。H20、H100、Blackwell 或 Ascend 的型号名称都不能替代这条路径证据。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三 为什么先加一再减一会破坏特征",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "最终实现为每个 4096 词表块保存局部最大值和排除一个最大项后的指数和。全局选择一个最大块，统一尺度并补回其他块的最大项，最后计算负对数、限幅到 ±40，再送入 sigmoid。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下是原创数学推导。设已按正温度缩放的 logits 为 x，最大值为 m，选中一个最大 token 的位置 i。令 S 为所有 j≠i 的 exp(x[j]−m) 之和，则最大 token 概率为 1/(1+S)，其 odds 为 1/S，log-odds 为 −log(S)。注意 S 是相对最大项的尾质量，不是已经归一化的尾概率；归一化尾概率应为 S/(1+S)。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "实数代数允许先算 1+S 再减 1，浮点运算却不保证可逆。在 binary32 的 1 附近，相邻可表示数之间有固定间隔。若 S 比这个尺度小得多，1+S 会舍入为 1；事后相减得到 0，随后负对数趋于无穷，限幅才把结果变成有限的 40。因此“没有 NaN”和“结果在允许区间”都不足以证明特征正确。"
+            },
+            {
+              "type": "diagram",
+              "title": "尾质量的两种计算路径",
+              "caption": "原创非实测机制图。上组为可能丢失小量的计算顺序，下组为全局仅排除一个 token 的分块组织。连线只表示数据依赖，不表示时间比例、吞吐或已完成验收。最终节点保持待验状态。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-full",
+                  "label": "全量和先含最大项",
+                  "detail": "教学输入的相对尾质量为 S。旧计算先将最大 token 的单位项与 S 合成 1+S。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "先形成 1+S",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-round",
+                  "label": "单位尺度发生舍入",
+                  "detail": "当尾量小于单位尺度可分辨增量时，binary32 的 1+S 可能舍入为 1。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "小量丢失",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-sub",
+                  "label": "相减不能恢复尾量",
+                  "detail": "对已经舍入的总和再减 1，只会得到 0，无法恢复被舍去的信息。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "再减 1 得 0",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-score",
+                  "label": "条件性触及上限",
+                  "detail": "-log(0) 经限幅变成 40；该现象不产生 NaN，却抹平不同的高置信度。并非所有输入都会触发。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "误入 40 上限",
+                  "tone": "danger"
+                },
+                {
+                  "id": "new-local",
+                  "label": "局部只排除一项",
+                  "detail": "每块记录局部最大值和排除一个最大 token 后的指数和；并列最大值的其余项仍保留。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "每块保留两量",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-scale",
+                  "label": "统一到全局尺度",
+                  "detail": "选一个包含全局最大值的块作为唯一排除块；每块按局部最大值与全局最大值之差缩放。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "只选一个块",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-restore",
+                  "label": "其他块补回一项",
+                  "detail": "非选中块要补回它们各自排除的局部最大 token；全局只漏掉一个 token。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "全局仅去一项",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-score",
+                  "label": "数值与服务待验",
+                  "detail": "得到尾量后再求负对数与限幅；独立参考、校准与服务 SLO 仍需分别验证。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "端到端待验",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-full",
+                  "to": "old-round",
+                  "label": "浮点表示限制"
+                },
+                {
+                  "from": "old-round",
+                  "to": "old-sub",
+                  "label": "丢失信息后再相减"
+                },
+                {
+                  "from": "old-sub",
+                  "to": "old-score",
+                  "label": "零尾量进入限幅"
+                },
+                {
+                  "from": "new-local",
+                  "to": "new-scale",
+                  "label": "各块使用自己的标尺"
+                },
+                {
+                  "from": "new-scale",
+                  "to": "new-restore",
+                  "label": "非选中块恢复局部最大项"
+                },
+                {
+                  "from": "new-restore",
+                  "to": "new-score",
+                  "label": "独立验证数值及业务结果"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧计算先叠加再相减",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-full",
+                      "old-round",
+                      "old-sub",
+                      "old-score"
+                    ]
+                  },
+                  {
+                    "title": "修订计算保留尾量",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "new-local",
+                      "new-scale",
+                      "new-restore",
+                      "new-score"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "分块计算还有独立的身份问题。每块先去掉一个局部最大项，只是一种中间表示；全局目标并不是每块各去掉一项，而是整个词表只去掉一个 token。把各块相加时，必须恢复非选中块的局部最大项，并用 exp(m_b−m) 把它换到共同尺度。"
+            },
+            {
+              "type": "code",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创记号，非可执行内核\nE_b = 块 b 内排除一个局部最大 token 后的相对指数和\ns_b = exp(m_b - m)\nb*  = 任意一个含全局最大值的选中块\nS   = sum_b E_b * s_b + sum_(b != b*) s_b\nf   = clamp(-log(S), -40, 40)",
+              "language": "text"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若恰有 k 个并列最大 token，且其他质量可以忽略，排除一个后留下 k−1 个单位项，特征就是 −log(k−1)。双最大得到 0，三个最大得到约 −0.693。若按数值相等把所有最大值都删掉，会把歧义输入错误描述成极端确定；若每个并列最大块都排除一个，也会造成另一种多删。两类错误需要不同测试布局。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "也不要把精确特征简化为 top-2 间隔除以温度。其余词表项的数量和分布同样进入尾质量；只有一个竞争者占主导的特殊情况下，间隔近似才可能足够。温度变化、词表大小和尾部分布应分开设计实验。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四 最终代码与作者报告分开核对",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据分别能说明什么",
+              "columns": [
+                "证据层",
+                "可支持的结论",
+                "不能替代"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "最终合入差异",
+                    "改变尾量归约及新增针对性测试",
+                    "实际部署镜像包含和服务运行结果"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定测试代码",
+                    "小尾量用不同计算路线的 FP64 参考；多块测试移动最大块；并列测试分同块与跨块",
+                    "单测已在本环境执行或所有 GPU 后端已覆盖"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "最终源码与较早描述",
+                    "应以合入代码确定缓冲、调用次数和公式",
+                    "不能沿用早期文字的成本数字"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "作者自测及评论",
+                    "提供有限配置下的外部证据与复现线索",
+                    "不能标为本站独立实验或最终合入 SHA 的实测"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "本文 CPU 舍入演示",
+                    "可证实所示标量顺序丢失小量",
+                    "不模拟 Triton 归约树、GPU exp 或模型分布"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6
+              ],
+              "text": "PR 描述报告 H100 上测试通过，并提供 CPU 模型统计；后续性能评论比较的是旧基线与较早 PR revision。本文未独立复现，也不将其中百分比写成最终合入提交的收益。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "核对发现描述仍提及增加一个 partial，而最终实现用 local_excl_sumexp 替代 local_sumexp，仍与 local_max 组成两份临时矩阵；predict 仍是两个 kernel launch。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这使“额外缓冲开销几乎可忽略”的早期叙述不适合直接搬到当前代码。正确问题是最终代码真实产生了多少 load/store、归约和分支，以及它们在目标形状上的成本；仅凭 kernel launch 数量不变，也不能证明运行时间不变。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "同样，单测存在与单测通过是不同证据。新增测试用 9728 个词表项形成三个块并保留不满块的尾部；这是测试形状，不代表真实模型只用三个词表块。若真实词表有 151936 项，按 4096 分块应为 38 块，这一算术也不能当成已执行模型测试。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五 数值修复的适用边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本报告关注估计器的一个特征，不修改真实目标模型分布，也不审计整套 rejection sampling。即使预算选择依赖前缀信息而非当前抽中的 token，整条服务链仍须检查随机数、温度、截断位置和接受逻辑，不能由局部公式推出全系统无偏。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "相同的特征误差在不同拟合参数下会有不同影响。sigmoid 已接近饱和时，大的特征偏差可能只造成很小的概率差；在线拟合更新又会改变斜率和各位置截距。因此必须同时观察特征、预测、实际标签和截断深度，不能只比较参数中的一个数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "把所有计算改为 FP64 不是本文建议的默认方案。应先选择避免不必要消减的计算表达，再用高精度的独立参考检查它；是否需要更高精度、补偿求和或特殊处理，取决于实际误差、设备支持和成本。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "并列值、全词表无有效质量、非有限 logits 和异常温度不是同一个问题。正常输入上稳定求和，不等于任意 NaN、+inf 或全 −inf 输入都有合适的服务语义。这里不声明补丁新增了这些异常输入合同，它们应分别按上游允许的输入范围验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "H100 上作者测试不构成 H20、XPU、ROCm 或 NPU 的交付证据。可迁移的是“排除一个位置、统一指数尺度、独立参考”的检查方法；设备代码、编译器和模型支持仍须逐一证实。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六 生产故障假设与观测字段",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创诊断矩阵 不表示用户线上已发生",
+              "columns": [
+                "现象",
+                "需关联的证据",
+                "不要过早下的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "特征频繁精确等于 40",
+                    "同一 logits 的高精度尾量和真正 one-hot 比例",
+                    "全部饱和都是 bug"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "修复后接受率几乎不变",
+                    "实际 estimator 路由、特征分布、预测与截断深度",
+                    "补丁没有价值或没有生效"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "小词表测试过而大词表失败",
+                    "最大 token 所在块、块尺度与尾块 mask",
+                    "只需放宽容差"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "等分歧义输入被评分为极高置信",
+                    "并列最大值数量及同块和跨块排列",
+                    "模型本身就是过度自信"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "不同请求的预测看起来合理却不准",
+                    "batch 顺序与持久 request slot 的映射",
+                    "只调拟合学习速度即可"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "混合温度负载校准漂移",
+                    "分温度与分位置的标签、截距、冷启动和暖机阶段",
+                    "一个全局接受率足够定位"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "局部精度改善而 TPOT 回退",
+                    "同步策略、临时分配、编译和实际验证工作量",
+                    "数值稳定性一定带来吞吐提升"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最小可复核观测包应包括镜像摘要、vLLM SHA、Triton/CUDA/驱动版本、设备、draft 方法、开关、输入 dtype、词表规模、温度、request slot 与 batch 映射、草稿位置，以及特征和实际标签的时间对应。避免记录不必要的真实用户文本；优先使用合成 logits 或经授权脱敏的摘要。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "在灰度环境把特征饱和值计数与“高精度参考也应饱和”的计数分开。前者只能发现异常形状，后者才能区分真实极端输入和错误坍缩。高精度比较可采样执行，不应未经评估就在生产热路径同步全部 GPU 数据。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七 已做的算术演示与待做实验",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "已执行的是 Python 标准库标量演示：用 struct 将加法输入和结果舍入为 binary32，再用 CPU 对数展示差别。它只隔离“1+S 再减1”的信息损失，不含 logits 的实际分块归约，不是上游算法或 GPU 复现。"
+            },
+            {
+              "type": "table",
+              "caption": "原创 CPU 标量演示 非 GPU 性能结果",
+              "columns": [
+                "S",
+                "高精度 −log(S)",
+                "先加一再减一所得特征",
+                "直接保留 binary32 S 所得特征"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "1e-03",
+                    "6.907755",
+                    "6.907709",
+                    "6.907755"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "1e-06",
+                    "13.815511",
+                    "13.862944",
+                    "13.815511"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "1e-09",
+                    "20.723266",
+                    "40.000000",
+                    "20.723266"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "1e-12",
+                    "27.631021",
+                    "40.000000",
+                    "27.631021"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对数在此演示中由 CPU math 计算，最后一列不是 GPU exp/log 的精度承诺。四个数字只证明所构造标量案例中的舍入行为；不测置信度命中比例、接受概率校准、吞吐或显存。"
+            },
+            {
+              "type": "table",
+              "caption": "待执行的原创隔离实验矩阵",
+              "columns": [
+                "层次",
+                "控制与变量",
+                "需要保存的结果"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "制品身份",
+                    "补丁父版本与候选版本；固定依赖和编译参数",
+                    "实际加载源码、SHA、镜像摘要及唯一变量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "高置信尾量",
+                    "多种尾质量与尾分布，温度单独变化",
+                    "特征绝对/相对误差、饱和边界、独立 FP64 参考"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "块边界",
+                    "词表 4095/4096/4097、多个完整块及不满尾块；移动最大块",
+                    "不漏块、不多排除、无填充贡献"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "并列最大值",
+                    "2/3/更多最大值，同块和跨块分别放置",
+                    "只排除一个 token，结果与完整参考一致"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "标尺不变性",
+                    "全部 logits 加同一常数，保持 dtype 合法",
+                    "特征不因公共平移出现超容差变化"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "请求身份",
+                    "重排 batch、复用 request slot、图 padding 和不同草稿位置",
+                    "输出映射及下一轮监督记录正确"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "校准过程",
+                    "固定冷启动与暖机窗口，分温度和分位置统计",
+                    "Brier score、log-loss、样本数、预测分桶及实际标签"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务效果",
+                    "相同请求集合、到达率、并发和资源，随机交替版本",
+                    "TTFT/ITL/TPOT 分位数、goodput、失败率、验证工作量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "实际运行还应覆盖图重放、编译缓存、临时分配复用和线上允许的 dtype。此次没有执行这些步骤。性能测试不要把候选的暖机阶段与基线的冷启动阶段直接比较，也不要只选择数值修复最容易产生优势的温度。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八 预定义验收及停止条件",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创验收门 运行前固定口径",
+              "columns": [
+                "门",
+                "测量方法",
+                "通过或停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "版本与路由",
+                    "实际制品包含与运行到目标 estimator",
+                    "两者均有证据才评价补丁效果"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数值",
+                    "独立路线 FP64 参考，保存最差误差与输入",
+                    "按 dtype 预先规定容差；不能用调宽容差消除旧反例"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "排除身份",
+                    "同块及跨块的 k 重并列最大输入",
+                    "全局恰排除一个；两类布局都必须通过"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "块范围",
+                    "跨块与尾块的输入扫描",
+                    "所有有效词表项计入，填充无贡献"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "状态归属",
+                    "batch 与持久 slot 关联，观测先于覆盖",
+                    "标签和特征属于同轮、同请求、同草稿位置"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "校准",
+                    "分位置/温度的 Brier、log-loss 及可靠性分桶",
+                    "样本量充分且未越过预先声明回归界限"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳定性",
+                    "约定窗口全部请求与 replay 次数",
+                    "无未解释 NaN、设备错误、持续内存增长或悬挂"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务",
+                    "正确且满足 SLO 的完成请求除以总时间",
+                    "正确性先通过；goodput 和延迟符合预设回归门槛"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "Brier score 是预测概率与二元实际标签平方差的平均；log-loss 衡量分配给真实结果的概率。它们衡量预测，不直接衡量每秒可交付 token。对没有被真实观察的后续草稿位置，不能擅自标记为失败或成功来填满统计。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不在事后从最好的一轮选门槛。应先约定请求集合、随机种子策略、预热、窗口、重复次数、容差及最小样本量，再报告全部失败样本。若关闭图、修改温度或更换模型才通过，应把配置变化列为独立变量，而非隐藏在补丁结论内。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九 发布与未验证事项",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "直接核对 v0.33.0 标签源码，仍存在 total_sumexp−1 的旧计算。本次只确认该标签的文件内容；不据此推断 vendor 回移补丁、wheel 或容器包含关系。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "尚未确认哪个后续正式制品包含此修复，也未验证安装后的真实文件、硬件后端、GPU 单测、真实模型或服务 SLO。论文式数学推导和 CPU 舍入演示不替代这些证据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "作者较早 revision 的实验与最终合入实现存在时间差；任何性能结论都须固定到受测 SHA。原 PR 中缓冲数量叙述及模型词表分块文字也应以最终代码和明确算术重新核对，不能直接用作当前成本模型。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本报告与前一日 query offsets 的 CUDA Graph 存储寿命报告是独立问题：这里的中心是置信特征的数值表示；地址稳定和存储保活不会恢复已因浮点舍入而消失的尾量。两个检查互相补充，不能相互替代。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "vllm-ascend-mamba-checkpoint-role-boundary",
+    "kind": "analysis",
+    "title": "Ascend Mamba 缓存边界修复：写入策略必须与实例角色一致",
+    "summary": "解读 #21063 怎样让 Mamba checkpoint 写入遵守既有角色策略，区分边界一致、混合缓存命中与 P/D 传输成功。",
+    "publishedAt": "2026-11-06",
+    "reviewedAt": "2026-11-06",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "KV Cache",
+      "投机解码"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Ascend #21063 合入提交",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/3be5bbe32a9e4b6cd319eeee4a2c545f7728b106",
+        "publishedAt": "2026-11-06",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "冻结 Ascend 协调器实现",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/3be5bbe32a9e4b6cd319eeee4a2c545f7728b106/vllm_ascend/patch/platform/patch_kv_cache_coordinator.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "冻结 Mamba checkpoint 边界函数",
+        "url": "https://github.com/vllm-project/vllm/blob/24420b7a341af37a9bc3186e6fc6062512e0aa58/vllm/v1/kv_cache_interface.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "冻结 MambaManager 写入和 hash 登记",
+        "url": "https://github.com/vllm-project/vllm/blob/24420b7a341af37a9bc3186e6fc6062512e0aa58/vllm/v1/core/single_type_kv_cache_manager.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "新增 16 组合角色回归测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/3be5bbe32a9e4b6cd319eeee4a2c545f7728b106/tests/ut/patch/platform/test_patch_kv_cache_coordinator.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Ascend #21063 作者边界测试报告",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/21063",
+        "publishedAt": "2026-11-05",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Ascend v0.30.0 协调器对照",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.30.0/vllm_ascend/patch/platform/patch_kv_cache_coordinator.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Ascend 最新正式版列表",
+        "url": "https://github.com/vllm-project/vllm-ascend/releases",
+        "accessedAt": "2026-11-06"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#21063 将 Mamba checkpoint 的 drop 开关绑定到已有角色策略；独立实例和纯 P 不启用该 drop，D 和 kv_both 保留原规则。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "实际部署的混合缓存命中、模型输出与 P/D 传输安全仍须分别验收；不能外推 GPU 或正式发行镜像。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际 KV transfer 角色是否正确附到调度侧配置，且与独立、P、D、kv_both 相符？",
+      "prefill 分块位置、checkpoint hash 边界和各组命中长度是否一致？",
+      "1153-token 传输映射失败是否独立跟踪，而没有被缓存命中改善掩盖？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-06 核验。官方 PR 显示已合入 main；Atom 和提交固定到 3be5bbe，提交时间 02:15:37 UTC。已读最终差异、协调器、上游边界函数和 MambaManager、测试源码及作者实验描述，并对照 v0.30.0。未执行上游测试、NPU 实验或模型输出回归；作者实验使用等价 gate 和其列明版本，不等于本报告复现最终 main。原创图不代表性能实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：共享一条角色规则，分别验证三种结果",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这项改动适合正在排查 Ascend 混合模型“重复输入却不命中缓存”的运维人员。关键检查不是缓存开关是否打开，而是 prefill 如何分块、Mamba 状态存到哪个 token 边界、再次查找时各缓存组接受哪个边界。这三者不一致，增加缓存空间也不能产生本来应当存在的共同命中。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "#21063 在 main 增加角色 gate：只有启用 EAGLE、角色不跳过 drop、且属于被标记的 Mamba 组时，才设置 checkpoint-drop。组选择不变。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "部署判断应拆成三步：先确认运行产物包含改动，再证明各组边界一致，最后验证模型输出及 P/D 传输。缓存命中恢复不代表传输映射、并发和服务 SLO 已经恢复。本文只讨论 Ascend NPU 路径，不把作者 A3 结果转述为 H20 或 GPU 结论。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：Mamba 状态不是可任意截断的 KV 前缀",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "全注意力 KV 可以理解为沿 token 位置积累的历史；Mamba checkpoint 则承诺“这份状态对应某个精确前缀”。对于混合模型，前者找到了更长前缀并不够，后者也必须拥有可以从同一边界恢复的状态。运维指标若只有一个总命中率，很容易把状态位置错误误诊成缓存容量不足。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "冻结协调器将各类型的候选命中反复收敛到共同长度；纯 P 和独立实例已有跳过 EAGLE drop 的策略，consumer 与 kv_both 保留该保护。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "读路径已有角色判断，并不自动让写路径一致。另一处初始化若只看到“正在使用投机解码”，就可能仍然让 Mamba 写入少保留一块。修复的教学价值在于：角色策略应成为跨读写两端的同一契约，而不是两段看起来相似却分别维护的条件。这里的 drop 是可复用 checkpoint 边界计算，不是将所有物理状态页立即释放。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "原理：把写入边界和查找边界放到同一坐标系",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "上游边界函数在不 drop 时先预留至少一个重算 token，再向 hash 粒度下取整；drop 时先按输入对齐，再减一个粒度，最终截到非负。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "取一个原创标量例子：输入 N=513、对齐 H=16、hash lookahead=0。不 drop 的边界为 floor((513−1)/16)×16=512；drop 的边界为 floor(513/16)×16−16=496。这里的 16 是边界计算粒度，不等于 Mamba 物理页大小，也不等于每次传输的字节长度。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3,
+                0
+              ],
+              "text": "MambaManager 用该开关计算预留 checkpoint 位置，也在 partial-tail 的 hash 登记和保留判断中读取它。修复没有修改模型 forward 或该边界函数。"
+            },
+            {
+              "type": "diagram",
+              "title": "相同角色应产生相容的读写边界",
+              "caption": "原创非实测示意。用 N=513、H=16、lookahead=0 展示角色规则不一致；新路径只恢复共同候选资格，不承诺设备恢复或每个请求必然命中。两条支线是独立读写责任，不代表时间先后。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "orole",
+                  "label": "独立或纯 P",
+                  "detail": "既有策略允许查找跳过 drop；旧初始化仍可给标记的 Mamba 写路径设置 drop。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "独立或纯 P",
+                  "tone": "danger"
+                },
+                {
+                  "id": "oread",
+                  "label": "查找边界 512",
+                  "detail": "读侧按该角色的无 drop 规则计算候选。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "查找边界 512",
+                  "tone": "danger"
+                },
+                {
+                  "id": "owrite",
+                  "label": "写入边界 496",
+                  "detail": "旧写侧按有 drop 的公式计算状态身份。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "写入边界 496",
+                  "tone": "danger"
+                },
+                {
+                  "id": "ojoin",
+                  "label": "共同命中受阻",
+                  "detail": "相同内容不等于相同状态边界。图只展示本例不一致，不声称所有输入都归零。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "共同命中受阻",
+                  "tone": "danger"
+                },
+                {
+                  "id": "nrole",
+                  "label": "统一角色 gate",
+                  "detail": "将已有 skips_eagle_block_drop 同时用于 Mamba 初始化。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "统一角色 gate",
+                  "tone": "control"
+                },
+                {
+                  "id": "nread",
+                  "label": "查找边界 512",
+                  "detail": "既有读策略保持。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "查找边界 512",
+                  "tone": "control"
+                },
+                {
+                  "id": "nwrite",
+                  "label": "写入边界 512",
+                  "detail": "符合标记和模式时，纯 P 与独立实例不再额外减去 H。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "写入边界 512",
+                  "tone": "control"
+                },
+                {
+                  "id": "njoin",
+                  "label": "共同候选待验",
+                  "detail": "边界一致只是必要条件；实际 checkpoint、hash、设备内容和输出仍须验证。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "共同候选待验",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "orole",
+                  "to": "oread",
+                  "label": "读侧规则",
+                  "shortLabel": "读侧规则"
+                },
+                {
+                  "from": "orole",
+                  "to": "owrite",
+                  "label": "旧写规则",
+                  "shortLabel": "旧写规则"
+                },
+                {
+                  "from": "oread",
+                  "to": "ojoin",
+                  "label": "读候选",
+                  "shortLabel": "读候选"
+                },
+                {
+                  "from": "owrite",
+                  "to": "ojoin",
+                  "label": "状态身份",
+                  "shortLabel": "状态身份"
+                },
+                {
+                  "from": "nrole",
+                  "to": "nread",
+                  "label": "读侧规则",
+                  "shortLabel": "读侧规则"
+                },
+                {
+                  "from": "nrole",
+                  "to": "nwrite",
+                  "label": "写侧规则",
+                  "shortLabel": "写侧规则"
+                },
+                {
+                  "from": "nread",
+                  "to": "njoin",
+                  "label": "读候选",
+                  "shortLabel": "读候选"
+                },
+                {
+                  "from": "nwrite",
+                  "to": "njoin",
+                  "label": "状态身份",
+                  "shortLabel": "状态身份"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧策略不一致",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "orole",
+                      "oread",
+                      "owrite",
+                      "ojoin"
+                    ]
+                  },
+                  {
+                    "title": "修复共享角色策略",
+                    "tone": "control",
+                    "nodeIds": [
+                      "nrole",
+                      "nread",
+                      "nwrite",
+                      "njoin"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要为了追求命中率，把 consumer 和 kv_both 的 drop 也一并关闭。它们需要处理外部加载和验证窗口，这与只有本地已验证 prompt 的场景不同。现场应记录角色布尔值、Mamba 组 marker、use_eagle 和最终 manager flag，而不是仅凭启动命令的名称判断执行分支。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码事实、作者实验与未知项分开",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "可追溯证据表",
+              "columns": [
+                "证据",
+                "支持的判断",
+                "不支持的判断"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "最终 main 差异",
+                    "将初始化设置移到既有角色策略计算之后",
+                    "不证明部署镜像已包含"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "新增参数化 UT",
+                    "4 种角色 × 2 个 EAGLE 开关 × 2 个 marker，共 16 组合",
+                    "测试源码不等于本报告运行结果"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者 A3 standalone 样本",
+                    "165 对冷暖输入边界符合预期；每对 8 token 相同",
+                    "不是最终 main 全量精度、并发或吞吐基准"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者 PD 样本",
+                    "8 个可比长度、32 个完成请求观察到双 D rank 接收完成",
+                    "1153 输入仍触发同一映射异常"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.30.0 文件",
+                    "仍在 use_eagle 下无角色条件地设置 Mamba drop",
+                    "未审计所有 release 分支或实际 wheel"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                5
+              ],
+              "text": "作者实验列明 A3、Qwen3.5-35B-A3B BF16、MRV2、MTP3；PD 两组使用同样的 Mooncake 兼容修正。此处仅归因于作者，未独立复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "等价 gate 的硬件测试有解释力，但不能替代最终合入提交的全套测试。尤其 PD 对照还含配套兼容修正，不能把全部成功归因给这十余行初始化调整。正确用法是沿作者的边界点构建自己的反例，再用实际产物闭合证据。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：命中资格恢复不是普遍性能提升",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最相关的负载是使用细粒度前缀复用、Mamba align 和投机配置的 Ascend 混合模型，尤其输入长度刚越过某个 hash 边界的重复请求。全冷请求、未标记的 Mamba 组或关闭投机的负载未必经过该条件。即便命中 token 变多，也要看省下的 prefill 是否抵消查找、恢复和通信开销。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "正式版列表当前标记 v0.30.0 为 Latest；本次主分支改动不因此成为正式发布内容。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "还要区分三个尺度：hash/PMU 决定候选边界，物理页决定存储布局，传输层按自身步长搬运。它们需要相容而非数值相等，不应为了追求更长命中而绕过配置约束。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                5
+              ],
+              "text": "作者的 PMU 512 在补丁前后都被 1152-token 物理页整除检查拒绝。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：先看每组边界，再看总命中率",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设与观察方法",
+              "columns": [
+                "假设",
+                "需要采集的证据",
+                "排除或处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "角色配置遗失",
+                    "调度侧 KV transfer 配置、P/D 布尔值、最终 flag",
+                    "按实际角色重建配置，不用全局关闭 drop 掩盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "checkpoint 与查找分歧",
+                    "输入长度、prefill chunk end、hash 边界、各组候选命中",
+                    "寻找每次跨 PMU 边界即归零的模式"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "命中恢复但传输仍失败",
+                    "P 侧映射异常栈、D 各 rank 完成事件、请求终态",
+                    "将映射失败独立归因，禁止当作本补丁成功用例"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "单请求正常但并发退化",
+                    "缓存淘汰、slot 重用、延迟分位数与请求 ID 对齐",
+                    "优先排查生命周期和容量，不倒推边界算法错误"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "冷/暖对照需要固定 token ID 输入，而不是只固定一段字符串。记录 tokenizer 与模型配置；冷测必须确认相关前缀未残留，暖测必须确认它确实被保留。输出先比 token 序列，再检查命中长度，最后才看耗时，避免把错误复用误当成“优化很快”。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验计划：覆盖角色、长度和传输三条轴",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "待执行实验矩阵",
+              "columns": [
+                "实验",
+                "控制变量与覆盖",
+                "预期观察"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "16 组合初始化回归",
+                    "独立/P/D/both × EAGLE × marker；固定框架和插件 SHA",
+                    "仅符合三个条件时启用 drop；与正式 UT 语义一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "边界扫描",
+                    "PMU unset/16/32/64/128；kH−1、kH、kH+1；再扫物理页附近",
+                    "逐组边界有解释，冷暖 token 序列一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "独立与 PD 对照",
+                    "先 standalone TP2，再 P/D 各 TP2；固定配套修正",
+                    "把前缀命中和双 rank 接收完成分开记录"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "已知 1153 反例",
+                    "保留作者同类配置及更长边界点",
+                    "若仍失败按独立异常停止该路径，不能计入成功分母"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "并发与重用",
+                    "同前缀与不同前缀混合、取消、缓存压力、长时间循环",
+                    "无错误状态复用；延迟和内存回到预定范围"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "实验中只改变本补丁或等价 gate；上游版本、Mooncake 兼容修正、模型精度和启动参数应一致。若必须同时修正其他问题，分阶段记录结果，避免将多项变更合并成无法归因的性能数字。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：先过正确性，再判断是否值得部署",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议在开跑前冻结的验收口径",
+              "columns": [
+                "门槛",
+                "口径",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "插件/框架 SHA、模型 revision、依赖及角色配置",
+                    "均可追溯到测试记录；不以版本字符串替代"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "边界语义",
+                    "每个完成样本的写入边界、各组命中、最终共同候选",
+                    "与独立标量 oracle 及运行策略一致；异常样本单列"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "模型正确性",
+                    "固定采样的冷暖 token ID 输出与补丁前冷输出",
+                    "在预定义确定性条件下逐 token 相等；无静默错误"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "传输安全",
+                    "逐请求 D rank 完成集合、失败请求与资源回收",
+                    "所有必要接收闭合，失败不冒充命中成功"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务收益",
+                    "相同到达负载的 TTFT/TPOT 分位数、吞吐、错误率",
+                    "达到预先约定的业务 SLO；不从命中率直接换算收益"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "没有业务 SLO 时，不应临时选一个最好看的百分比宣布成功。先用相同并发和输入分布建立基线，再预先定义允许的尾延迟和内存波动范围。任何输出不一致都应阻断放量，即使平均 TTFT 更低。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：最终产物和未解决反例仍是独立门槛",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "未在本环境执行包级 UT、NPU 模型运行、PD 集成、并发或准确率 benchmark。",
+                "作者对 1153-token 的 P 侧 Mooncake 映射异常明确未修复；本报告不把该路径标记可用。",
+                "需确认本地最终 main 与作者等价 gate 的代码、模型、配套修正一致性。",
+                "未证明任何 wheel、容器或所有 release 分支包含改动；仅核对 main 与 v0.30.0 对应文件。",
+                "本文是新的角色与边界报告，不替代此前 RecoverSSM PCP 全局步身份、MLA 等待或 TP 副本报告。"
+              ]
             }
           ]
         }
