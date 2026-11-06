@@ -1,6 +1,682 @@
 [
   {
     "schemaVersion": 1,
+    "id": "pytorch-nccl2-async-barrier-stream-deadlock",
+    "kind": "analysis",
+    "title": "PyTorch nccl2 异步 barrier：一位标志如何形成宿主与GPU等待环",
+    "summary": "#202783 修复 barrier 忽略 asyncOp。沿 Work、Future 和 StreamBlock 解释等待环，给出同步反向回归、两GPU实验矩阵和制品验收边界。",
+    "publishedAt": "2026-11-04",
+    "reviewedAt": "2026-11-04",
+    "topics": [
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "PyTorch #202783 合入差异",
+        "url": "https://github.com/pytorch/pytorch/commit/d6db56f599beb3a4cd0a0430849af01021880d42",
+        "publishedAt": "2026-11-04",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "nccl2 barrier 后端入口",
+        "url": "https://github.com/pytorch/pytorch/blob/d6db56f599beb3a4cd0a0430849af01021880d42/torch/csrc/distributed/c10d/nccl2/ProcessGroupNCCLBackend.cpp",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "nccl2 barrierImpl",
+        "url": "https://github.com/pytorch/pytorch/blob/d6db56f599beb3a4cd0a0430849af01021880d42/torch/csrc/distributed/c10d/nccl2/ProcessGroupNCCL.cpp",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "nccl2 WorkNCCL Future 与同步",
+        "url": "https://github.com/pytorch/pytorch/blob/d6db56f599beb3a4cd0a0430849af01021880d42/torch/csrc/distributed/c10d/nccl2/WorkNCCL.cpp",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "通用 Work 的流阻塞实现",
+        "url": "https://github.com/pytorch/pytorch/blob/d6db56f599beb3a4cd0a0430849af01021880d42/torch/csrc/distributed/c10d/Work.cpp",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "CUDA StreamBlock 设备实现",
+        "url": "https://github.com/pytorch/pytorch/blob/d6db56f599beb3a4cd0a0430849af01021880d42/torch/csrc/distributed/c10d/cuda/StreamBlock.cu",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "nccl2 回归测试源码",
+        "url": "https://github.com/pytorch/pytorch/blob/d6db56f599beb3a4cd0a0430849af01021880d42/test/distributed/test_c10d_nccl2.py",
+        "accessedAt": "2026-11-04"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "本条分析11月4日合入的固定源码，不等于正式版或预发布制品已经交付。",
+        "sourceIndices": [
+          0
+        ]
+      }
+    ],
+    "questions": [
+      "实际制品是否包含修改？",
+      "受控故障验证能否通过预先约定的正确性和SLO门槛？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-04核验固定提交d6db56f599beb3a4cd0a0430849af01021880d42的入口差异、barrierImpl、Work/WorkNCCL、StreamBlock设备实现及回归测试相关路径；合入00:56:28 UTC。main合入，不声称已发行。未执行硬件测试、性能测试或线上变更。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：这是异步契约修复，不是网络调参",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "PyTorch 于 2026-11-04 00:56:28 UTC 合入 #202783，提交 d6db56f599beb3a4cd0a0430849af01021880d42。修改针对 nccl2 后端 barrier 的 asyncOp 传递。本文没有确认它进入任何正式版或预发布包。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "排障优先级应从“哪个rank没到达”扩展到“宿主线程是否在等待自己尚未注册的释放回调”。流上的等待与CPU上的等待不是同一个语义。把异步接口错误地标成宿主阻塞，可能在通信本身没有证据异常时形成等待环。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "这不能直接解释所有 NCCL hang，也不意味着 H20、Ascend 或任意 PyTorch 安装都受影响。必须先证明使用的是这段 nccl2 实现和触发调用组合。本站未运行GPU回归，未给出吞吐提升或生产恢复保证。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：API返回、设备排序、宿主等待是三件事",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个通信操作通常需要区分三个问题：调用是否及时返回；后续GPU工作是否排在通信完成之后；CPU是否被迫等待设备完成。异步调用并不意味着可以无视数据依赖，同样，建立设备依赖也不必阻塞调用线程。将这三个条件混为一谈，容易把正确性修复做成另一种死锁。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里讨论的典型调用先取得异步 barrier 的 Work，再调用 block_current_stream。它的用途是为当前CUDA流建立后续工作不能越过的完成边界，而不是宣告整个设备已经空闲。诊断时应分别记录请求API、实际后端、当前流和Work状态，不能仅从函数名中的 barrier 推断同步范围。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "同步 barrier 仍然有其作用：初始化或跨组件交接可能依赖CPU继续执行前设备工作已完成。修复不是全局移除同步，而是让调用者的异步选择沿实现链条一致传下去。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：先阻塞设备流，却在注册释放回调前卡住宿主",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "后端入口原来向 barrierImpl 固定传 false，修复后传 opts.asyncOp。barrierImpl 根据这个值设置 hostBlocking 为其反值，并选择操作流。因此修复落在模式传递，而不是更换通信算法。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "通用 blockCurrentStream 先创建零超时 StreamBlock，再调用 getFuture 并附加释放该块的回调。这一顺序要求取得 Future 的过程不能反过来无限等待已经插入的流阻塞。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "固定版本 WorkNCCL 的 getFuture 会调用 synchronize。synchronizeInternal 先给当前流加结束事件依赖；当 hostBlocking 生效、非blockingWait且不在capture时，还会调用 cudaStreamSynchronize。异步标记错误时，这条宿主等待分支会进入关键路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "StreamBlock 的设备kernel读取宿主可见控制值，等待释放信号；timeout为零时不启用其超时退出条件。它只发射极小kernel，仍足以阻塞所在流的后续工作。小kernel不等于小故障影响。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创等待图推导：CPU要走到注册回调，先等待当前流完成；当前流要完成，先等回调释放StreamBlock。两个等待互相依赖。传递正确异步模式后，删除的是误加的宿主等待边，不是删除通信结束事件，也不是放开后续消费者的数据依赖。"
+            },
+            {
+              "type": "diagram",
+              "title": "同一调用顺序的两种宿主路径",
+              "caption": "原创非实测依赖示意。两条路径分开，箭头表示控制关系而非时间比例；旧路径末边表示阻塞造成不可达，不是实际执行回调。完整等待环由正文解释，不画装饰性跨组连线。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "a",
+                  "label": "插入流阻塞",
+                  "detail": "当前CUDA流加入等待释放的StreamBlock。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "插入流阻塞",
+                  "tone": "danger"
+                },
+                {
+                  "id": "b",
+                  "label": "取得 Future",
+                  "detail": "需要先执行同步逻辑。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "取得 Future",
+                  "tone": "danger"
+                },
+                {
+                  "id": "c",
+                  "label": "宿主等待流",
+                  "detail": "误入cudaStreamSynchronize，流仍有阻塞块。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "宿主等待流",
+                  "tone": "danger"
+                },
+                {
+                  "id": "d",
+                  "label": "回调未注册",
+                  "detail": "释放动作位于尚未返回的getFuture之后。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "回调未注册",
+                  "tone": "danger"
+                },
+                {
+                  "id": "e",
+                  "label": "传递异步值",
+                  "detail": "先调用barrier并把asyncOp传入barrierImpl，使Work不是hostBlocking。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "传递异步值",
+                  "tone": "control"
+                },
+                {
+                  "id": "f",
+                  "label": "插入流阻塞",
+                  "detail": "随后调用block_current_stream，仍保留当前流的完成边界。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "插入流阻塞",
+                  "tone": "control"
+                },
+                {
+                  "id": "g",
+                  "label": "取得并挂回调",
+                  "detail": "完成Future路径并建立释放动作。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "取得并挂回调",
+                  "tone": "control"
+                },
+                {
+                  "id": "h",
+                  "label": "流推进待验",
+                  "detail": "这是机制预期，真实设备、capture及异常仍须测试。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "流推进待验",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "a",
+                  "to": "b",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "b",
+                  "to": "c",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "c",
+                  "to": "d",
+                  "label": "阻塞使其不可达"
+                },
+                {
+                  "from": "e",
+                  "to": "f",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "f",
+                  "to": "g",
+                  "label": "路径步骤"
+                },
+                {
+                  "from": "g",
+                  "to": "h",
+                  "label": "路径步骤"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧路径：异步请求被标成宿主阻塞",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "a",
+                      "b",
+                      "c",
+                      "d"
+                    ]
+                  },
+                  {
+                    "title": "修复：保留异步模式",
+                    "tone": "control",
+                    "nodeIds": [
+                      "e",
+                      "f",
+                      "g",
+                      "h"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：小差异必须沿调用链交叉阅读",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "固定源码证据，而非本站运行成绩",
+              "columns": [
+                "来源",
+                "直接支持",
+                "不足以支持"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#202783最终差异",
+                    "入口由常量false改为调用参数",
+                    "所有NCCL后端都存在同一问题"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "barrierImpl",
+                    "模式影响hostBlocking",
+                    "可以删除同步barrier语义"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "Work与WorkNCCL",
+                    "流阻塞、Future和宿主同步连接起来",
+                    "任意卡住均是同一根因"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "CUDA StreamBlock",
+                    "零超时没有主动超时退出条件",
+                    "watchdog一定能恢复服务"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "新增回归测试要求至少两张GPU，循环五次创建异步 barrier、阻塞当前流、同步设备并检查 Work 已完成。它提供了一个很窄的可重现调用形状；已读测试源码不代表本站或用户环境执行通过。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "要确认现场根因，至少需要两个相互独立的证据：实际构建包含旧入口；卡住时宿主与设备等待形状吻合。仅凭日志末行是 barrier，不能排除rank缺席、先前设备错误或资源生命周期问题。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：保留同步语义，避免用“少同步”掩盖问题",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最危险的临时修法是把所有等待删掉。这样可能让初始化、共享缓冲清理或消费者读取提前发生，卡死转成偶发错误数据。更安全的验证方式是只比较异步标志传递的改动，并把原有同步调用放入反向回归。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "blockingWait、当前流、默认流、capture与非capture可能走不同分支。一次默认配置的通过只证明该组合，不是其他模式的保证。测试不应把所有组合一开始混在一起，先建立单变量反例，再扩大覆盖。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这个修复不能用来估算带宽、TP通信成本或跨机扩展效率。等待环解除后观测到的吞吐恢复，也应先理解为可运行性恢复，再在固定到达率、模型和批策略下测效率。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：先把本地等待环与分布式故障分开",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创诊断分层",
+              "columns": [
+                "症状",
+                "补充证据",
+                "不要直接做的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU长期停在CUDA流同步",
+                    "当前流是否含StreamBlock，释放回调是否已建立",
+                    "网络拥塞导致所有barrier卡住"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "某些rank先卡住",
+                    "各rank调用序列、后端类型和设备归属",
+                    "有一块GPU硬件损坏"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级后只有特定插件卡住",
+                    "插件是否用异步barrier加block_current_stream",
+                    "新PyTorch所有通信不兼容"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "关闭异步后表面恢复",
+                    "同步初始化与后续数据结果是否一致",
+                    "生产永久禁用异步已安全"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "设备同步不返回",
+                    "独立宿主超时与进程存活日志",
+                    "设备内部timeout一定覆盖所有等待"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可采集最小证据包应包含镜像摘要、torch固定revision、CUDA/NCCL版本、后端选取、rank到设备映射、当前流关系和触发API顺序。只保留公开复现的合成输入，不把用户请求、内部日志或凭证带入公开报告。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "在隔离环境重现时，应由测试外层进程设置截止时间并回收子进程，避免把“测试没有结束”误当作持续跑压测。本报告只提出测试设计，不执行线上故障注入或修改线上模型配置。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：先证明旧反例与新通过，再查边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下全部待执行。比较父提交与候选提交，锁定编译选项和依赖；先两GPU单机合成程序，再决定是否需要多机与H20。Ascend/HCCL不属于这个CUDA后端的直接实验对象。"
+            },
+            {
+              "type": "table",
+              "caption": "原创实验矩阵",
+              "columns": [
+                "实验",
+                "控制条件",
+                "需要保存的观测"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "核心反例",
+                    "async barrier + block_current_stream，两rank",
+                    "旧版本是否超时、新版本完成、host/device栈"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "同步反向回归",
+                    "async_op=False，已有设备初始化写入",
+                    "CPU继续前数据准备完毕，不引入读取竞态"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "流组合",
+                    "默认流/显式流，前后加入可校验设备写入",
+                    "消费者读到正确值，事件依赖未丢失"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "等待策略",
+                    "blockingWait启停，固定其他条件",
+                    "返回行为与截止时间，不以单配置外推"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "CUDA graph边界",
+                    "capture外与支持的capture路径分别测试",
+                    "明确API是否允许，失败必须可归因"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "异常rank",
+                    "故意缺席或退出的隔离进程",
+                    "错误能在测试预算内暴露，避免无限等待"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务回归",
+                    "相同模型、输入分布、batch和并行拓扑",
+                    "正确性、TTFT/TPOT分位数及进程稳定性"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：终止性、数据与接口语义分别过门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创验收口径",
+              "columns": [
+                "门",
+                "观测方法",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "记录实际加载torch与后端入口",
+                    "确定进入候选路径，不能只看版本字符串"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "终止性",
+                    "外层截止时间与五次以上重复",
+                    "核心反例完成，不依赖手动杀进程"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "设备排序",
+                    "写入、通信后消费者结果比较",
+                    "无陈旧读取，不能只检查Work完成"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "同步兼容",
+                    "原同步路径单独测试",
+                    "仍满足其宿主等待契约"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障可诊断",
+                    "异常rank场景保存终态与栈",
+                    "截止时间内可识别，不宣称自动恢复"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "业务SLO",
+                    "固定负载基线对照",
+                    "正确性零容忍；延迟/错误率满足既有预算"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "截止时间应在执行前按环境设定并记录，不能见到卡住后不断调大。性能门槛应由服务预算决定，本报告不发明通用百分比。只要排序正确性失败，即使平均延迟变快也应拒绝升级。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：包内包含关系与真实部署覆盖",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "正式或预发布制品包含关系、用户镜像是否启用nccl2、H20实际表现、CUDA graph与blockingWait交互、异常恢复边界均未验证。没有运行仓库测试或设备benchmark。本文是2026-11-04固定main源码解读，不是升级通知。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若后续版本说明声称已交付，应以标签对应源码和实际wheel/镜像身份重新核对。不能用合入日期、pip版本号较大或用户报告相似症状代替包含关系与根因证据。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "delta-tokenizer-front-end-boundaries",
     "kind": "analysis",
     "title": "Delta Tokenizer：KV命中之后，CPU入口还在等待什么",
