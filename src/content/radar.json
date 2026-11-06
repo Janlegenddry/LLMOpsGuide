@@ -1,6 +1,2329 @@
 [
   {
     "schemaVersion": 1,
+    "id": "sglang-lazy-page-reuse-forward-fence",
+    "kind": "analysis",
+    "title": "SGLang lazy 页复用的完成边界：页表准备之后谁还在读 KV",
+    "summary": "解读 #48450 的统一内存 lazy free 修复：区分共享元数据读取和旧 forward 的最后一次物理读，用事件约束新代清零与写入，并给出尚未执行的 GPU 竞争实验与服务验收矩阵。",
+    "publishedAt": "2026-11-06",
+    "reviewedAt": "2026-11-06",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "服务调度",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang #48450 合入提交",
+        "url": "https://github.com/sgl-project/sglang/commit/7a82e415fd818aaf8fd1720ef6180515d419d690",
+        "publishedAt": "2026-11-06",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Band 的 lazy free 与物理页分配",
+        "url": "https://github.com/sgl-project/sglang/blob/7a82e415fd818aaf8fd1720ef6180515d419d690/python/sglang/srt/mem_cache/kv/alloc/band.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "Scheduler 的共享读栅栏和 forward 事件",
+        "url": "https://github.com/sgl-project/sglang/blob/7a82e415fd818aaf8fd1720ef6180515d419d690/python/sglang/srt/managers/scheduler.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "ChainAllocator 的成员事件传播",
+        "url": "https://github.com/sgl-project/sglang/blob/7a82e415fd818aaf8fd1720ef6180515d419d690/python/sglang/srt/mem_cache/kv/alloc/chain.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "无主机同步的 free 路径测试",
+        "url": "https://github.com/sgl-project/sglang/blob/7a82e415fd818aaf8fd1720ef6180515d419d690/test/registered/unit/mem_cache/test_unified_free_no_host_sync.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "多次压缩事件来源的 CPU 测试",
+        "url": "https://github.com/sgl-project/sglang/blob/7a82e415fd818aaf8fd1720ef6180515d419d690/test/registered/unit/mem_cache/test_unified_pending_event_batches.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "PR #48450 的动机和验证说明",
+        "url": "https://github.com/sgl-project/sglang/pull/48450",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "修复前父提交的 Band 实现",
+        "url": "https://github.com/sgl-project/sglang/blob/3173a999fe44a4916598e38d6c70864b37bf53dd/python/sglang/srt/mem_cache/kv/alloc/band.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "PyTorch v2.9.0 CUDA Stream 语义参考",
+        "url": "https://github.com/pytorch/pytorch/blob/v2.9.0/torch/cuda/streams.py",
+        "accessedAt": "2026-11-06"
+      },
+      {
+        "title": "SGLang v0.5.23 正式标签",
+        "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.23",
+        "accessedAt": "2026-11-06"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#48450 已合入 main，改变 lazy free 的设备等待顺序。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "模拟事件的 pending-batches 测试不证明 CUDA 流排序。",
+        "sourceIndices": [
+          5
+        ]
+      }
+    ],
+    "questions": [
+      "实际运行产物是否包含变更，完成事件是否覆盖全部旧 KV 读者？",
+      "在回撤和树淘汰压力下，同页复用的数据安全与服务 SLO 是否都通过？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核对日期 2026-11-06；依据 #48450 的冻结提交、父提交、相关调度与分配代码和测试说明。来源事实、作者陈述、原创推导及待验方案分别标识。本报告没有 GPU/NPU、模型或吞吐实测，不把 main 合入当成发布或部署验收。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论 物理页复用要等旧读完成",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这次值得关注的不是新增一项分配器性能开关，而是 lazy free 的安全前提被收紧。对生产排查，首先区分“逻辑引用已移除”和“设备不再读这块内存”。如果服务在内存压力、回撤或淘汰时出现难以复现的输出偏差，应该把物理页的代际交接纳入时间线，而不是只核对 radix 树和可用容量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "11 月 6 日 01:22 UTC，#48450 以 7a82e415 合入 main；补丁仅修改 Band 文件，未增加测试文件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "修复是在 CUDA lazy free 路径、存在已记录事件时，对当前流加入 latest-forward 完成等待，再解除映射及回收物理页。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议把这项变更列为启用统一内存和 lazy compaction 部署的定向正确性核查，而不是直接作全量升级结论。验收必须同时证明事件覆盖真正的最后一次旧读、等待传递到复用写入，以及业务输出没有偏差。只看到补丁存在、单测名称或 free 返回，都不足以完成这三件事。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本报告未运行 GPU 推理、上游测试或服务压测。新增等待的性能代价、真实产物是否包含修复、特定模型后端的事件覆盖均待验证。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景 页表准备完不等于注意力读完",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6
+              ],
+              "text": "作者描述的触发条件是统一内存的 lazy compaction，运行中 forward 遇到分配压力驱动的回撤或树淘汰；提前复用可能让旧 forward 读到已清零的 KV。作者未报告速度测量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "把一次注意力执行拆开看：调度器先决定请求的逻辑位置，页表准备把逻辑位置变成物理位置，GPU 内核随后按这些位置读 KV。中间结果一旦变成设备可使用的地址表，旧的虚拟映射是否还存在就不再决定该次读会不会发生。逻辑引用计数可以已经归零，硬件读访问仍可能没有完成。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这与传统 CPU 对象生命周期有相似之处，但不能照搬“函数返回就没人使用”的直觉。GPU 工作是排队执行的，Python 调用了释放函数，只能证明主机执行到这一行。地址表、KV 数据、事件和分配器计数属于不同对象；需要把它们连接到同一轮请求、同一物理页和同一执行流才能判断谁可以先动。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本题与前一篇草稿 KV 路由报告不同。路由报告检查“本层应该使用哪个地址空间的行号”；这里检查“一个物理地址可以从旧使用者交给新使用者的最早时刻”。地址空间选对不排除时序错误，释放时序正确也不排除选错子池。两类测试应独立保留，不把新补丁当成旧问题的重复发布。"
+            },
+            {
+              "type": "table",
+              "caption": "本报告的对象和非目标",
+              "columns": [
+                "对象",
+                "本次关注",
+                "不能推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "逻辑映射",
+                    "虚拟页是否仍绑定物理页",
+                    "无绑定不表示旧 GPU 读结束"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "已准备的页表",
+                    "是否仍保存物理页 P 的读地址",
+                    "共享元数据读结束不表示 KV 读结束"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "物理存储",
+                    "P 的旧代数据何时可以覆盖",
+                    "空闲计数增长不等于设备可立即重写"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务结果",
+                    "受影响负载的 token 和 SLO",
+                    "无崩溃不表示未发生静默数据变化"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制 用完成事件连接旧读和新写",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "Scheduler 把共享读栅栏与 forward 完成事件分开处理；后者在 worker forward 返回后、结果回传前记录到 forward stream，并交给统一分配器。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "ChainAllocator 将该事件传给所有成员。写集元数据另行传递，Mamba 成员的 out_cache_loc 分支与 token 成员不同。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8
+              ],
+              "text": "作为 API 语义参考，PyTorch v2.9.0 的 wait_event 约束该流之后提交的工作，调用本身不等待事件完成；因此它是设备间的顺序依赖，不是把主机锁住直到 GPU 空闲。"
+            },
+            {
+              "type": "diagram",
+              "title": "同一个物理页在两代请求之间的交接",
+              "caption": "原创机制示意，非实测轨迹。左侧给出允许发生的反例次序，右侧给出依赖正确时应成立的设备顺序；两组不共享时间尺度。箭头不是主机阻塞，也不承诺事件覆盖外部 side stream。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-plan",
+                  "label": "页表已准备",
+                  "detail": "forward 已把虚拟页转换成物理页 P 的读地址，但尚未完成读取。这里的 P 是物理身份，不是仍在树中的逻辑引用。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "页表已准备",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-free",
+                  "label": "P 提前回收",
+                  "detail": "调度路径释放旧虚拟页并把 P 交回可用集合。元数据写入有序，仍不能证明之前准备的物理读地址已经失效。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "P 提前回收",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-overwrite",
+                  "label": "新代覆盖 P",
+                  "detail": "新请求分配到同一物理页，清零或写入新代数据。此节点是假设的触发序列，不是已测线上故障。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "新代覆盖 P",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-read",
+                  "label": "旧读看到新代",
+                  "detail": "旧 forward 使用先前准备的地址读取 P，于是有机会读到新代字节。是否影响具体 token 仍须独立实验。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "旧读看到新代",
+                  "tone": "danger"
+                },
+                {
+                  "id": "new-read",
+                  "label": "旧 forward 结束",
+                  "detail": "所有被该事件覆盖的旧 forward 操作完成。独立 side stream 是否纳入覆盖必须检查，图不替实现作额外保证。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "旧 forward 结束",
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-event",
+                  "label": "完成事件达成",
+                  "detail": "调度流已排入对这次事件的等待；事件达成之后，等待后面的设备操作才可继续。主机可能早已返回。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "完成事件达成",
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-free",
+                  "label": "解除映射回收",
+                  "detail": "此时才允许执行解除映射与回收相关设备操作。CPU 可见的列表形状或计数不是该时刻的替代证据。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "解除映射回收",
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-write",
+                  "label": "新代使用 P",
+                  "detail": "后续同流分配、清零和写入遵守依赖。若改为第三条流，仍须传递顺序，不能只继承一个 Python 对象。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "新代使用 P",
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-plan",
+                  "to": "old-free",
+                  "label": "旧读尚未结束时释放"
+                },
+                {
+                  "from": "old-free",
+                  "to": "old-overwrite",
+                  "label": "同一物理身份被再次分配"
+                },
+                {
+                  "from": "old-overwrite",
+                  "to": "old-read",
+                  "label": "反例中覆盖先于旧读"
+                },
+                {
+                  "from": "new-read",
+                  "to": "new-event",
+                  "label": "记录点覆盖的设备工作完成"
+                },
+                {
+                  "from": "new-event",
+                  "to": "new-free",
+                  "label": "等待后的设备操作才可执行"
+                },
+                {
+                  "from": "new-free",
+                  "to": "new-write",
+                  "label": "同流顺序保护后续复用"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧路径允许的教学反例",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-plan",
+                      "old-free",
+                      "old-overwrite",
+                      "old-read"
+                    ]
+                  },
+                  {
+                    "title": "修复要求的设备执行顺序",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "new-read",
+                      "new-event",
+                      "new-free",
+                      "new-write"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "用三个动作描述最小安全条件：R 是旧代最后一次读 P，E 是覆盖 R 的完成事件，W 是新代第一次破坏旧内容的写 P。期望得到 R → E → W。这里“破坏旧内容”包括清零，不只包括写入新 token。若仅有元数据读取 M 已完成，M → W 并不能推出 R → W，因为 R 可能在 M 之后才使用之前形成的物理地址。这个缺口正是需要额外依赖的地方。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "“最新”也有前提。如果旧读均排在同一 forward stream 上，而所用事件在它们之后记录，较新的事件可以覆盖前面的读；如果某个后端把读取转移到另一条没有汇入的流，仅靠事件名字不能证明覆盖。生产分析应核对真实发射流和事件记录点，不把函数调用栈当成设备执行顺序。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "等待放在回收动作之前，还意味着应分开观察主机队列和设备数据。主机可能已经更新计数或拿到代表新列表的张量对象，但这些对象对应的 GPU 内容尚未计算完。只要所有消费者遵守同一流或显式依赖，这并非错误；错误发生在某个消费者绕开依赖，把“主机已返回”解释成“物理页可写”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这条依赖不替代其他生命周期约束。一个物理页可能还有传输、压缩搬迁或别的执行器使用者；完成事件只为它实际覆盖的工作提供证据。若后续扩展分配器、增加 side stream 或异步传输，应重新画出消费者集合，并明确哪个事件覆盖哪一组，避免沿用过期假设。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据 区分合入代码和并发复现",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "公开证据核对表",
+              "columns": [
+                "证据",
+                "已确认内容",
+                "证据边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合入补丁",
+                    "只在 lazy free 增加等待，并修订说明",
+                    "没有随补丁新增竞争测试"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "Band 实现",
+                    "等待受 CUDA 和非空事件条件约束；物理分配含按需清零",
+                    "不等于每条设备路径都有事件"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "父提交对照",
+                    "同一函数此前在计算页号后直接解除映射",
+                    "只做源码差异，不是旧版本故障实测"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "Scheduler",
+                    "共享读栅栏和 whole-forward 事件是两个记录",
+                    "记录点存在不替代跨流覆盖证据"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "free 单测",
+                    "覆盖标量赋值、定长段释放及分组释放等行为",
+                    "文件登记为 CPU CI，不能证明真实 GPU 竞态消失"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "pending-event 单测",
+                    "用模拟事件核对多次 flush 的来源保留",
+                    "注释明确不作 CUDA 流排序保证"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "PR 验证说明",
+                    "列出三份已有测试，未增加新的竞争用例",
+                    "没有给出独立硬件复现实验结果"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "实际服务产物",
+                    "应核对构建 SHA、补丁或等效回迁",
+                    "当前未取得部署镜像和运行时证据"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "证据链应按能力分层阅读。源码能够说明维护者改变了哪条顺序关系，单元测试可以检查列表、映射和分组行为，GPU 回归才有机会证明目标并发窗口被覆盖，真实服务回放再判断输出和 SLO。后一层不能由前一层替代；相反，若某层失败，也不能用别层的一次成功遮盖。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本次读到的 PR 页面有 CI 状态摘要，但未完成每个检查任务的提交对应和日志核查。报告不据此宣称 CI 全绿，也不把合入本身当成全部验收通过。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍 更强顺序可能减少调度重叠",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "新依赖的直接成本由“等到了多少尚未完成的旧工作”决定，而不是由 wait_event 调用的主机耗时决定。当压力释放很少发生，新增依赖可能不常进入关键路径；当大量请求频繁回撤并立即重新分配，调度流后续 GPU 工作可能多次等待。两种负载应该分开统计，平均每秒 token 可能把尾部损失隐藏掉。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "同样不能把它概括为“free 路径从此没有主机同步”。该补丁新增的是流等待；原本其他步骤是否需要主机参与，是另一项性质。为估算影响，应分别记录主机调用时间、事件尚未完成的等待区间、等待之后的设备排队，以及最终请求的首 token 和逐 token 延迟。"
+            },
+            {
+              "type": "table",
+              "caption": "适用条件和外推限制",
+              "columns": [
+                "条件",
+                "判断",
+                "建议"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "统一内存与 lazy compaction 启用",
+                    "属于直接核查对象",
+                    "记录实际参数、代码路径及压力释放次数"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "几乎不触发回收的轻载",
+                    "难以暴露竞争窗口",
+                    "加入受控内存压力，不只跑空载冒烟"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "未启用 lazy 的对照",
+                    "可帮助定位受影响分支",
+                    "不能用对照正常来证明 lazy 修复成功"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "CPU 或其他加速后端",
+                    "本报告没有建立同等保护",
+                    "按后端读取条件和事件实现，独立验收"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "多流注意力或异步传输",
+                    "消费者集合可能更大",
+                    "先证明事件覆盖，再评价吞吐"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "仅修改 free 的局部回迁",
+                    "依赖现有事件发布和传播",
+                    "先核对所需调用链，不孤立复制一行等待"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "真正的优化方向应在正确性证据之后讨论。更细粒度的页级退休有机会缩短等待，但会引入每页读者归属、事件聚合、重用代数和回收积压管理。未经测试的“更精准”等待可能漏掉消费者，也可能因维护开销得不偿失。本报告不提出删除 whole-forward 等待来换取漂亮的微基准。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产排障 追踪页的代际而不是只看容量",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下是原创故障假设，不是已确认的用户事故。排查时给物理页增加代际标识：同一个 P 第一次属于请求 A，复用后属于请求 B。日志至少要能把请求、逻辑页、物理页、代际、事件身份和执行流连起来。否则“释放了一页”和“读坏了一页”可能指向同一地址的不同生命周期，时间线会被错误拼接。"
+            },
+            {
+              "type": "table",
+              "caption": "故障假设与可区分证据",
+              "columns": [
+                "假设",
+                "预期观测",
+                "排除或下一步"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "旧读遭新代覆盖",
+                    "输出差异集中在压力回收窗口，旧页哨兵在事件前变化",
+                    "延迟旧读并记录首次覆盖时间，比较父提交与修复"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "事件未发布或传给错误成员",
+                    "lazy free 命中但事件为空或属于其他批次",
+                    "核对批次编号、member 和事件记录流"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "后端侧流没有被事件覆盖",
+                    "事件已达成，侧流仍有旧读；主流测试却正常",
+                    "增加侧流汇合观测，核对后端同步契约"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新等待造成排队放大",
+                    "正确性恢复，但压力负载调度设备队列和 p99 升高",
+                    "分离主机时间与 GPU 等待，降低负载做小范围对照"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "重复释放被误诊成时序",
+                    "同代页重复入空闲集，或映射出现异常值",
+                    "独立检查唯一性和 byte accounting，不指望等待修复计数"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "测试没有真正复用目标页",
+                    "两版都通过，但新请求落在别的物理地址",
+                    "验证同一 P 的代际变化，否则本轮不计有效样本"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如果只能采集少量数据，优先保留发生错误前后的环形事件记录和所涉页的校验摘要，而不是持续记录完整 prompt 或 KV。使用合成输入做确定性复现；生产观测只保留定位所需的匿名标识、长度、时间和内容摘要，避免把敏感用户文本写进调试包。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "临时处置必须以现有能力为边界。可以选择已验证基线、降低并发或暂停新增放量；不要承诺关闭某个开关一定能透明恢复，也不要在受压服务上随意插入全设备同步。调试同步可能掩盖竞态，同时改变吞吐和超时行为，应在隔离环境中先验证。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验 建立能证明时序的确定性对照",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下全部是拟议实验，尚未执行。固定模型、后端、权重、精度、驱动、GPU 型号、并行规模及构建 SHA。优先比较父提交 3173a999 与修复 7a82e415；如实际分支需要回迁，另列回迁产物，不把两者当成相同二进制。测试输出应保存随机种子、负载生成器版本和每轮是否真正发生同页复用。"
+            },
+            {
+              "type": "table",
+              "caption": "最小实验矩阵",
+              "columns": [
+                "实验组",
+                "受控变量与触发",
+                "需要记录",
+                "判定方式"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "A 静态调用链",
+                    "两版源码与实际产物",
+                    "事件创建、记录、传播、等待位置",
+                    "事件能从目标 forward 追到实际 Band"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "B 主流延迟旧读",
+                    "GPU 上有限时延任务拉开页表准备与最后读；避免双向等待",
+                    "R、E、回收、首次 W 的设备时间与 P 代际",
+                    "修复版所有有效样本满足 R → E → W"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "C 清零触发",
+                    "选择会清零的页种类并强制复用 P",
+                    "覆盖前后哨兵、旧读结果和真实物理页号",
+                    "旧读保持旧代数据，新代正常初始化"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "D 新写触发",
+                    "关闭或避开清零也要写不同哨兵",
+                    "新代第一次写、旧读校验",
+                    "排除仅保护零初始化而漏掉普通覆盖"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E 压力来源",
+                    "分别制造回撤和 radix 淘汰，另设无压力对照",
+                    "路径命中次数、回收量、同页复用率",
+                    "两类触发单独覆盖，不用混合总量代替"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "F 页与成员",
+                    "支持范围内取页大小 1、4、16，分别覆盖 FULL、窗口和状态成员",
+                    "边界页、分组释放、字节账本",
+                    "无重复物理页、无越界、账本一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "G 事件边界",
+                    "无在途工作、已完成事件、未完成事件及目标设备条件",
+                    "实际分支、事件身份、等待次数",
+                    "无事件只能在确无旧读前提下视为安全"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H 多流后端",
+                    "对实际使用的 side stream 加有限延迟",
+                    "所有旧读所属流及汇合关系",
+                    "事件覆盖不足则拒绝该配置，不作通过"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "I 输出回放",
+                    "确定性解码与既有精度回归集",
+                    "token、logits、NaN、错误率及分叉位置",
+                    "按预先固定容差比较，任何漂移都需解释"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "J 服务压测",
+                    "固定到达率和长度分布，低中高压力分别运行",
+                    "TTFT、TPOT、吞吐、p99、回撤率及 GPU 等待",
+                    "正确性门通过后才判断是否满足服务预算"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "构造延迟时不要让调度流等待的事件依赖调度流自己未来才会提交的“解锁”操作，这会把测试变成死锁。可用有限时长设备任务或预先安排、可独立完成的流工作扩展窗口，并设置外部超时。测试必须先证明旧版确实具备可触发的窗口；若旧版也始终通过，应报告“未触发”，不能声称修复已被验证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "既有单元测试仍有价值，应先在匹配依赖环境运行，再补新增 GPU 回归。CPU 测试适合验证集合、映射和模拟事件账本；真正的设备顺序实验需要读取时间线和内容见证。把二者都保留，可以避免以后有人为消除性能回退删掉等待，同时单元测试仍然全部通过。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收 先保证旧数据不被覆盖再评估 SLO",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预先固定的验收口径",
+              "columns": [
+                "门槛",
+                "指标口径",
+                "通过条件",
+                "当前状态"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "运行容器及 Python 包实际 SHA，必要依赖和配置",
+                    "能证明包含本变更或已审查等效修复",
+                    "待核查"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "有效竞争样本",
+                    "旧读未完成且同一物理页发生跨代复用的轮次",
+                    "至少覆盖所有计划触发类型；未触发不记通过",
+                    "未执行"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据安全",
+                    "事件前旧代哨兵变化、旧读摘要、越界和非有限值",
+                    "所有有效样本违规数为 0；发现一例即停止放量",
+                    "未执行"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "顺序覆盖",
+                    "每个实际消费者的读完成与事件记录关系",
+                    "所有目标流受覆盖，后续复用写遵守依赖",
+                    "未执行"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "账本一致",
+                    "存活页、空闲页、待退休页及每代引用",
+                    "无重叠归属、无重复释放，预期稳态可回归",
+                    "未执行"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "输出正确",
+                    "确定性 token 及既定 logits 容差",
+                    "固定同一参考和容差，异常不能用吞吐抵消",
+                    "未执行"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务预算",
+                    "同到达率下 TTFT/TPOT p99、吞吐、失败率",
+                    "满足部署前约定的 SLO 和资源预算，不虚构统一百分比",
+                    "未执行"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "失败退出",
+                    "超时、缺失事件、数据错或 SLO 退化的处理",
+                    "停止扩大流量，保留证据，回到已验证基线",
+                    "待演练"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "样本量应由系统风险和可用测试时间决定，而不是为了写出一个整数。零异常只意味着在已经执行的样本内未观察到错误；报告应同时列有效竞争次数、持续时长和配置覆盖。对于尾延迟，用相同到达率及长度分布重复多轮，并报告分位数和不确定范围，避免把一次抖动称为性能回退。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上线结论建议写成带范围的句子：某产物、某后端、某模型和某组内存配置，在指定压力窗口内通过数据、顺序、输出和服务预算。不要简化成“SGLang 已修复所有统一内存问题”，也不要把修复后不再崩溃写成缓存正确性的充分证据。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证 版本包含和硬件证据仍未闭合",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                9
+              ],
+              "text": "本次正式发行核对沿用当日已读取的 v0.5.23 标签页面；该标签早于本次 main 提交。不能仅据时间宣布已发布修复。"
+            },
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "v0.5.23 中所探查的同一路径返回 404，只能说明该路径在该地址未取到，不能据此证明所有旧版都不存在同类风险。实际镜像与等效代码位置仍待核对。",
+                "未执行上游三份单测、CUDA 竞争回归、模型输出对照、NPU 测试或生产压测。没有硬件性能数字，也没有独立复现成功率。",
+                "源码事件传播已核对；所有后端的侧流覆盖、事件生命周期和缺失事件条件没有逐一审计。",
+                "GitHub API 与 PyTorch 文档站请求返回 403，均未重试；公开提交 Atom、补丁、PR 页面和冻结源码可读取。PyTorch API 说明采用 v2.9.0 源码，不代表部署版本。本次不是全量 PR 或全部历史提交扫描。",
+                "去重已覆盖当前 29 条 live radar 和本地可读的 20 个 SGLang 历史报告 ID；完整跨主题待发队列由总包另行对账。",
+                "图是原创非实测示意。结构校验和 SVG 审查不等于整个站点的构建、浏览器验收或线上发布；本报告尚未发布。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "后续最有价值的证据不是再补一张 throughput 图，而是一份能把旧物理读、完成事件和新代覆盖放到同一时间轴的最小 GPU 回归。它既能验证这一补丁，也能约束以后更激进的压缩和调度重叠优化，使性能讨论始终立足于可证明的数据交接。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "mooncake-tent-batch-registration-reference-identity",
+    "kind": "analysis",
+    "title": "Mooncake TENT 批量注册去重：一次物理注册如何承接多份逻辑引用",
+    "summary": "解读 #5233 的同批地址去重、引用计数与失败回滚，区分注册生命周期、在途 I/O 和真正可释放的内存。",
+    "publishedAt": "2026-11-05",
+    "reviewedAt": "2026-11-05",
+    "topics": [
+      "KV Cache",
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Mooncake #5233 合入提交",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/9f58f3ce6eb1edfbcc7a21feb66270dfc228cadb",
+        "publishedAt": "2026-11-05",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 TENT SegmentTracker",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/9f58f3ce6eb1edfbcc7a21feb66270dfc228cadb/mooncake-transfer-engine/tent/src/runtime/segment_tracker.cpp",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 segment manager 回归测试",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/9f58f3ce6eb1edfbcc7a21feb66270dfc228cadb/mooncake-transfer-engine/tent/tests/segment_manager_test.cpp",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 TransferEngine 注册调用方",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/9f58f3ce6eb1edfbcc7a21feb66270dfc228cadb/mooncake-transfer-engine/tent/src/runtime/transfer_engine_impl.cpp",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 SegmentManager 快照发布",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/9f58f3ce6eb1edfbcc7a21feb66270dfc228cadb/mooncake-transfer-engine/tent/src/runtime/segment_manager.cpp",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "v0.3.14 的批注册实现对照",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14/mooncake-transfer-engine/tent/src/runtime/segment_tracker.cpp",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "Mooncake #5233 作者说明",
+        "url": "https://github.com/kvcache-ai/Mooncake/pull/5233",
+        "publishedAt": "2026-11-04",
+        "accessedAt": "2026-11-05"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "最终提交将同批新 (addr,length) 合并成一份描述符，并为每个重复输入保留一个逻辑引用。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "真实后端部分失败、在途传输与服务恢复仍需独立验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "相同地址与长度在同批出现多次时，底层注册几次、逻辑引用保留几份？",
+      "注册失败的回滚是否只撤销本次增加的引用，而不伤及原有所有者？",
+      "最后一次注销与最后一个在途读写是否已分别得到可靠完成证据？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-05 核验。#5233 于 03:05:18 UTC 合入 main，固定提交 9f58f3ce6eb1；读取最终 tracker、调用方、快照管理与测试源码，对照 v0.3.14。修复提交位于该正式标签之后，不能视为 0.3.14 已包含。未执行上游 C++ 测试或任何 GPU/NPU/RDMA 实验；机制图、推导和验收矩阵均为原创非实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：去掉重复注册，不能顺手去掉责任",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这项修复适合所有需要批量注册内存的 TENT 集成者关注：同一地址范围被多个调用项引用时，底层只需建立一份资源，但每个调用项仍然保留独立的释放责任。若只去重地址而不记住引用数量，第一次注销就可能把其他使用者仍需要的资源撤掉。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                5
+              ],
+              "text": "#5233 已于核验当日合入 main。其最终实现合并同批的新地址范围，保留第一次出现的顺序并增加 ref_count；v0.3.14 对应实现没有这一批内索引。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "它解决的是注册身份和引用账的一致性，不是为所有内存提供自动生命周期管理。一个注册引用归零，与硬件 DMA、异步回调和业务请求都已结束，是不同命题；在没有真实后端验证前，不应把它写成“所有提前释放故障已修复”。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：已发布快照看不见本批尚未发布的对象",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "批量调用存在两种重复：一是本轮输入引用了以前已经注册的范围，二是此前从未注册的同一范围在本轮输入里出现两次。只查询全局已发布表可以识别前者，却可能漏掉后者，因为本轮准备中的条目还没有进入那张表。问题不是线程一定同时执行，而是读到的可见集合比需要判断的身份集合少了一部分。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "旧 addInBatch 先检查当前快照。发现与已有范围重复时，它增加既有引用；没有已有重复时，它把整批作为新描述符。两条路径都可能让同批的新重复范围进入 callback 多次。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学例：批输入是 [A,A]，两个 A 都代表同一 (addr,length)，却是两次有效登记请求。正确账本应是一个底层资源、两个逻辑引用。它与 [A,B] 完全不同，也不能简化成“第二个 A 是无意义输入，直接丢掉”。后续调用者仍可能按两次登记各自执行一次注销。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：临时身份表去重，引用数承接所有输入",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "最终实现使用 (addr,length) 的 hash 索引记录新描述符在临时 vector 的位置。首次出现时放入 vector，后续同范围只增加对应 ref_count。索引并不决定输出顺序，vector 保留首次出现顺序；混有旧范围与全新范围时，同一 append 辅助逻辑也用于新范围。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意一：两个登记意图与一份底层身份",
+              "caption": "非实测。左组表示重复物理描述符风险，右组表示修复后的同一教学输入；不是两个同时执行的批次。A 始终是相同地址和长度，不是相同内容的任意不同地址。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "o0",
+                  "label": "输入 A、A",
+                  "detail": "两个逻辑登记请求，当前快照中均不存在。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "输入 A、A",
+                  "tone": "danger"
+                },
+                {
+                  "id": "o1",
+                  "label": "两个新描述符",
+                  "detail": "只看已发布集合时，批内重复可能穿过检查。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "两个新描述符",
+                  "tone": "danger"
+                },
+                {
+                  "id": "n0",
+                  "label": "输入 A、A",
+                  "detail": "同一教学输入，逐项经过本批身份索引。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "输入 A、A",
+                  "tone": "control"
+                },
+                {
+                  "id": "n1",
+                  "label": "一份描述符",
+                  "detail": "物理描述符仅一份，ref_count=2，责任仍有两份。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "一份描述符",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "o0",
+                  "to": "o1",
+                  "label": "批内不可见",
+                  "shortLabel": "批内不可见"
+                },
+                {
+                  "from": "n0",
+                  "to": "n1",
+                  "label": "合并并计数",
+                  "shortLabel": "合并并计数"
+                }
+              ],
+              "presentation": {
+                "kind": "paths",
+                "panels": [
+                  {
+                    "title": "旧的身份视图",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "o0",
+                      "o1"
+                    ]
+                  },
+                  {
+                    "title": "修复的身份视图",
+                    "tone": "control",
+                    "nodeIds": [
+                      "n0",
+                      "n1"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "注册调用方将新描述符传给选中的 transport。各后端处理完成后，成功路径同步本地 segment 元数据；注册 callback 失败时，tracker 会回滚本次对既有范围增加的引用。这里仍依赖各 transport 的事务与清理约定，不能从 tracker 的成功返回推断所有后端具有相同的失败语义。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意二：引用递减与底层注销分开",
+              "caption": "非实测。左组是成功登记后的引用账，右组是失败批次的回滚责任；两组是不同情景，没有自动恢复到成功的跨组箭头。最后引用为零仍不等于 DMA 已完成。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "r0",
+                  "label": "发布一份 A",
+                  "detail": "描述符引用数为 2，底层只有一个范围身份。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "发布一份 A",
+                  "tone": "kv"
+                },
+                {
+                  "id": "r1",
+                  "label": "第一次注销",
+                  "detail": "逻辑引用从 2 变 1，保留底层登记。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "第一次注销",
+                  "tone": "kv"
+                },
+                {
+                  "id": "r2",
+                  "label": "第二次注销",
+                  "detail": "逻辑引用从 1 变 0，才交接底层注销回调。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "第二次注销",
+                  "tone": "kv"
+                },
+                {
+                  "id": "r3",
+                  "label": "确认底层结果",
+                  "detail": "注销失败时的保留或重试语义须按实现验收。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "确认底层结果",
+                  "tone": "kv"
+                },
+                {
+                  "id": "f0",
+                  "label": "原有引用存在",
+                  "detail": "原所有者在本轮之前已登记，不能被无故释放。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "原有引用存在",
+                  "tone": "control"
+                },
+                {
+                  "id": "f1",
+                  "label": "临时增加引用",
+                  "detail": "本批引用既有范围，新范围暂放在准备列表。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "临时增加引用",
+                  "tone": "control"
+                },
+                {
+                  "id": "f2",
+                  "label": "后端报告失败",
+                  "detail": "本批不能作为完整成功登记发布。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "后端报告失败",
+                  "tone": "control"
+                },
+                {
+                  "id": "f3",
+                  "label": "撤销本批增量",
+                  "detail": "回滚增加的引用，原所有者责任仍应保留。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "撤销本批增量",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "r0",
+                  "to": "r1",
+                  "label": "释放一份责任",
+                  "shortLabel": "释放一份责任"
+                },
+                {
+                  "from": "r1",
+                  "to": "r2",
+                  "label": "最后一份责任",
+                  "shortLabel": "最后一份责任"
+                },
+                {
+                  "from": "r2",
+                  "to": "r3",
+                  "label": "调用底层清理",
+                  "shortLabel": "调用底层清理"
+                },
+                {
+                  "from": "f0",
+                  "to": "f1",
+                  "label": "加入本批",
+                  "shortLabel": "加入本批"
+                },
+                {
+                  "from": "f1",
+                  "to": "f2",
+                  "label": "提交后端",
+                  "shortLabel": "提交后端"
+                },
+                {
+                  "from": "f2",
+                  "to": "f3",
+                  "label": "按增量回滚",
+                  "shortLabel": "按增量回滚"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "成功批次 A、A",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "r0",
+                      "r1",
+                      "r2",
+                      "r3"
+                    ]
+                  },
+                  {
+                    "title": "含旧范围的失败批次",
+                    "tone": "control",
+                    "nodeIds": [
+                      "f0",
+                      "f1",
+                      "f2",
+                      "f3"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "SegmentManager 通过写入副本后再发布来维护快照；失败的更新不发布新状态。读者可持有旧的不可变快照，这避免把“局部构造”直接暴露为已提交状态，但也说明为什么批内准备列表需要自己的身份判断，不能把已发布快照当作所有正在形成对象的全集。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "从设计上看，修复把三个集合分清：已经发布的资源、本批首次出现的新资源、本批每一个逻辑引用。前两个决定是否需要新增底层登记，第三个决定以后要收回多少次责任。这种拆分比“看见重复就忽略”更可靠，也更容易写出失败路径的可核对账本。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：两项新回归具体证明哪些不变量",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已读代码证据与限制",
+              "columns": [
+                "证据",
+                "断言或机制",
+                "边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "新重复范围测试",
+                    "[A,A] 只产生一份 callback 描述符且 ref_count=2；第一次 remove 不调用清理，第二次才调用",
+                    "回调替身不是真实 NIC 注册"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "旧/新混合测试",
+                    "既有 A 加新 B、B；失败后 A 回到原引用，成功后各自引用正确",
+                    "未覆盖所有后端部分成功情景"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "现有失败/并发测试",
+                    "快照不变性、引用回滚、失败注销保留与并发读写",
+                    "这些不是本补丁新取得的端到端生产证明"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "真实调用方",
+                    "按 transport 注册并在成功路径同步 segment 元数据",
+                    "元数据同步与硬件资源清理仍有独立失败面"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.3.14 源码",
+                    "缺少新批内索引，不能把本次 main 修复算进该标签",
+                    "不代表所有发行构建均已做完整包含性审计"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6
+              ],
+              "text": "作者报告两项新增定向回归和 segment_manager_test 通过，负向对照可在旧实现重现重复描述符。作者还说明 pre-commit 安装受下载问题阻塞，使用格式检查和 diff 检查补充；这些是上游报告，不是本报告执行结果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "测试最有价值的不是“通过”两个字，而是明确观察第一次和最后一次 remove 的差别。若只检查最终表为空，就可能漏掉第一次注销已经撤销底层资源、第二个所有者期间失效的窗口。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：精确范围去重不等于任意重叠合并",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次身份键是地址与长度的精确组合，不是内容 hash，也不是内存区间并集。相同地址但不同长度、部分重叠范围和不同地址的相同字节，不应因为这项修复被当成同一个资源。它们是否允许注册，取决于原有接口与后端约束，不能扩大去重规则来消除表面重复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "新增 hash 表让本批新描述符的查找平均更便宜，但旧范围匹配仍会扫描快照，发布还会排序。因此不能把整条注册路径宣称为严格 O(n)，也没有本报告测得的吞吐收益。短批次可能看不出差异，重点收益是修正生命周期语义，而不是追求漂亮的复杂度标签。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "引用计数代表登记所有权，不自动记录每个在途读写。调用者仍需维持“有使用者就有有效登记”的约束，并依据实际后端完成语义处理最终注销。若底层清理失败，保留必要资源可能优于强制释放；但长期保留是否形成泄漏也要另外监控。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：回调次数与剩余引用应该能对上",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创故障假设：同批出现重复范围，首次注销后另一个使用者发生访问错误，而最终资源表又看似正常。应在合成测试中同时记录注册 callback 收到的唯一范围数、每个范围引用数、注销回调次数与剩余所有者，而不是只追查最后一次错误日志。真实后端表现可能是错误返回、数据错误或其他症状，不能在缺少复现时统一称为 use-after-free。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "为测试地址设置稳定标签，记录精确长度及每次登记/注销事件；不要把生产真实指针或客户 KV 数据放进公开报告。",
+                "把逻辑引用数、底层已注册范围数、在途 transfer 数与元数据发布状态分开监控。",
+                "失败批次重点核对原有所有者是否继续可用，以及本批新增引用是否清零；不能只要求全表变空。",
+                "注销超时或失败后，先确认资源状态与后端约定，不直接重用或释放原内存。",
+                "后续健康请求能继续、数据正确与内存最终可回收，必须作为三项独立验收。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：覆盖身份、回滚、并发与真实后端",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟执行验证；本报告均未运行",
+              "columns": [
+                "测试场景",
+                "输入或注入",
+                "必须观察"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "纯新范围",
+                    "[A,A]、[A,B,A]、大量交错重复",
+                    "首次顺序、唯一物理描述符数、每项逻辑引用均保留"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "范围边界",
+                    "同地址不同长度、部分重叠、零长度按接口约束",
+                    "不误合并，拒绝或处理行为与后端约定一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "既有/新范围混合",
+                    "旧 A 加 [A,B,B]，callback 成功/失败",
+                    "成功引用数正确，失败不伤原 A，不发布失败新项"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "重入与快照",
+                    "callback 内回调 remove；读者持有旧 snapshot",
+                    "无死锁，旧视图不可变，新视图按提交发布"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "注销失败",
+                    "最后引用清理报错，再次清理",
+                    "剩余后端状态保留，重试不重复释放已清理部分"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "实际后端",
+                    "目标 TCP/RDMA/EFA/设备后端逐一构建；并发 transfer 与注销",
+                    "数据校验、底层注册数、在途完成、资源回收分别验收"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议在无硬件单测层先固定事件序列，例如“登记两次→启动读者→释放第一个所有者→确认第二个仍可使用→停止读者→释放最后所有者”。之后再在真实后端重复同一责任序列。不要把单测替身中的立即返回语义搬到异步设备上。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：先验证责任守恒，再观察资源与服务",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议预定义准入条件",
+              "columns": [
+                "指标",
+                "定义",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "登记守恒",
+                    "每次成功逻辑登记增加一份责任",
+                    "重复输入不丢引用，也不制造重复底层身份"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "最后所有者",
+                    "引用为正时不能触发最终物理清理",
+                    "[A,A] 第一次 remove 保留，第二次才交接清理"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "失败隔离",
+                    "撤销本批增量，保留原所有者与失败清理所需状态",
+                    "零意外撤销、零无主新增引用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据与在途安全",
+                    "transfer 完成证据、内容校验与释放时点逐项对齐",
+                    "零错误复用、零数据错写，不能用回调计数替代完成"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源稳定性",
+                    "循环批注册/取消/故障后注册数、内存、句柄的趋势",
+                    "回到预定义基线，不持续增长"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务效果",
+                    "同工作负载下错误率、恢复时长、延迟和吞吐",
+                    "先过安全门，再满足预定 SLO；不预设性能提升"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：不把主干修复写成所有部署已安全",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "#5233 已合入 main；v0.3.14 的冻结源码没有本次改动，用户使用的 wheel/镜像仍需核对实际提交。",
+                "没有运行上游 C++ 单测、真实 transport 或 GPU/NPU 端到端实验。",
+                "hash 索引的平均复杂度不等于整个 addInBatch 路径严格线性，也没有证明性能提升。",
+                "精确范围重复之外的重叠注册、跨批异步完成、元数据发布失败和部分后端清理，需要各自的回归。",
+                "本篇与此前 TENT 请求/尝试计数及 RDMA 回调保活报告是不同问题：这次改变的是登记范围身份与引用责任，不应合并成一个“已修复全部生命周期问题”的结论。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "vllm-ascend-mla-tp-replica-tiering",
+    "kind": "analysis",
+    "title": "Ascend MLA 的 TP 副本声明：共享 CPU 缓存为何不能按 rank 重复计费",
+    "summary": "从缓存规格、复制规划与共享区域准入三层解释 #20766，区分主机容量去重、实际 reload 正确性和作者 A3 延迟样本。",
+    "publishedAt": "2026-11-05",
+    "reviewedAt": "2026-11-05",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "KV Cache"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Ascend #20766 合入提交",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/e04a09812d3cb8b0487b0e82dd51ba2eea6d7335",
+        "publishedAt": "2026-11-05",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 Ascend 缓存规格",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/e04a09812d3cb8b0487b0e82dd51ba2eea6d7335/vllm_ascend/core/kv_cache_interface.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 vLLM TP 复制规划",
+        "url": "https://github.com/vllm-project/vllm/blob/24420b7a341af37a9bc3186e6fc6062512e0aa58/vllm/v1/core/kv_cache_planning.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 Offloading 配置资格门",
+        "url": "https://github.com/vllm-project/vllm/blob/24420b7a341af37a9bc3186e6fc6062512e0aa58/vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 CPU tier 容量计算",
+        "url": "https://github.com/vllm-project/vllm/blob/24420b7a341af37a9bc3186e6fc6062512e0aa58/vllm/v1/kv_offload/cpu/spec.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结 Tiering 共享区域实现",
+        "url": "https://github.com/vllm-project/vllm/blob/24420b7a341af37a9bc3186e6fc6062512e0aa58/vllm/v1/kv_offload/tiering/spec.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结八项复制契约测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/e04a09812d3cb8b0487b0e82dd51ba2eea6d7335/tests/ut/core/test_kv_tp_replicas.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "冻结两卡容量与 reload 测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/e04a09812d3cb8b0487b0e82dd51ba2eea6d7335/tests/e2e/pull_request/two_card/test_cpu_offloading.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "Ascend #20766 作者说明与硬件样本",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/20766",
+        "publishedAt": "2026-11-03",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "v0.30.0 冻结规格对照",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.30.0/vllm_ascend/core/kv_cache_interface.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "PR head 对应 CI 作业",
+        "url": "https://github.com/vllm-project/vllm-ascend/actions/runs/41837103109",
+        "accessedAt": "2026-11-05"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#20766 已合入 main，为 Ascend MLA 与 SFA indexer 规格声明并保留 max_tp_shards=1。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "实际运行镜像、主机物理容量及模型输出仍需独立验收。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "运行时选中的是否为共享 Tiering，而不是进程私有 CPUOffloadingSpec？",
+      "是否按最终 block_size 与字节布局验证容量，而非硬编码 token 粒度？",
+      "全部缓存组是否满足 TP 字节相同条件，canonical_layout 是否另行改变资格？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-05 核验。#20766 于 01:46:09 UTC 合入 main，固定提交 e04a098；对照 vLLM 24420b7 与 Ascend v0.30.0 的实际源码。已读实现、八项契约和两卡 E2E 源码、PR 与 head 检查状态；本报告未执行上游测试或 NPU 实验。主分支包含不代表发行镜像包含，图和验收矩阵均是原创非实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先声明相同，再允许共享，最后验证恢复",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这项改动的价值不是把 MLA 张量压得更小，而是让已经重复存在的数据不再按每个 TP worker 重复占用主机缓存预算。对准备部署 Ascend CPU 分层缓存的读者，最先检查的应是缓存规格、规划出的复制数量和后端实际采用的布局是否一致。只看到配置里开了 offload，并不能回答这三个问题。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                9
+              ],
+              "text": "最终提交给 AscendMLAAttentionSpec 和 AscendSFAIndexerCacheSpec 设置 max_tp_shards=1，并让 indexer merge 检查和传递该字段。v0.30.0 的对应文件没有本次显式声明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里讨论 Ascend NPU。作者 A3 样本的 TTFT 变化不能变成 H20 性能结论；共享主机副本也不意味着 NPU 上的 TP 副本已经删除。最稳妥的判断是：源码补齐了启用既有去重协议的必要信息，部署是否真正节省主机容量、恢复是否正确，仍要分别证明。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：并行计算的副本不等于主机缓存的独立内容",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个 TP 模型可能把权重或查询头分给多个 rank，同时在各 rank 保留相同的潜在 KV 内容。计算时保留这些副本可以有其必要性；把它们移到共同的主机缓存时，却未必需要为相同内容保留同样多份物理存储。系统必须知道“哪些字节相同”，而不能只从张量名字或 num_kv_heads 猜测。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "上游规划按每层规格计算复制数，再对所有层取最大公约数。未知元数据返回 1；DCP 分片且 DCP>1 时也保守返回 1。这里的 1 是“不承诺可跨 rank 复用”，不是已经证明只有一个内容副本。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创容量例：假设一个已认证的逻辑缓存单元需要 B 字节，有 T 个相同 TP 副本。独立存储粗略需要 T×B，共享存储只需要 B；但实际容量还受块对齐、chunk 内 block 数和其他缓存组影响，不能把“可减少 T 倍重复字节”直接翻译为服务容量、命中率或吞吐必增 T 倍。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：规格证书、整体资格与物理计费分三层",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "字段的语义是这一层最多可拆成多少不同 TP shard。对完整复制的潜在向量和 indexer keys/scales，设置 1 使既有规划能推得 TP 个等价 rank。indexer merge 要求所有输入的声明一致，并把显式 None 原样保留，避免合并时把“未知”偷偷升级为“可共享”。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意一：信息契约与实际计费",
+              "caption": "非实测。左组是规划前提，右组是容量执行；只有通过独立的资格检查才能使用单份计费。组内顺序不代表传输已完成。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "a0",
+                  "label": "缓存规格",
+                  "detail": "每层声明复制或分片语义，未知仍保守。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "缓存规格",
+                  "tone": "control"
+                },
+                {
+                  "id": "a1",
+                  "label": "汇总复制数",
+                  "detail": "所有缓存层共同决定可复用的连续 TP rank 数。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "汇总复制数",
+                  "tone": "control"
+                },
+                {
+                  "id": "a2",
+                  "label": "检查部署资格",
+                  "detail": "还要满足拓扑、执行器与后端的共享条件。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "检查部署资格",
+                  "tone": "control"
+                },
+                {
+                  "id": "a3",
+                  "label": "选定主机布局",
+                  "detail": "得到最终 replicated_layout，不能只看单个字段。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "选定主机布局",
+                  "tone": "control"
+                },
+                {
+                  "id": "b0",
+                  "label": "选中共享后端",
+                  "detail": "Tiering 使用共享区域；私有 CPU 路径另算。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "选中共享后端",
+                  "tone": "kv"
+                },
+                {
+                  "id": "b1",
+                  "label": "确定副本数量",
+                  "detail": "认证共享时单份，否则按 worker 数量计算。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "确定副本数量",
+                  "tone": "kv"
+                },
+                {
+                  "id": "b2",
+                  "label": "对齐 chunk 字节",
+                  "detail": "实际块大小与对齐共同决定每个 chunk 成本。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "对齐 chunk 字节",
+                  "tone": "kv"
+                },
+                {
+                  "id": "b3",
+                  "label": "恢复仍待验证",
+                  "detail": "容量达标后还要验证从主机加载的 token 与数值。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "恢复仍待验证",
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "a0",
+                  "to": "a1",
+                  "label": "层级汇总",
+                  "shortLabel": "层级汇总"
+                },
+                {
+                  "from": "a1",
+                  "to": "a2",
+                  "label": "不是直接共享",
+                  "shortLabel": "不是直接共享"
+                },
+                {
+                  "from": "a2",
+                  "to": "a3",
+                  "label": "条件通过",
+                  "shortLabel": "条件通过"
+                },
+                {
+                  "from": "b0",
+                  "to": "b1",
+                  "label": "按最终布局",
+                  "shortLabel": "按最终布局"
+                },
+                {
+                  "from": "b1",
+                  "to": "b2",
+                  "label": "计算字节",
+                  "shortLabel": "计算字节"
+                },
+                {
+                  "from": "b2",
+                  "to": "b3",
+                  "label": "正确性另验",
+                  "shortLabel": "正确性另验"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "规划前提",
+                    "tone": "control",
+                    "nodeIds": [
+                      "a0",
+                      "a1",
+                      "a2",
+                      "a3"
+                    ]
+                  },
+                  {
+                    "title": "容量执行",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "b0",
+                      "b1",
+                      "b2",
+                      "b3"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "普通 replicated_layout 路径要求 use_mla、TP>1、kv_tp_replicas=TP、正的 worker 字节数，且 PP=PCP=DCP=1、world_size=TP、mp 执行器和单节点。若 canonical_layout 开启，后面的分支还会重新计算资格，不能把前面 gate 的结果当成最终值。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4,
+                5
+              ],
+              "text": "CPU tier 先按最终副本数计算每个 chunk 的字节，再做 SharedOffloadRegion 的对齐，以 cpu_bytes_to_use 整除得出容量。Tiering 明确覆盖 _uses_shared_region 为 True；普通 CPUOffloadingSpec 的平台 gate 并不会因为这次 Ascend 规格修复就自动变成共享后端。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "由此得到一个排错顺序：先记录最终规格，再看汇总复制数，然后看最终布局和选中的 spec，最后核对实际分配。任何一层发生回退，下一层都可能仍然保持多份布局；仅从某条日志出现 MLA 或 shared 字样，无法证明物理容量已经正确去重。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：契约回归、作业状态与性能样本分开看",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已核验的证据及其边界",
+              "columns": [
+                "证据",
+                "支持什么",
+                "不支持什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "冻结规格与 merge",
+                    "两个 Ascend 类型提供复制信息，未知值不被抹掉",
+                    "不证明所有混合模型整 worker 等价"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "八项契约源码",
+                    "TP2/4/8、两种层数组合、量化 indexer、DCP/混合 sibling 保守回退",
+                    "不是真实 NPU 读写结果"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "两卡 E2E 源码",
+                    "MRV2、TP2、mp、BF16 MLA 下比较容量、命中 token 与贪心输出",
+                    "测试存在不等于本报告已运行"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "head 检查与作业",
+                    "读取的 46 项检查均 success 或 skipped，A3 两卡作业成功",
+                    "未取得目标测试逐项执行清单，不能据此单独宣布该 E2E 已通过"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    10
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.30.0 文件对照",
+                    "对应类型没有本次显式 max_tp_shards 声明",
+                    "不等于逐一证明所有历史发行版本行为"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    9
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                8
+              ],
+              "text": "作者报告：一台 16 NPU 的 A3、GLM-5.2 混部实验中，开启 CPU offload 的前后外部命中率为 2.69% 与 60.31%，平均 TTFT 为 258 s 与 146 s。作者未用这组数字证明输出正确性、模型精度或吞吐；本文未复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8,
+                10
+              ],
+              "text": "PR 还保留更新后 E2E 待重跑的文字，而较新的检查状态已成功，二者必须按时间和证据粒度区分。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上述样本适合提出“有限主机预算下，重复副本可能挤出可复用内容”的假设，不足以建立普遍速度承诺。命中率、平均 TTFT 和设备执行速度是三个指标；当更多请求跳过重算时，服务等待时间可能改变，即使算子本身没有变快。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：容量收益依赖复用，安全依赖整体认证",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个复制元数据字段看起来像优化提示，实质上是一项允许共享字节的正确性承诺。若错误地把分片内容当副本，共享区域可能把本来不同的值合成一份。因此保守回退不是无用开销，而是对未认证布局的安全边界。未知 sibling、DCP、混合状态模型和新量化布局都应继续单独审查。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "本次契约测试用真实规格和规划函数，覆盖 GLM 78 层 MLA/21 层 indexer 与 DeepSeek 61/61 的布局组合；它还加入一个分片 sibling，要求整体复制数回到 1。测试不能替代所有实际模型生成规格的验证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "容量去重最可能帮助重复前缀较多、主机缓存成为瓶颈的负载。低复用、主机预算充足或加载成本高于重算成本时，命中率或延迟未必改善。应同时观察 CPU 内存、缓存写入与恢复时间、实际减少的重算，以及 TTFT/TPOT 尾延迟，避免只展示单个平均值。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：把“容量少了一半”与“数据少存了一半”分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创故障假设一：TP 增大后 CPU tier 可容纳的逻辑块数按比例下降。先比较配置预算、resolved block_size、每层 page 字节、对齐与最终副本数；若复制数量仍为 1，检查未知或分片 sibling，而不是直接把预算加大掩盖规划问题。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创故障假设二：主机容量看起来增加，但热前缀恢复后的输出偏离。此时不能用命中率升高证明优化成功。需要清掉设备前缀、保留主机 tier，以冷参考对照恢复后的 tokens，并跟踪加载字节与 rank 一致性；同时确认没有误开 canonical 或其他不同布局路径。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "记录 Ascend/vLLM 固定提交、CANN/驱动、模型权重与量化、MRV1/2、各并行维度、offloading spec 和 canonical_layout。",
+                "日志同时保留 planner 复制数和 spec 最终 replicated_layout，不能只记录原始启动参数。",
+                "容量错误、加载错误、输出不一致、转移超时与 SLO 退化分开计数；发现正确性失败立即停止放量。",
+                "不要用进程 RSS 简单求和计算共享区域的物理成本；共享页会被多个进程同时映射，需结合共享内存对象和系统内存口径。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：先复现规划，再验证实际恢复",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "全部为拟执行，不是已取得结果",
+              "columns": [
+                "层次",
+                "实验变量",
+                "观察/参考"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "源码契约",
+                    "base/patch，TP2/4/8，MLA/indexer/unknown/sharded sibling",
+                    "规划复制数与 merge 语义；负向配置应保守"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "实际配置生成",
+                    "目标模型与量化、MRV1/2、PP/PCP/DCP、mp/Ray、canonical 开关",
+                    "最终 specs 与 layout，不以模型名替代字节认证"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "两卡主机容量",
+                    "TP2、固定预算、初始化后真实 block_size",
+                    "独立计算单份 chunk 字节与预期容量，核对运行指标"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复正确性",
+                    "设备缓存清空而 host 保留，冷/热请求、连续多次 reload",
+                    "cached tokens、greedy tokens、数值容差、rank 结果一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "复用负载",
+                    "零复用/中复用/高复用，短/长输入，冷启动与稳定期",
+                    "容量、命中率、转移字节、TTFT/TPOT 分位数与吞吐"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期",
+                    "取消、预算紧张、进程退出与重新启动",
+                    "共享区域是否残留或错误复用，后续健康请求正确"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "现有两卡测试用初始化后的 block_size 构造超过一块的 prompt，以模型层数、latent 维度、RoPE 维度和 BF16 字节数算独立容量，再重置设备前缀但保留 connector，要求恢复一块且生成 token 相同。它使用 eager；图模式与其他模型不能由此直接认证。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：容量、内容与服务效果是三道独立门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议在测试前固定的验收标准",
+              "columns": [
+                "指标",
+                "口径",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "资格一致",
+                    "规格→复制数→最终布局→后端逐层比对",
+                    "支持组合启用，未知和不支持组合保守回退"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "逻辑容量",
+                    "floor(预算 / 对齐后的真实 chunk 字节)",
+                    "与独立计算一致，不接受硬编码块粒度"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "物理内存",
+                    "共享对象实际占用与系统内存，区别 RSS 重复映射",
+                    "没有重复分配或未释放对象增长"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复内容",
+                    "冷参考与主机 reload 的 tokens/数值/缓存边界",
+                    "通过预设一致性或容差；零错误块复用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务表现",
+                    "同负载、同输出预算、相同冷/热阶段，分开报 TTFT/TPOT",
+                    "先过正确性门，再满足事先定义的 SLO 和成本预算"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：镜像包含关系与目标硬件仍需闭环",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "已确认 main 合入及 v0.30.0 文件缺少本次声明；未确认任何新发行镜像或用户现用包已经包含。",
+                "最新 PR head 检查成功不替代目标 E2E 的逐项日志；本文没有执行 CPU 契约测试或 NPU 测试。",
+                "A3 GLM-5.2 的作者样本不是 GLM-5.3、DeepSeek-V3.2、混合 GLM-5.3-Flash 或 H20 的验证。",
+                "canonical_layout、其他共享后端和进程私有 CPUOffloadingSpec 必须按实际源码分开验收。",
+                "没有建立所有图模式、异常退出和共享区域生命周期的完整生产证据，不建议仅因命中率样本好看就全量升级。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-trtllm-prefill-query-offset-lifetime",
     "kind": "analysis",
     "title": "vLLM 草稿预填充：CUDA Graph 读到的是哪一份偏移",
