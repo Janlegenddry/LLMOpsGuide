@@ -677,6 +677,1773 @@
   },
   {
     "schemaVersion": 1,
+    "id": "sglang-held-decode-abort-inventory",
+    "kind": "analysis",
+    "title": "SGLang 暂停后的取消边界：无 KV 的 held 请求仍需要终态",
+    "summary": "以 #43905 固定提交解释 held decode 取消、统一请求清单与按操作区分的 idle；重点验证取消后不复活、缓存责任清理及健康检查不能替代排空。",
+    "publishedAt": "2026-11-03",
+    "reviewedAt": "2026-11-03",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang 固定提交 #43905",
+        "url": "https://github.com/sgl-project/sglang/commit/ba1ed00dfe87a63c99a6c15d888a4acea75cf469",
+        "publishedAt": "2026-11-03",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "scheduler.py：请求清单、取消与空闲判定",
+        "url": "https://github.com/sgl-project/sglang/blob/ba1ed00dfe87a63c99a6c15d888a4acea75cf469/python/sglang/srt/managers/scheduler.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "decode.py：held/retracted 队列",
+        "url": "https://github.com/sgl-project/sglang/blob/ba1ed00dfe87a63c99a6c15d888a4acea75cf469/python/sglang/srt/disaggregation/decode.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "暂停恢复单元测试",
+        "url": "https://github.com/sgl-project/sglang/blob/ba1ed00dfe87a63c99a6c15d888a4acea75cf469/test/registered/unit/managers/test_scheduler_pause_generation.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "internal_state.py：sampling mask 活跃性检查",
+        "url": "https://github.com/sgl-project/sglang/blob/ba1ed00dfe87a63c99a6c15d888a4acea75cf469/python/sglang/srt/managers/scheduler_components/internal_state.py",
+        "accessedAt": "2026-11-03"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "固定提交 #43905 增加 held decode 取消路径，并让空闲与 sampling mask 检查读取统一请求清单。",
+        "sourceIndices": [
+          0
+        ]
+      }
+    ],
+    "questions": [
+      "暂停期取消后恢复，是否仍能观察到被取消请求重新进入调度？",
+      "实际镜像是否包含该提交，且完整异步资源排空已通过？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验日 2026-11-03；读取固定提交 ba1ed00dfe87a63c99a6c15d888a4acea75cf469 的补丁、调度/解码/内部状态源码与暂停恢复单元测试。原文提交时间 2026-11-03 00:24:58 UTC。本文是 main 源码变更解读，未核实进入任何正式或预发布标签；未运行测试、GPU、H20 或生产实验。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：取消必须覆盖暂停期的逻辑所有权",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次值得关注的不是吞吐优化，而是一个容易被资源监控掩盖的终态漏洞：请求可以暂时不持有 KV，却仍有资格在恢复时重新进入执行。生产判断应同时回答“还有哪些请求活着”和“本次操作必须等待哪些资源退出”，不能拿显存下降或 GPU 无任务代替取消完成。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "固定补丁新增 held 请求的终止处理；它与携带 KV backup 的 retracted 请求走不同清理分支。统一清单也被用于部分控制判断。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议把升级准入放在暂停、取消、恢复的交叉回归上。即使定向单测通过，也只证明受控路径的状态转移，不足以承诺异步传输已停止、所有 rank 一致或客户端只收到一次终态。这里没有现网性能改善数据。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：调度不可见、资源为空、业务结束是三件事",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以把一个请求拆成三份账：客户端承诺账记录是否仍欠响应，调度资格账记录是否会继续被选中，资源账记录 KV、临时输入与缓存关联是否仍归它管理。暂停通常只改变第二份账的可执行性，而不是把第一份账结清。若把“暂时不能运行”误当“已经结束”，取消就容易只搜索运行队列，漏掉恢复容器。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学场景：A 与 B 一起暂停，A 被用户取消，B 继续保留；恢复时只能重新登记 B。这里不用假设 A 还占有设备 KV，也不用先制造 GPU hang。错误的可观测后果可能是取消后继续计算、重复响应或状态更新被意外阻挡，而不是立即显存溢出。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "本提交注释区分 held 不持 KV 与 retracted 持有 backup；decode 组件分别暴露 prealloc、retracted 和 held 三类请求。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：一份请求清单，多种操作责任",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "取消路径的关键是先从可恢复容器摘除匹配项，再完成适合该状态的终止责任。若只设置 finished 标记却保留恢复入口，后续代码仍可能把旧对象重新排队；若只移除容器而不完成缓存与输出责任，客户端和关联状态又可能悬挂。这两种失败应分别观测。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意：held 生命周期与控制判断分开",
+              "caption": "非实测示意。上组描述 held 请求，下一组是控制观察，不表示所有判断必须按图顺序执行；没有绘制任何 DMA 安全保证。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "h",
+                  "label": "暂停保留",
+                  "detail": "逻辑请求存活，当前 held 路径不依赖 KV 持有。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "kv"
+                },
+                {
+                  "id": "a",
+                  "label": "匹配取消",
+                  "detail": "从 held 容器移出匹配项，避免恢复重新选中。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "kv"
+                },
+                {
+                  "id": "f",
+                  "label": "终止清理",
+                  "detail": "结束请求并处理缓存关联和取消输出。",
+                  "column": 0,
+                  "row": 2,
+                  "tone": "kv"
+                },
+                {
+                  "id": "r",
+                  "label": "恢复幸存者",
+                  "detail": "只有未取消的保留请求有资格重新登记。",
+                  "column": 0,
+                  "row": 3,
+                  "tone": "kv"
+                },
+                {
+                  "id": "l",
+                  "label": "统一请求清单",
+                  "detail": "运行时读取各组件持有的请求，避免缓存旧队列引用。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "m",
+                  "label": "配置变更检查",
+                  "detail": "针对未结束的 sampling mask 请求判定限制。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "i",
+                  "label": "操作专用 idle",
+                  "detail": "按健康探针或普通空闲目的选择阻塞集合。",
+                  "column": 1,
+                  "row": 2,
+                  "tone": "control"
+                },
+                {
+                  "id": "q",
+                  "label": "异步资源门",
+                  "detail": "请求集合之外仍需核对传输、缓存与流水线状态。",
+                  "column": 1,
+                  "row": 3,
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "h",
+                  "to": "a",
+                  "label": "收到匹配取消"
+                },
+                {
+                  "from": "a",
+                  "to": "f",
+                  "label": "清理并输出终态"
+                },
+                {
+                  "from": "h",
+                  "to": "r",
+                  "label": "仅未取消请求恢复"
+                },
+                {
+                  "from": "h",
+                  "to": "l",
+                  "label": "请求存在性可见"
+                },
+                {
+                  "from": "l",
+                  "to": "m",
+                  "label": "检查请求属性"
+                },
+                {
+                  "from": "l",
+                  "to": "i",
+                  "label": "选择对应阻塞集合"
+                },
+                {
+                  "from": "i",
+                  "to": "q",
+                  "label": "普通空闲还需独立资源检查"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "held 请求责任",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "h",
+                      "a",
+                      "f",
+                      "r"
+                    ]
+                  },
+                  {
+                    "title": "控制观察责任",
+                    "tone": "control",
+                    "nodeIds": [
+                      "l",
+                      "m",
+                      "i",
+                      "q"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "scheduler.request_lists 在调用时读取 PD 组件，检测不同组件名称冲突。普通 idle 排除 decode_held 等特定清单，但保留其他资源门；ignore_waiting 也会检查等待请求是否持有 KV。健康检查采用不同的忙集合。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这意味着“统一”统一的是可发现性，而不是所有操作共享同一个布尔答案。健康探针需要知道是否存在可携带健康信号的 GPU 工作，破坏性缓存操作关注资源是否仍可被访问，两者不应共用未经解释的计数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "sampling mask 检查现在遍历清单并排除 finished 请求。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：固定源码和单测各自证明到哪里",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已阅读证据，不把测试文件当执行结果",
+              "columns": [
+                "来源",
+                "可确认内容",
+                "证据边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "固定提交",
+                    "增加 held 取消与请求清单使用",
+                    "合入 main，不证明标签包含或部署成功"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "decode.py",
+                    "匹配使用 abort_all 或 rid 前缀，移出 held/retracted",
+                    "前缀是接口行为，不能误写为精确 ID"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "scheduler.py",
+                    "held 结束后调用缓存侧清理并发送取消输出",
+                    "源码调用不等于真实传输已经停止"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "暂停单测",
+                    "取消 A、保留 B，恢复只重新添加 B；断言缓存 finish 调用",
+                    "mock 测试，无 GPU/网络/多 rank 证据"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "内部状态",
+                    "读取活跃清单中的未结束 sampling mask 请求",
+                    "不证明所有配置更新均安全"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本报告的机制推导以函数责任为边界，没有从测试命名推断线上故障频率，也没有把一个队列修复扩展成全局恰好一次保证。提交日期用于定位变更，不能代替运行镜像身份。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：集中清单减少遗漏，但不消除所有权审计",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "集中入口能减少每个功能自己维护队列名单的漂移，但新组件仍须正确登记自己的请求。遗漏登记会让多个消费者同时失明；重复登记则可能让统计和清理产生歧义。因此新增队列时应把“谁持有、何时转移、何时移出”作为审查项，而不是只增加一条监控曲线。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "普通 idle 对 held 的排除是有目的的控制设计，不是“held 已完成”的断言。若下游把这个判断用于另一种破坏性操作，必须重新证明该操作不会破坏保留请求恢复所需的状态。不能把函数名当跨场景安全证书。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "取消 ID 的前缀语义尤其值得测试：若业务 ID 设计存在共同前缀，一次取消可能覆盖多个请求。这不是本报告判定的新缺陷，而是需要与调用方约定一致的边界。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：把取消响应与恢复行为放在同一条追踪中",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创故障假设一：取消响应已到，但请求随后在恢复后再次占用计算。诊断应关联逻辑请求 ID、容器转移和恢复登记事件；只看 HTTP 状态码会误判修复完成。原创假设二：没有请求在 GPU 上运行，却有异步缓存或传输仍持有资源；应采集各资源门状态，而不是为了让维护动作继续而强行忽略等待项。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "部署前记录完整 commit、镜像 digest、PD 角色、TP/PP、缓存后端及暂停方式。H20 只是目标硬件之一，不能由控制代码直接推出其性能结论。",
+                "以测试流量追踪 A/B 两请求：取消时刻、终态时刻、恢复时刻和后续调度选择，确认 A 不复活、B 不被误杀。",
+                "清理指标需区分缓存句柄、设备 KV、host backup、异步操作和输出责任；计数降低不是资源可复用的充分证据。",
+                "发现取消重复、终态丢失或恢复挂起时停止放量，保留前后版本与输入，用可重放测试定位，而不是修改线上 timeout 掩盖问题。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先验证状态，再验证真实资源",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "计划实验矩阵；本次均未执行",
+              "columns": [
+                "环境/变量",
+                "注入与对照",
+                "观测目标"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU 单测，修复父版本/固定提交",
+                    "held A/B，取消 A 后恢复",
+                    "A 终态，B 恢复，容器无 A"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "CPU，ID 形态",
+                    "独立 ID、共享前缀、abort_all、重复取消",
+                    "取消覆盖符合调用契约，幸存者准确"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GPU 单机 PD，固定模型",
+                    "无 KV held 与带 backup retracted 分别取消",
+                    "缓存责任分别结算，恢复无旧对象"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20 目标拓扑，TP/PP 分层",
+                    "暂停与权重更新交错，等待持 KV 请求",
+                    "维护拒绝/允许符合实际资源门"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "有 HiCache/异步传输的隔离环境",
+                    "延迟完成、取消与恢复交错",
+                    "未结束访问不被提前回收"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要一次同时打开新后端、新模型和新暂停流程。先保持相同请求集与依赖，只切换提交，再扩展并发与拓扑。真实客户端终态、调度事件和资源事件必须使用同一请求关联，时间戳偏差也应记录。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：用安全不变量，别用单一吞吐分数",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预定义验收口径；阈值需在执行前绑定测试规模和业务预算",
+              "columns": [
+                "指标",
+                "口径",
+                "准入条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "取消后复活数",
+                    "已确认取消的请求在恢复后重新入队/运行次数",
+                    "测试集为 0"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "误取消数",
+                    "未匹配请求被结束或未能恢复的数量",
+                    "测试集为 0"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "终态完整性",
+                    "每请求对外终态与内部结束事件对应",
+                    "无丢失、无业务可见冲突终态"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源排空",
+                    "按资源类别统计未完成访问和残留责任",
+                    "满足对应维护操作契约，不能只看显存"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务代价",
+                    "同负载 p99 TTFT/TPOT、暂停恢复耗时、错误率",
+                    "相对基线落在预先约定预算内，不虚构百分比"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：版本包含与端到端时序仍未闭合",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "尚未确认哪个正式/预发布版本包含该提交，也未核对用户运行镜像。",
+                "已读单元测试但没有执行；多 rank、网络异常、host staging 和缓存后端组合仍待真实环境验证。",
+                "request_lists 的“每请求至多一处”契约是否覆盖全部可选组件，需要进一步动态不变量检查。",
+                "本文没有证明全系统恰好一次取消、瞬时释放或性能收益；不会将源码变化包装成 H20 基准结论。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "ascend-mooncake-unallocated-ack-hash",
+    "kind": "analysis",
+    "title": "Ascend Mooncake V2：没有发起 KV 传输，也可能欠一次完成通知",
+    "summary": "从 #20213 分解零分配请求的远端结算、截短 prompt 的缓存身份更新及 Python API 兼容边界；用控制流与内容身份两套不变量设计回归。",
+    "publishedAt": "2026-11-02",
+    "reviewedAt": "2026-11-03",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM-Ascend #20213 固定提交",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/bf2adf65130ffd6b7bb3ef77ba2b50122d6a62fe",
+        "publishedAt": "2026-11-02",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "Mooncake pull_scheduler.py",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/bf2adf65130ffd6b7bb3ef77ba2b50122d6a62fe/vllm_ascend/distributed/kv_transfer/kv_p2p/mooncake/pull_scheduler.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "Mooncake base_scheduler.py",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/bf2adf65130ffd6b7bb3ef77ba2b50122d6a62fe/vllm_ascend/distributed/kv_transfer/kv_p2p/mooncake/base_scheduler.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "pull scheduler 单元测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/bf2adf65130ffd6b7bb3ef77ba2b50122d6a62fe/tests/ut/kv_offload/mooncake_v2/test_pull_scheduler.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "传输引擎注册生命周期",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/bf2adf65130ffd6b7bb3ef77ba2b50122d6a62fe/vllm_ascend/distributed/kv_transfer/utils/mooncake_transfer_engine.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "测试辅助对象与 hash 替身",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/bf2adf65130ffd6b7bb3ef77ba2b50122d6a62fe/tests/ut/kv_offload/mooncake_v2/helpers.py",
+        "accessedAt": "2026-11-03"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "固定提交为未分配远端 prefill 请求补充完成通知，并在 P 侧截短 prompt 后重建 block hashes。",
+        "sourceIndices": [
+          0
+        ]
+      }
+    ],
+    "questions": [
+      "无 worker 传输时，P 侧仍持有的 KV 是否及时完成结算？",
+      "截短后的 token 序列、哈希和缓存查询是否一致？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验日 2026-11-03。读取固定提交 bf2adf65130ffd6b7bb3ef77ba2b50122d6a62fe 补丁、pull/base scheduler、注册接口与相关单元测试。原文提交时间 2026-11-02 08:16:01 UTC。属 main 变更，未确认正式/预发布标签包含；未运行 NPU、Mooncake 网络或真实 hash 回归。NPU 路径不等于 GPU/H20 路径。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：零数据工作不代表零控制责任",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这项修复连接了两类容易混淆的账：远端资源是否仍等待本次请求结算，以及缓存键是否仍代表当前内容。请求在 D 侧尚未分配就结束，不能据此推断 P 侧没有保留 KV；P 侧少处理一个 token，也不能继续沿用代表较长输入的缓存身份。两者都应在调度层明确处理，而不是等待底层内核“自然收尾”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "固定提交同时调整零分配结束通知、截短后 hash 更新，并移除 Python 层不支持的断连调用。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "工程建议是分别验证控制结算与内容一致性，再观察延迟释放占用和服务尾延迟。没有证据证明此次变更带来某个吞吐百分比，也不能从一个 mock 单测推断生产网络下的 ACK 必达。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：P/D 之间既传数据，也转移责任",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "在分离推理里，P 完成计算并不总意味着它可以立即重用相关页面。D 是否取走、拒绝或不再需要这些状态，是另一条控制协议的职责。如果只有真正进入 worker 的任务才会发结束通知，那么在更早阶段被拒绝的请求就可能绕过通知路径，留下等待超时的远端责任。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "另一种边界发生在状态模型的输入处理：为了阶段衔接调整 token 序列后，缓存身份必须跟着改变。哈希不是一个仅影响性能的装饰字段，它参与决定哪些状态可被当作相同前缀复用。内容变了而身份不变，最危险的结果不是命中率差，而是错误的等价关系。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里讨论的是 vLLM-Ascend 的 Mooncake V2 代码路径。真实部署还依赖 vLLM 核心、Mooncake 版本、CANN/驱动及具体 NPU；不能把它自动套用到 CUDA、NCCL 或 H20。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：结束通知和缓存身份分别闭合",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "pull scheduler 的结束回调在 do_remote_prefill 仍为真时，按远端字段排入完成通知队列，随后清除标记并返回不延迟本地释放。正常分配路径会先清除同一标记，避免再走这条补偿入口。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意：零分配终态的双边责任",
+              "caption": "非实测。D 的结束回调只安排控制通知，不发起 KV 读取；P 侧释放可用性与网络失败后的超时处置仍须实验验证。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "d0",
+                  "label": "未分配即结束",
+                  "detail": "请求仍带远端 prefill 意图，尚未进入 worker 传输。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "d1",
+                  "label": "通知入队",
+                  "detail": "使用远端身份安排完成消息，清除本地一次性意图。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "d2",
+                  "label": "通知线程",
+                  "detail": "控制消息发送与回复检查独立于 KV 数据搬运。",
+                  "column": 0,
+                  "row": 2,
+                  "tone": "control"
+                },
+                {
+                  "id": "d3",
+                  "label": "本地返回",
+                  "detail": "结束回调返回，不意味着远端已经完成清理。",
+                  "column": 0,
+                  "row": 3,
+                  "tone": "control"
+                },
+                {
+                  "id": "p0",
+                  "label": "保留责任",
+                  "detail": "远端可能仍等待本请求不再需要 KV 的信号。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "communication"
+                },
+                {
+                  "id": "p1",
+                  "label": "收到完成消息",
+                  "detail": "根据请求身份处理控制结算。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "communication"
+                },
+                {
+                  "id": "p2",
+                  "label": "释放可用性待验",
+                  "detail": "真实分配器可重用时刻必须独立观察。",
+                  "column": 1,
+                  "row": 2,
+                  "tone": "communication"
+                },
+                {
+                  "id": "p3",
+                  "label": "失败超时路径",
+                  "detail": "通知失败时的延迟回收是回退，不是立即成功。",
+                  "column": 1,
+                  "row": 3,
+                  "tone": "communication"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "d0",
+                  "to": "d1",
+                  "label": "未完成传输意图仍在"
+                },
+                {
+                  "from": "d1",
+                  "to": "d2",
+                  "label": "提交控制工作"
+                },
+                {
+                  "from": "d1",
+                  "to": "d3",
+                  "label": "回调返回"
+                },
+                {
+                  "from": "d2",
+                  "to": "p1",
+                  "label": "消息实际到达时"
+                },
+                {
+                  "from": "p0",
+                  "to": "p1",
+                  "label": "按身份结算"
+                },
+                {
+                  "from": "p1",
+                  "to": "p2",
+                  "label": "实际资源结果待验"
+                },
+                {
+                  "from": "d2",
+                  "to": "p3",
+                  "label": "失败进入回退观察"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "D 侧请求与通知",
+                    "tone": "control",
+                    "nodeIds": [
+                      "d0",
+                      "d1",
+                      "d2",
+                      "d3"
+                    ]
+                  },
+                  {
+                    "title": "P 侧与故障边界",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "p0",
+                      "p1",
+                      "p2",
+                      "p3"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "通知线程会发送 DONE_RECVING 并校验 ACK；异常日志明确依赖 P 的延迟释放超时。缺少远端字段的路径只警告但仍清除标记；字段存在也不等于字段值正确。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此监控应至少区分“排入队列”“发送/回复成功”“远端责任结清”“页面可重用”四个时刻。把第一个时刻标为 transfer_success 会制造错误安全感，也会掩盖控制网络压力。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "base scheduler 在满足状态模型截短条件时移除最后 token，调整计数，清空旧 block hashes 并调用更新，再设置已截短标记。该操作位于本地 prefix 查询之前。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学例：输入 [a,b,c,d,e] 改为 [a,b,c,d] 后，即使仍保留完整块前缀，也应由实际 hash 规则重新决定可用键。不能凭肉眼认定“只删尾 token，不影响任何整块”，因为块边界、额外 hash 输入和状态模型规则可能改变复用资格。此例不是实际 hash 算法或实测结果。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码、mock 断言与原生接口不能混为一谈",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已读固定版本证据",
+              "columns": [
+                "证据",
+                "支持的窄结论",
+                "不支持的扩张"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#20213 固定补丁",
+                    "三类变更同次提交",
+                    "正式版本已发布、已部署"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "pull scheduler",
+                    "未分配结束走 scheduler 通知队列",
+                    "ACK 必达或远端即时释放"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "base scheduler",
+                    "截短后重建 hash，已有标记防止再次截短",
+                    "所有模型的缓存键已独立复现"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "pull 单测",
+                    "断言未分配时通知一次且不进入 worker 收取集合；已排入 worker 时不重复补偿",
+                    "网络故障时端到端恰好一次"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "helper",
+                    "hash 更新为测试替身",
+                    "真实哈希算法正确性证明"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "注册接口",
+                    "逐地址 unregister_memory，失败报错；不再调用 disconnect_all_peers",
+                    "原生断连时序与所有设备 DMA 已安全排空"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                4
+              ],
+              "text": "注册代码注释将 peer 断开归于 Ascend Direct 的 unregister_memory。本次未独立追溯原生实现，因此只把它视为代码作者对底层契约的说明，不升级成已验证的硬件保证。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：补偿控制路径减轻超时等待，也引入独立可观测面",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "把早期退出从 worker 路径中分离是合理的：没有必要为了发送终止信号而伪造一次数据传输。但新控制入口也需要自己的队列长度、发送失败和身份关联观测。请求已结束并不意味着后台工作可以无人管理；大量早拒绝可能把负载从数据面转移到控制面。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "清除一次性标记有助于避免重复安排，但它不是分布式事务。消息丢失、进程退出、对端已清理等场景必须依赖协议本身的幂等性与回退设计，不能靠本地 bool 推出恰好一次。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "重建 hash 带来额外 CPU 工作的可能性，但这里没有成本数据。正确性应先通过，再测实际长 prompt、缓存命中率与调度 CPU 时间。不能为了省一点未经测量的开销，接受内容和身份不一致。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：长尾占用不一定来自 KV 带宽",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创故障假设：在 D 容量紧张或请求早期取消时，P 的延迟释放占用升高，但网络字节数没有同比增加。此时要检查“已终止但远端仍待结算”的请求，不应先把问题归咎于 RDMA 吞吐。对照正常完成、分配后取消和分配前取消三种路径，才能看见缺失责任的位置。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "缓存侧的异常可能表现为只在特定 prompt 长度或状态模型出现差异。诊断应保留模型身份、token 序列长度、实际块粒度、截短前后 hash 数量以及 prefix 命中结果，使用合成公开输入。不要把用户内部 prompt 或客户日志带入公开报告。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "灰度固定 vLLM/Ascend/Mooncake/CANN 与驱动身份，先验证实际产物包含提交；不以发布时间推断依赖匹配。",
+                "记录通知入队、发送成功、远端确认和 KV 可复用之间的分段延迟，遇超时要区分排队、连接、ACK 与释放延迟。",
+                "sleep/wake 或注销内存回归单独安排，不能用请求取消测试代替注册生命周期测试。",
+                "若 hash 参考对照不一致或资源提前复用，立即停止放量并回到已验证版本；不通过加大超时掩盖语义错误。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：控制故障、内容边界、注册生命周期三条轴",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "计划矩阵；均未执行",
+              "columns": [
+                "环境与变量",
+                "动作",
+                "需要的观测"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU 单测，父版本/固定提交",
+                    "未分配取消、已入 worker、重复结束",
+                    "通知资格与 worker 集合分别正确"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "NPU P/D 隔离环境",
+                    "拒绝/取消发生于首次分配之前",
+                    "无数据传输仍有结算，P 占用最终收敛"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "控制网络故障注入",
+                    "延迟、丢回复、线程停止、对端重启",
+                    "失败可见、回退时限明确、无错误提前复用"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "实际 hash 与状态模型",
+                    "块边界前后长度、token 与 embeds、重复截短",
+                    "新 hash 与独立重建参考一致，缓存开关结果一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "固定 Mooncake 产物",
+                    "sleep/wake、注销失败与重新注册",
+                    "API 可用性、注册状态、真实设备访问安全"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "实验不能只跑一个“正确答案”样本。建议选覆盖块边界的长度集合并关闭随机采样，比较 prefix cache 开/关及截短前后独立参考。在硬件允许时再增加并发、TP/PCP 等维度，每次只改变一个主要因素。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：结算及时性不能抵消内容错误",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "执行前冻结口径和观测窗",
+              "columns": [
+                "指标",
+                "定义",
+                "准入"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "漏结算请求",
+                    "本应通知但无成功通知/明确回退终态的请求",
+                    "测试观测窗内为 0"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "释放收敛",
+                    "结束后 P 侧相关责任与可用块恢复",
+                    "在已设定回退时限内收敛，且不早于访问安全点"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "hash 一致性",
+                    "实际截短路径与独立重建参考逐项比较",
+                    "所有测试样本一致"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "输出正确性",
+                    "缓存开/关及新旧路径对照",
+                    "满足模型既定精度门，零错误缓存复用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成本与尾延迟",
+                    "控制队列、调度 CPU、TTFT/TPOT、峰值保留 KV",
+                    "不超过预先定义业务预算；不臆造提升幅度"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：底层协议、正式标签与真实模型仍需闭环",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "未确认包含该提交的正式/预发布版本；当前源码发现不构成升级推荐。",
+                "没有运行测试或 NPU 实验，未独立验证实际 block hash 实现和跨进程 ACK 幂等性。",
+                "未追溯 Ascend Direct 原生注销的断连与 DMA 生命周期；Python 注释不足以证明全部安全边界。",
+                "远端字段缺失、无效值、请求身份复用及进程崩溃场景需补充测试，不声称本提交已覆盖。",
+                "没有 GPU/H20 对等结果，也没有吞吐、回收时间或错误率实测数据。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "sglang-v0-5-23",
+    "kind": "release",
+    "title": "SGLang v0.5.23 正式发布：把失败 ACK、投机参数和运行依赖纳入升级门禁",
+    "summary": "v0.5.23 已从标签进入正式发布。本文核对固定源码，区分 NIXL 拒绝提交、已排空失败与 Mori Failed 状态，给出 H20/P-D 升级的兼容性、故障注入及性能验收矩阵。",
+    "publishedAt": "2026-11-02",
+    "reviewedAt": "2026-11-03",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang v0.5.23 正式发布说明",
+        "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.23",
+        "publishedAt": "2026-11-02",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "固定标签 NIXL 连接与失败处理",
+        "url": "https://github.com/sgl-project/sglang/blob/297e54fd105e974cdf401e5b4d20253a22c16f90/python/sglang/srt/disaggregation/nixl/conn.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "固定标签 Mori 连接与延迟 ACK",
+        "url": "https://github.com/sgl-project/sglang/blob/297e54fd105e974cdf401e5b4d20253a22c16f90/python/sglang/srt/disaggregation/mori/conn.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "固定标签依赖声明",
+        "url": "https://github.com/sgl-project/sglang/blob/297e54fd105e974cdf401e5b4d20253a22c16f90/python/pyproject.toml",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "固定标签投机解码参数处理",
+        "url": "https://github.com/sgl-project/sglang/blob/297e54fd105e974cdf401e5b4d20253a22c16f90/python/sglang/srt/arg_groups/speculative_hook.py",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "固定标签 NIXL 延迟释放单元测试",
+        "url": "https://github.com/sgl-project/sglang/blob/297e54fd105e974cdf401e5b4d20253a22c16f90/test/registered/unit/disaggregation/test_nixl_deferred_kv_release.py",
+        "accessedAt": "2026-11-03"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "官方 v0.5.23 页面标为 Latest，显示 11 月 2 日 22:14 发布，关联 297e54f 标签提交。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本文未运行 GPU、H20 或生产回归，正式发布不等于本地部署准入。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际镜像与依赖是否对应固定发布产物？",
+      "P/D 故障后是否避免提前复用，并在既定回退时限内收敛？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验日 2026-11-03。正式发布：2026-11-02，页面显示 22:14 UTC；Atom updated 为 2026-11-02T22:14:10Z，updated 不单独当作 created_at。页面标 Latest，无预发布标记。固定标签提交 297e54fd105e974cdf401e5b4d20253a22c16f90。阅读完整发布清单并定向核对 NIXL、Mori、依赖、投机参数和 NIXL 单测；本文聚焦升级准入，不声称逐项深解全部发布内容。没有执行测试、镜像安装、GPU/NPU 或生产实验。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：可以进入候选升级池，不能跳过故障与依赖准入",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "新变化是正式发布已经发生，不再只是一个可见标签。对 H20 运维，优先级应是确认产物身份、清除失效启动参数、验证 P/D 失败后的资源交接，再评估模型与负载对应的收益。把“官方发布”和“我方可安全升级”拆成两道判断，才能避免一次变更同时混入框架、依赖和优化开关。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "发布清单列出 #45973 延迟释放失败保护以及 #45043 删除 speculative-skip-dp-mlp-sync；默认 NVIDIA 镜像入口为 CUDA 13。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "特别注意：NIXL 最终源码不是所有 ERR 一律不 ACK。它区分提交被拒绝、状态未排空，以及已 settle 的失败。Mori 的 Failed 状态走另一套 poison 判断。按初始 PR 标题概括所有后端，可能直接误导故障验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下文机制解释依赖冻结源码，不把后续 main 修复算进该版本；发布页中的其他硬件基准也不转化成 H20 收益承诺。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：一次升级跨过软件身份、协议责任和服务预算三层",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "版本号解决“准备运行哪份软件”，协议解决“谁还可能访问哪块资源”，SLO 解决“用户得到怎样的服务”。三者相互影响却不能相互证明。一个异常请求结束，仍可能留下异步写入；一个补丁合入，仍可能没有进入镜像；一次吞吐提高，也可能来自更长排队或较低成功率。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学场景：请求 A 在 D 侧占有页 X，P 已向 X 发起写入。A 被取消后，新请求 B 很快获得同一页。若释放依据只是业务失败而不是访问责任结束，B 的内容可能被迟到写覆盖。这个例子解释为何释放确认需要比“请求报错”更强的证据，不代表已在用户环境观察到该故障。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "同样，升级脚本里保留旧投机开关会让参数兼容性成为独立故障面。即使删掉开关能够启动，也还需要检查默认行为是否符合原有并行布局，而不是把启动成功当作性能与正确性都未变。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：数据写入完成与控制确认必须分别建模",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "原创示意：KV 写入责任与发布准入双泳道",
+              "caption": "教学示意，非实测。左侧表达失败后的保守控制分支，右侧是升级验收顺序；不以超时推导 DMA 已停止。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "w",
+                  "label": "提交 KV 写入",
+                  "detail": "数据面可能仍持有 D 页的访问责任。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "kv"
+                },
+                {
+                  "id": "c",
+                  "label": "分类失败证据",
+                  "detail": "区分 post 拒绝、未排空和已 settle。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "kv"
+                },
+                {
+                  "id": "p",
+                  "label": "禁止提前确认",
+                  "detail": "poison 路径不发送可触发早释放的 ACK。",
+                  "column": 0,
+                  "row": 2,
+                  "tone": "kv"
+                },
+                {
+                  "id": "t",
+                  "label": "回退释放观察",
+                  "detail": "验证实际超时、隔离和页面复用安全。",
+                  "column": 0,
+                  "row": 3,
+                  "tone": "kv"
+                },
+                {
+                  "id": "v",
+                  "label": "正式版本身份",
+                  "detail": "锁定标签、镜像摘要与来源日期。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "a",
+                  "label": "参数和依赖",
+                  "detail": "解析真实启动命令，核对环境解析结果。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "f",
+                  "label": "故障注入",
+                  "detail": "先验证内容正确和责任最终收敛。",
+                  "column": 1,
+                  "row": 2,
+                  "tone": "control"
+                },
+                {
+                  "id": "l",
+                  "label": "负载预算",
+                  "detail": "在同样请求集上检查有效吞吐和尾延迟。",
+                  "column": 1,
+                  "row": 3,
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "w",
+                  "to": "c",
+                  "label": "收到失败或取消"
+                },
+                {
+                  "from": "c",
+                  "to": "p",
+                  "label": "无法证明可早释放"
+                },
+                {
+                  "from": "p",
+                  "to": "t",
+                  "label": "进入回退观察"
+                },
+                {
+                  "from": "v",
+                  "to": "a",
+                  "label": "固定产物后"
+                },
+                {
+                  "from": "a",
+                  "to": "f",
+                  "label": "兼容性通过后"
+                },
+                {
+                  "from": "f",
+                  "to": "l",
+                  "label": "正确性通过后"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "P/D 资源责任",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "w",
+                      "c",
+                      "p",
+                      "t"
+                    ]
+                  },
+                  {
+                    "title": "产物与控制门禁",
+                    "tone": "control",
+                    "nodeIds": [
+                      "v",
+                      "a",
+                      "f",
+                      "l"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "NIXL _await_handles 返回 settled 与 any_failed；状态读取失败返回未排空/失败。worker 对 _NixlPostError 且启用延迟释放的路径 poison；不能排空的路径也 poison。已 settle 的其他异常可以递减 outstanding 后尝试 ACK。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此“句柄计数为零”“所有可见句柄已 settle”和“拒绝的提交绝无后续写入”不能混作同一证据。最终代码对 post 拒绝单独保护，正是因为该提交不一定出现在已保存的 handles 中。工程验收应覆盖失败发生位置，而不能只向同一个 status 字段注入 ERR。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "Mori 在正常完成检查及 drain 路径检查 Failed() 并 poison；递减 outstanding 和后续 _arm_abort_ack 都检查 poisoned room，防止较晚到达的取消通知绕开保护。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "poison 代表放弃这条提前确认路径，不是物理取消 DMA 的证明。延迟释放回退仍需要按实际后端、网络和分配器验证；不能仅延长超时就宣称跨请求污染风险已消失。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：正式清单、冻结实现与测试设计分别承担证明责任",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已阅读来源与边界",
+              "columns": [
+                "证据",
+                "支持什么",
+                "不能推出什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正式 Release",
+                    "版本身份与发布清单归属",
+                    "镜像已经安装或 H20 有指定幅度收益"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定 NIXL 源码",
+                    "post 拒绝/未排空路径与已 settle 路径不同",
+                    "所有 ERR 都禁止 ACK"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定 Mori 源码",
+                    "poison 检查贯穿排空和后到 ACK 注册",
+                    "底层 Failed 表示物理写入立刻停止"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定依赖声明",
+                    "Python >=3.11；torch 2.14.1；FlashInfer cu13 0.7.2",
+                    "用户现有驱动、扩展和模型均兼容"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定投机参数处理",
+                    "协调开关仍按算法种类进行检查",
+                    "旧跳过同步开关可原样继续使用"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "NIXL 单测文件",
+                    "拒绝第二次 post 后已知句柄 DONE，仍断言不 ACK；包括较晚取消",
+                    "测试已运行或真实 RDMA 下已复现"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里采用最终标签源码而非 PR 的第一版补丁作为运行语义依据。单测提供一个重要的反例设计，但 mock 的传输状态不等于设备上的完成事件。本文没有复现发布页基准，也没有把社区问题报告认定为已确认现网根因。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：保守释放需要容量预算，优化收益需要可比负载",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "停止提前 ACK 会把一部分异常请求的资源保留到回退路径。这是正确性与故障期容量之间的真实取舍：不能因占用升高就移除保护，也不能以“安全优先”为由忽略积压是否耗尽整个服务。更合理的做法是独立观测 poison 数量、保留页峰值、释放收敛时间和受牵连请求数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创预算示例：若单位时间出现 n 个异常房间，每个平均保留 k 页，额外驻留时间为 t，则稳态额外保留量可先用 n×k×t 做量纲检查。这不是该引擎的性能模型；突发、共享页、限流和回退并发会破坏稳态假设，真实容量必须由观测确定。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "参数删除减少了一个显式选择，也要求配置仓库重新核对行为。不能为了保持旧 benchmark 数字，悄悄恢复被删除的同步绕过路径。若吞吐下降，应先拆分调度、通信等待和有效接受 token 的变化，再判断是否构成回退。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "发布页列出的特定 GPU、模型和长度上的优化仅能作为选题线索。H20 的带宽、计算与互联边界不同，必须通过独立矩阵决定是否值得启用新路径。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：先固定产物，随后把灰度拆成三个阶段",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "阶段一：保存旧镜像摘要、模型修订、启动命令和依赖解析结果；新环境单独创建，不在原容器里叠装以免混淆身份。",
+                "阶段二：检查旧同步开关是否仍在模板、环境注入或启动脚本中；核对实际解析后的参数而非仅搜索主配置文件。",
+                "阶段三：固定并行布局与请求集进行故障回归，再逐步开放优化项。P、D 两端及路由器分别记录版本，混版本滚动升级单列验证。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "冻结依赖声明包含 cuda-python>=13.0、FlashInfer cu13 0.7.2、torch 2.14.1 及 Python 最低版本。它是源码的依赖要求，不是本次检查过的安装解析结果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "容量观察不要只看请求成功率。失败请求可以已向客户端结束，但其远端责任仍存在；如果仅按客户端活跃数控制 admission，故障期可能持续接入新请求并放大保留页压力。建议同时记录客户端终态、传输终态、ACK 决策和实际页面可复用时刻。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "回滚也要面对在途写入和协议责任。直接重启 D 并复用旧地址是否安全，需要后端级证据，不能由普通应用进程退出推断。这里提出的是回滚测试要求，没有声称该版本提供了自动跨版本回滚协议。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：硬件、后端和错误位置必须显式分组",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议隔离测试计划，全部未执行",
+              "columns": [
+                "环境/对照",
+                "注入或变量",
+                "观察"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU 参数解析：旧环境/新标签",
+                    "完整启动模板；已删除开关；投机算法/协调开关组合",
+                    "明确失败提示和解析后配置，不静默丢参数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20 CUDA 环境：固定模型与 TP/DP",
+                    "非 P/D 基线，再启用 P/D；固定依赖与镜像",
+                    "输出一致性、启动、显存峰值、有效吞吐"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "NIXL P/D 双端隔离",
+                    "post 前异常、post 被拒绝、已知句柄 ERR+DONE、持续 PROC、状态读取异常",
+                    "是否 ACK、outstanding、迟到写与实际页面复用"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Mori 对应受支持平台",
+                    "Failed 与成功状态混合；取消先于/晚于排空",
+                    "poison 持续性及晚到 ACK 不绕过；不当作 H20 结果"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障期容量与恢复",
+                    "取消突发、对端退出、网络恢复、混版本滚动",
+                    "保留页峰值、收敛、隔离边界和请求重试负担"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能 A/B",
+                    "短/长输入，低/高并发，缓存冷/热，投机开/关",
+                    "TTFT、TPOT、有效接受 token、超时、成本"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "优先用公开合成输入设计跨请求污染哨兵：让不同请求拥有可区分的参考输出，并在取消后高频复用页；同时保持无复用或无缓存的参考组。输出不一致时保留失败时间线，不先假定一定由 KV 写入造成。网络、随机性和模型数值路径仍需排除。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：正确性是硬门，性能是预先冻结的预算",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "执行前确定观测窗和业务门槛",
+              "columns": [
+                "指标",
+                "口径",
+                "准入原则"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份完整",
+                    "tag、镜像摘要、依赖、模型和双端参数可回溯",
+                    "任一不明则不得把结果归因本版本"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "内容正确",
+                    "缓存/复用开启对照独立参考，取消请求不污染后继",
+                    "测试集内零不可解释错误；先排除采样差异"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "ACK 分类",
+                    "逐一观察注入位置与冻结实现预期",
+                    "不得把所有 ERR 期望统一成不 ACK"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "责任收敛",
+                    "从业务结束至相关资源安全可复用",
+                    "满足事先约定回退窗口，零无界保留"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务预算",
+                    "成功请求 TTFT/TPOT 分位与有效 goodput",
+                    "不超过业务冻结阈值；不以失败请求换吞吐"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复能力",
+                    "进程/网络恢复与回滚后污染、泄漏及残余请求",
+                    "完整恢复周期通过后才扩大灰度"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文没有提供伪精确的通用百分比阈值。部署团队应在实验前固定延迟、内存和成本预算，避免看到结果后移动门槛；原有稳定版本的重复运行分布用于估计噪声，而非单次最好值。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：正式发布闭合的是版本归属，不是全部运行边界",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "未运行任何源码单测或硬件实验，也未验证具体镜像摘要、包解析和驱动支持。",
+                "没有独立验证 NIXL/Mori 原生错误语义、DMA 生命周期及解码侧超时是否满足具体故障模型；必须与实际后端版本匹配。",
+                "本报告未深解发布页全部性能、缓存和并行改动；未阅读的论文或内核不冒充已验证。",
+                "近期 main 的 held decode 取消等独立提交不自动归入 v0.5.23；应分别确认标签收录。",
+                "既有 v0.5.21 基线和 v0.5.22 待发稿不重写；本篇是正式 v0.5.23 的新增准入解读。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "delta-tokenizer-front-end-boundaries",
     "kind": "analysis",
     "title": "Delta Tokenizer：KV命中之后，CPU入口还在等待什么",

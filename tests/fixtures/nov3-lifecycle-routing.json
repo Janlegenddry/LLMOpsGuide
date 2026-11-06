@@ -1,0 +1,411 @@
+[
+  {
+    "recordId": "sglang-v0-5-23",
+    "diagram": {
+      "type": "diagram",
+      "basis": "inference",
+      "sourceIndices": [],
+      "title": "原创示意：KV 写入责任与发布准入双泳道",
+      "caption": "教学示意，非实测。左侧表达失败后的保守控制分支，右侧是升级验收顺序；不以超时推导 DMA 已停止。",
+      "nodes": [
+        {
+          "id": "w",
+          "label": "提交 KV 写入",
+          "detail": "数据面可能仍持有 D 页的访问责任。",
+          "column": 0,
+          "row": 0,
+          "tone": "kv"
+        },
+        {
+          "id": "c",
+          "label": "分类失败证据",
+          "detail": "区分 post 拒绝、未排空和已 settle。",
+          "column": 0,
+          "row": 1,
+          "tone": "kv"
+        },
+        {
+          "id": "p",
+          "label": "禁止提前确认",
+          "detail": "poison 路径不发送可触发早释放的 ACK。",
+          "column": 0,
+          "row": 2,
+          "tone": "kv"
+        },
+        {
+          "id": "t",
+          "label": "回退释放观察",
+          "detail": "验证实际超时、隔离和页面复用安全。",
+          "column": 0,
+          "row": 3,
+          "tone": "kv"
+        },
+        {
+          "id": "v",
+          "label": "正式版本身份",
+          "detail": "锁定标签、镜像摘要与来源日期。",
+          "column": 1,
+          "row": 0,
+          "tone": "control"
+        },
+        {
+          "id": "a",
+          "label": "参数和依赖",
+          "detail": "解析真实启动命令，核对环境解析结果。",
+          "column": 1,
+          "row": 1,
+          "tone": "control"
+        },
+        {
+          "id": "f",
+          "label": "故障注入",
+          "detail": "先验证内容正确和责任最终收敛。",
+          "column": 1,
+          "row": 2,
+          "tone": "control"
+        },
+        {
+          "id": "l",
+          "label": "负载预算",
+          "detail": "在同样请求集上检查有效吞吐和尾延迟。",
+          "column": 1,
+          "row": 3,
+          "tone": "control"
+        }
+      ],
+      "edges": [
+        {
+          "from": "w",
+          "to": "c",
+          "label": "收到失败或取消"
+        },
+        {
+          "from": "c",
+          "to": "p",
+          "label": "无法证明可早释放"
+        },
+        {
+          "from": "p",
+          "to": "t",
+          "label": "进入回退观察"
+        },
+        {
+          "from": "v",
+          "to": "a",
+          "label": "固定产物后"
+        },
+        {
+          "from": "a",
+          "to": "f",
+          "label": "兼容性通过后"
+        },
+        {
+          "from": "f",
+          "to": "l",
+          "label": "正确性通过后"
+        }
+      ],
+      "presentation": {
+        "kind": "lifecycle",
+        "panels": [
+          {
+            "title": "P/D 资源责任",
+            "tone": "kv",
+            "nodeIds": [
+              "w",
+              "c",
+              "p",
+              "t"
+            ]
+          },
+          {
+            "title": "产物与控制门禁",
+            "tone": "control",
+            "nodeIds": [
+              "v",
+              "a",
+              "f",
+              "l"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "recordId": "sglang-held-decode-abort-inventory",
+    "diagram": {
+      "type": "diagram",
+      "basis": "inference",
+      "sourceIndices": [],
+      "title": "原创示意：held 生命周期与控制判断分开",
+      "caption": "非实测示意。上组描述 held 请求，下一组是控制观察，不表示所有判断必须按图顺序执行；没有绘制任何 DMA 安全保证。",
+      "nodes": [
+        {
+          "id": "h",
+          "label": "暂停保留",
+          "detail": "逻辑请求存活，当前 held 路径不依赖 KV 持有。",
+          "column": 0,
+          "row": 0,
+          "tone": "kv"
+        },
+        {
+          "id": "a",
+          "label": "匹配取消",
+          "detail": "从 held 容器移出匹配项，避免恢复重新选中。",
+          "column": 0,
+          "row": 1,
+          "tone": "kv"
+        },
+        {
+          "id": "f",
+          "label": "终止清理",
+          "detail": "结束请求并处理缓存关联和取消输出。",
+          "column": 0,
+          "row": 2,
+          "tone": "kv"
+        },
+        {
+          "id": "r",
+          "label": "恢复幸存者",
+          "detail": "只有未取消的保留请求有资格重新登记。",
+          "column": 0,
+          "row": 3,
+          "tone": "kv"
+        },
+        {
+          "id": "l",
+          "label": "统一请求清单",
+          "detail": "运行时读取各组件持有的请求，避免缓存旧队列引用。",
+          "column": 1,
+          "row": 0,
+          "tone": "control"
+        },
+        {
+          "id": "m",
+          "label": "配置变更检查",
+          "detail": "针对未结束的 sampling mask 请求判定限制。",
+          "column": 1,
+          "row": 1,
+          "tone": "control"
+        },
+        {
+          "id": "i",
+          "label": "操作专用 idle",
+          "detail": "按健康探针或普通空闲目的选择阻塞集合。",
+          "column": 1,
+          "row": 2,
+          "tone": "control"
+        },
+        {
+          "id": "q",
+          "label": "异步资源门",
+          "detail": "请求集合之外仍需核对传输、缓存与流水线状态。",
+          "column": 1,
+          "row": 3,
+          "tone": "control"
+        }
+      ],
+      "edges": [
+        {
+          "from": "h",
+          "to": "a",
+          "label": "收到匹配取消"
+        },
+        {
+          "from": "a",
+          "to": "f",
+          "label": "清理并输出终态"
+        },
+        {
+          "from": "h",
+          "to": "r",
+          "label": "仅未取消请求恢复"
+        },
+        {
+          "from": "h",
+          "to": "l",
+          "label": "请求存在性可见"
+        },
+        {
+          "from": "l",
+          "to": "m",
+          "label": "检查请求属性"
+        },
+        {
+          "from": "l",
+          "to": "i",
+          "label": "选择对应阻塞集合"
+        },
+        {
+          "from": "i",
+          "to": "q",
+          "label": "普通空闲还需独立资源检查"
+        }
+      ],
+      "presentation": {
+        "kind": "lifecycle",
+        "panels": [
+          {
+            "title": "held 请求责任",
+            "tone": "kv",
+            "nodeIds": [
+              "h",
+              "a",
+              "f",
+              "r"
+            ]
+          },
+          {
+            "title": "控制观察责任",
+            "tone": "control",
+            "nodeIds": [
+              "l",
+              "m",
+              "i",
+              "q"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "recordId": "ascend-mooncake-unallocated-ack-hash",
+    "diagram": {
+      "type": "diagram",
+      "basis": "inference",
+      "sourceIndices": [],
+      "title": "原创示意：零分配终态的双边责任",
+      "caption": "非实测。D 的结束回调只安排控制通知，不发起 KV 读取；P 侧释放可用性与网络失败后的超时处置仍须实验验证。",
+      "nodes": [
+        {
+          "id": "d0",
+          "label": "未分配即结束",
+          "detail": "请求仍带远端 prefill 意图，尚未进入 worker 传输。",
+          "column": 0,
+          "row": 0,
+          "tone": "control"
+        },
+        {
+          "id": "d1",
+          "label": "通知入队",
+          "detail": "使用远端身份安排完成消息，清除本地一次性意图。",
+          "column": 0,
+          "row": 1,
+          "tone": "control"
+        },
+        {
+          "id": "d2",
+          "label": "通知线程",
+          "detail": "控制消息发送与回复检查独立于 KV 数据搬运。",
+          "column": 0,
+          "row": 2,
+          "tone": "control"
+        },
+        {
+          "id": "d3",
+          "label": "本地返回",
+          "detail": "结束回调返回，不意味着远端已经完成清理。",
+          "column": 0,
+          "row": 3,
+          "tone": "control"
+        },
+        {
+          "id": "p0",
+          "label": "保留责任",
+          "detail": "远端可能仍等待本请求不再需要 KV 的信号。",
+          "column": 1,
+          "row": 0,
+          "tone": "communication"
+        },
+        {
+          "id": "p1",
+          "label": "收到完成消息",
+          "detail": "根据请求身份处理控制结算。",
+          "column": 1,
+          "row": 1,
+          "tone": "communication"
+        },
+        {
+          "id": "p2",
+          "label": "释放可用性待验",
+          "detail": "真实分配器可重用时刻必须独立观察。",
+          "column": 1,
+          "row": 2,
+          "tone": "communication"
+        },
+        {
+          "id": "p3",
+          "label": "失败超时路径",
+          "detail": "通知失败时的延迟回收是回退，不是立即成功。",
+          "column": 1,
+          "row": 3,
+          "tone": "communication"
+        }
+      ],
+      "edges": [
+        {
+          "from": "d0",
+          "to": "d1",
+          "label": "未完成传输意图仍在"
+        },
+        {
+          "from": "d1",
+          "to": "d2",
+          "label": "提交控制工作"
+        },
+        {
+          "from": "d1",
+          "to": "d3",
+          "label": "回调返回"
+        },
+        {
+          "from": "d2",
+          "to": "p1",
+          "label": "消息实际到达时"
+        },
+        {
+          "from": "p0",
+          "to": "p1",
+          "label": "按身份结算"
+        },
+        {
+          "from": "p1",
+          "to": "p2",
+          "label": "实际资源结果待验"
+        },
+        {
+          "from": "d2",
+          "to": "p3",
+          "label": "失败进入回退观察"
+        }
+      ],
+      "presentation": {
+        "kind": "lifecycle",
+        "panels": [
+          {
+            "title": "D 侧请求与通知",
+            "tone": "control",
+            "nodeIds": [
+              "d0",
+              "d1",
+              "d2",
+              "d3"
+            ]
+          },
+          {
+            "title": "P 侧与故障边界",
+            "tone": "communication",
+            "nodeIds": [
+              "p0",
+              "p1",
+              "p2",
+              "p3"
+            ]
+          }
+        ]
+      }
+    }
+  }
+]
