@@ -1,6 +1,827 @@
 [
   {
     "schemaVersion": 1,
+    "id": "vllm-trtllm-prefill-query-offset-lifetime",
+    "kind": "analysis",
+    "title": "vLLM 草稿预填充：CUDA Graph 读到的是哪一份偏移",
+    "summary": "从独立草稿 FULL graph 的 query offsets 修复出发，区分数值正确、设备地址稳定、存储保活与读写顺序；给出硬件和发布边界及未执行验收方案。",
+    "publishedAt": "2026-11-05",
+    "reviewedAt": "2026-11-05",
+    "topics": [
+      "vLLM",
+      "投机解码",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM #65598 合入差异",
+        "url": "https://github.com/vllm-project/vllm/commit/29e58d1bbd82f8a28ebd08e2fa8aad8edddff689",
+        "publishedAt": "2026-11-05",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "固定提交 FlashInfer metadata builder 与 attention 调用",
+        "url": "https://github.com/vllm-project/vllm/blob/29e58d1bbd82f8a28ebd08e2fa8aad8edddff689/vllm/v1/attention/backends/flashinfer.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "固定提交 query offsets 地址回归测试",
+        "url": "https://github.com/vllm-project/vllm/blob/29e58d1bbd82f8a28ebd08e2fa8aad8edddff689/tests/v1/attention/test_flashinfer_trtllm_prefill_cudagraph.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "固定提交 TRTLLM 硬件与路由条件",
+        "url": "https://github.com/vllm-project/vllm/blob/29e58d1bbd82f8a28ebd08e2fa8aad8edddff689/vllm/utils/flashinfer.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "固定提交 standalone AR 草稿执行顺序",
+        "url": "https://github.com/vllm-project/vllm/blob/29e58d1bbd82f8a28ebd08e2fa8aad8edddff689/vllm/v1/worker/gpu/spec_decode/standalone_ar/speculator.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "固定提交草稿 attention metadata 与 padding",
+        "url": "https://github.com/vllm-project/vllm/blob/29e58d1bbd82f8a28ebd08e2fa8aad8edddff689/vllm/v1/worker/gpu/spec_decode/speculator.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "PR 作者的 GB200 结果与未修范围",
+        "url": "https://github.com/vllm-project/vllm/pull/65598",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM PR 作者 Pb314314",
+          "status": "attributed",
+          "note": "完整阅读 Purpose、Test Plan 与 Test Result，并与最终合入差异交叉核对。作者报告不等于独立复现；不采纳评论机器人为运行证明。"
+        },
+        "publishedAt": "2026-11-04",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "PyTorch 2.15 CUDA Graph 指针与形状约束",
+        "url": "https://docs.pytorch.org/docs/2.15/notes/cuda.html#cuda-graphs",
+        "review": {
+          "category": "blog",
+          "publisher": "PyTorch 官方文档",
+          "status": "attributed",
+          "note": "核对 CUDA Graphs、PyTorch API 与 Constraints；stable 入口重定向到 2.15。此文档地址未列入既有官方精确注册表，按已核对文档陈述登记，不扩展域名权限。"
+        },
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "vLLM v0.33.0 标签中的旧 offsets 路径",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/v1/attention/backends/flashinfer.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "vLLM v0.33.0rc3 标签中的旧 offsets 路径",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0rc3/vllm/v1/attention/backends/flashinfer.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "vLLM v0.33.0 发布页与标签身份",
+        "url": "https://github.com/vllm-project/vllm/releases/tag/v0.33.0",
+        "publishedAt": "2026-11-01",
+        "accessedAt": "2026-11-05"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "固定主分支提交包含 query offsets 持久化修复；这不等于所有部署制品已包含。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "独立图重放、真实模型和目标硬件实验尚未执行。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "图实际读取的地址与当前 metadata 写入地址是否一致？",
+      "目标设备与配置是否会进入这一 prefill 路径？",
+      "实际部署制品是否包含修改，且相邻输入是否也满足图寿命合同？"
+    ],
+    "related": [
+      {
+        "title": "FlashInfer 图状态寿命与制品边界",
+        "path": "/radar/flashinfer-v0-7-1-operations/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-05 只读核对 vLLM #65598 最终合入源码、相关调用链、上游新增测试、v0.33.0/rc3 标签及作者结果，并阅读 PyTorch 2.15 图约束。没有编译、运行 GPU、启动模型或访问用户设备；图和实验为原创设计。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一 结论与应采取的判断",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "vLLM 于 11 月 5 日合入 #65598，固定提交 29e58d1。补丁把 TRTLLM prefill 的 query offsets 改为 builder 持久 int32 缓冲，并以带 out 参数的减法更新。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这条变化值得进入独立草稿模型的升级检查清单。排查应先确定实际执行了哪种 attention 路径，再证明图读到的地址和当前写入的地址相同。只看新 metadata 的数值正确，可能漏掉另一份仍被图引用的旧存储。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本文不建议为了获得未测收益而直接升级生产。优先完成制品包含核对、地址与内容测试，再做真实图重放和服务验收。没有运行模型、GPU、上游回归测试或用户环境，也没有独立性能数据。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二 草稿预填充为何进入图捕获",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "固定 standalone AR 实现为展开后的 prefill 建立单独图管理器，宽度与 speculative steps 加 2 对应；每次先构建 attention metadata，再在 FULL 分支调用 run_fullgraph。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "共享草稿 metadata 构建函数在 FULL 下使用图的 padded token 数，并按 padded request 数构建输入；PIECEWISE 或 eager 使用实际 token 数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此“正在生成”不能替代后端的 prefill/decode 分类。一次逻辑上的解码轮次内部，可以有负责读取一段已知 token 的预填充工作。应分别记录逻辑阶段、每请求 query 宽度、后端分类和图模式，否则故障容易被错误归入普通单 token decode。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "教学例子：设某个解码分类阈值为 4，当前每个请求实际需要处理 5 个 query token。批次即使等长，也越过了该阈值。这个例子说明等长条件与路径条件是两个不同的判断；数字仅用于教学，不是性能样本或所有配置的默认值。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                7
+              ],
+              "text": "PyTorch 2.15 文档说明：重放沿用捕获的指针参数，应用应保留输入输出张量并原位更新数据；同一图也要求固定的大小和布局。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三 从偏移值到存储寿命的完整机制",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "固定后端把有效 prefill offsets 视图传入 TRTLLMPrefill.cum_seq_lens_q，随后交给 trtllm_batch_context_with_kv_cache。该分支排除 DCP。另一个 FP8 KV 加非 FP8 query 分支仍对 block tables 调用 contiguous。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "query offsets 是分段边界，不是 KV 实体。对某个合成批次，若完整边界为 [0,1,2,7,12]，前两个请求各占一个 query，后两个各占五个，则后半段的局部边界是 [0,5,10]。减去前缀起点的算术正确，只回答了“这次算出了什么”，没有回答“图最终从哪里读取”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以把正确性拆成四个独立条件：边界值符合本轮请求；存储地址与图记录一致；存储仍存活；写入完成后才允许对应读取。任意一个条件缺失，都不应把其余条件的通过当成替代证明。"
+            },
+            {
+              "type": "diagram",
+              "title": "图内地址与本轮 metadata 的两种关系",
+              "caption": "原创非实测教学示意。A、B、P 不是实际地址。旧组 B 没有连到重放，强调改 Python 引用不会自动改图；新组最后节点是待验，不承诺修复已通过端到端测试。只绘制声明的边，纵向位置不等于执行时间。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "capture",
+                  "label": "旧图保存地址 A",
+                  "detail": "图记录的是设备指针 A，并非之后 Python 变量所指的对象。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "旧图保存地址 A",
+                  "tone": "control"
+                },
+                {
+                  "id": "old",
+                  "label": "旧存储 A",
+                  "detail": "教学假设：捕获时 A 有正确值，后续不再保证内容和生命周期。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "旧存储 A",
+                  "tone": "danger"
+                },
+                {
+                  "id": "fresh",
+                  "label": "新一轮写入 B",
+                  "detail": "新张量 B 的值可以完全正确，但这并不更新图内的 A。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "新一轮写入 B",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "readold",
+                  "label": "重放仍读 A",
+                  "detail": "教学反例：如果 A 已被复用，读取结果可能与本轮 metadata 不同；非本站复现。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "重放仍读 A",
+                  "tone": "danger"
+                },
+                {
+                  "id": "owned",
+                  "label": "builder 保活 P",
+                  "detail": "持久存储 P 的生命周期须覆盖全部相关捕获和重放。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "builder 保活 P",
+                  "tone": "control"
+                },
+                {
+                  "id": "write",
+                  "label": "原位更新 P",
+                  "detail": "每次构建写入当前有效区间，不另换存储。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "原位更新 P",
+                  "tone": "compute"
+                },
+                {
+                  "id": "fixed",
+                  "label": "新图保存 P",
+                  "detail": "捕获固定 P；随后改变其内容而不是更换输入地址。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "新图保存 P",
+                  "tone": "communication"
+                },
+                {
+                  "id": "readnew",
+                  "label": "读取正确性待验",
+                  "detail": "还须证明写入先于读取、图形状匹配及没有重叠覆盖；地址稳定不是最终验收。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "读取正确性待验",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "capture",
+                  "to": "old",
+                  "label": "固定地址引用"
+                },
+                {
+                  "from": "old",
+                  "to": "readold",
+                  "label": "重放读取地址"
+                },
+                {
+                  "from": "owned",
+                  "to": "write",
+                  "label": "保活并原位写"
+                },
+                {
+                  "from": "owned",
+                  "to": "fixed",
+                  "label": "捕获固定地址"
+                },
+                {
+                  "from": "write",
+                  "to": "readnew",
+                  "label": "先写后读待验"
+                },
+                {
+                  "from": "fixed",
+                  "to": "readnew",
+                  "label": "沿固定地址读取"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧地址与新临时对象分离",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "capture",
+                      "old",
+                      "fresh",
+                      "readold"
+                    ]
+                  },
+                  {
+                    "title": "持久地址与写入顺序分别验收",
+                    "tone": "control",
+                    "nodeIds": [
+                      "owned",
+                      "write",
+                      "fixed",
+                      "readnew"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "持久缓冲改变的是所有权和地址合同。metadata 中的视图应按本次执行窗口使用，不能把它当作永远不变的历史快照。调试时若要比较两个时刻的值，应在各自有效时刻另存副本；保留旧视图本身不会冻结其内容。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "同理，地址一致也不会自动创建跨流依赖。若未来引入并行请求处理或重叠重放，需要重新验证同一缓冲何时可写、何时读完。这里提出的是扩展设计的验证要求，并非宣称当前实现存在并发竞态。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四 源码证据与作者实验分别说明",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据应回答的不同问题",
+              "columns": [
+                "材料",
+                "已确认的窄结论",
+                "仍需补充"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "最终差异",
+                    "源码修改已合入主分支",
+                    "所用镜像、wheel 和 vendor 分支的包含关系"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "新增回归测试",
+                    "两次 build，4 与 3 请求；保留旧输出后比较 data_ptr 与 offsets 值",
+                    "没有 capture/replay，也没有调用真实 attention kernel"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定版本源码链",
+                    "从调用点到实际输入存储可逐项审查",
+                    "源码阅读不等于运行到该分支"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "作者端到端报告",
+                    "限定模型、硬件和工作负载的自报结果",
+                    "独立复现与更广输入覆盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "线上服务验收",
+                    "需同时衡量正确性、稳定性与有效吞吐",
+                    "不能只用进程没有崩溃判断完成"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6
+              ],
+              "text": "作者报告：1×GB200、runner V2、Qwen3-8B/0.6B、K=3，GSM8K 1319题、贪心解码；修复后并发32/256准确率均0.886、平均接受2.44，与PIECEWISE参考一致。作者明确未测 FP8 KV 加非 FP8 query 的相邻风险。未独立复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "新增测试用 monkeypatch 强制选择 TRTLLM，query 宽度为实际阈值加一；逐轮检查数值，并在最后要求地址集合只有一个元素。未执行此测试。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "保留旧输出有很强的鉴别价值：否则旧张量释放后，分配器可能恰好把同一地址重新给新张量，让“地址没变”的观察成为偶然事件。相反，保留所有历史视图又会共享持久存储，所以数值检查必须发生在每轮有效窗口，不能事后把所有视图当历史证据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "相同准确率和平均接受数是有限任务集上的支持证据，不能证明每个 attention 输出、每个草稿 token 或随机采样序列完全相同。也不能由这些数字推导吞吐、TTFT、ITL 或 GPU 成本改善。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五 硬件适用范围与实现取舍",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "固定 utils 仅为 SM100 family 开启 TRTLLM prefill；SM90/SM12x 在此只支持 XQA decode。路由还检查禁用配置、batch-invariant、cubins 可获取性、头数整除与 DCP。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此不能把这篇报告当作 H20 上某条路径已修复的承诺，更不能迁移为 Ascend 内核结论。对其他设备，有价值的是验证“真实分支、设备地址、存活期和读写顺序”的方法；适用性仍须由对应实现证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "按 int32 元素计算，容量 M 的一份偏移缓冲理论数据字节数为 4×(M+1)。例如教学容量 256 对应 1028 字节。这个算式不含 allocator 对齐、多个 builder、图池和其余持久张量，不能当作总显存增量测量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "保活通常用少量常驻内存换取明确的地址寿命，但也使同一存储的复用规则更重要。不能把不断追加历史张量引用当作生产修复，那可能只是把旧地址保住，同时制造随请求增长的内存占用。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "临时切换图模式可作为隔离实验的对照，而非本文给出的生产处方。改变图模式可能影响 CPU 开销、调度和容量；应锁定其余变量，并保留可恢复配置，不能把“关闭图后不崩”直接等同于已锁定根因。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六 故障假设与需要采集的证据",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创诊断矩阵 不代表已发生于用户环境",
+              "columns": [
+                "现象",
+                "先补什么证据",
+                "暂时不能下的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "开启独立草稿 FULL 后间歇崩溃",
+                    "runner、模型角色、真实 prefill 分支、捕获与重放输入地址",
+                    "所有 CUDA Graph 或所有 FlashInfer 都不安全"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "metadata 打印正确但草稿异常",
+                    "在图实际读取存储上取样，关联同一执行轮次",
+                    "日志中的新对象就是图消费的对象"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "仅大批次出现问题",
+                    "固定批次形状与图档位，改变分配复用压力",
+                    "批次越大算术越不稳定"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "没有崩溃但接受率改变",
+                    "草稿 token、目标验证、输入边界和独立参考",
+                    "修复已经完整通过"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "指针稳定但结果偶发改变",
+                    "读写流顺序、缓冲重用和事件依赖",
+                    "地址不变足以证明数据安全"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "FP8 配置仍失败",
+                    "每个传入图的派生输入是否有临时副本",
+                    "query offsets 修复覆盖全部相邻对象"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最小证据包应有镜像摘要、vLLM revision、FlashInfer/CUDA/驱动版本、设备型号、target/draft 配置、KV/Q dtype、图档位、实际 attention 路由、缓冲地址及其时间线。脱离这些上下文的 data_ptr 日志不足以复盘问题。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "地址取样和同步检查可能改变时序。先用易观察的合成输入定位，再以较低扰动的运行方式验证；区分调试环境与服务基准。公开报告仅提供字段和实验设计，不采集或发布用户请求、内部日志或生产凭据。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七 待执行实验矩阵",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下全部未执行。建立补丁父提交与候选提交的可回滚构建，锁定模型、依赖和 CUDA 图配置。先测可证伪的小反例，再扩展到真实模型；不要先把多个性能补丁合并成一个无法归因的升级。"
+            },
+            {
+              "type": "table",
+              "caption": "原创隔离实验方案",
+              "columns": [
+                "层次",
+                "控制条件与操作",
+                "需要保留的结果"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "源码与制品",
+                    "比对实际加载代码和构建清单，而非版本字符串",
+                    "revision、源码哈希、wheel/镜像摘要、补丁包含证据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "地址与数值",
+                    "同一 builder 连续构建，保留旧视图并逐轮立即检查值",
+                    "有效 offsets、data_ptr、容量、切片长度；旧反例是否可区分"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "局部重定位",
+                    "合成混合批次 [0,1,2,7,12]，检查局部 [0,5,10]",
+                    "前缀起点、num_decodes、num_prefills、末端边界"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真实图重放",
+                    "每个固定图形状先 capture，再更新输入并 replay",
+                    "图消费地址、attention 输出与 eager 参考、错误计数"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "批次切换",
+                    "分别选择合法图档位，往返小/大批次；不在单图内改变形状",
+                    "实际/padded 请求数、每档图身份、有效尾区间"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "分配复用压力",
+                    "在隔离进程加入受控临时分配，保持模型输入不变",
+                    "旧/新版本差异、进程退出、设备错误与可重复性"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "精度与路径",
+                    "先非量化基线，再单独评估 FP8 KV/Q 组合",
+                    "每个派生张量的存储来源与真实后端选择"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "端到端服务",
+                    "先固定贪心数据集，再分别扩展负载与随机采样",
+                    "正确性、接受长度分布、TTFT/ITL、goodput、显存和失败样本"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "“批次从4变3再变4”用于 builder 地址测试时可以直接执行；用于真实图测试时必须保持每个图自己的静态形状合同，通过合法的图选择和 padding 改变工作量。两种实验不能混成一个“动态尺寸图已支持”的结论。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "测试外层应设置进程级超时并保存失败样本。设备非法访问后不要继续把同一进程中的后续结果当成可信对照。并行重放、取消和回收顺序属于独立扩展矩阵，不能用本地两次 build 通过覆盖。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八 验收指标及判定口径",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创验收门 所有门槛需在运行前固定",
+              "columns": [
+                "门",
+                "指标与范围",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份",
+                    "实际加载 artifact 与固定修改",
+                    "可证明包含，不接受只依据发布日期或包名"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "地址",
+                    "同一 builder 的有效 offsets 视图",
+                    "应复用的地址稳定；多个图档位与重建行为分别记录"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "内容",
+                    "每次执行有效区间与预期局部边界",
+                    "整数边界完全相等，单调且末端吻合本次 query 总量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "顺序与寿命",
+                    "更新、读取、复用、释放的时序",
+                    "所有读期间存活，且没有前一轮尚在读时被下一轮覆盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数值",
+                    "attention 输出与固定参考",
+                    "按 dtype 预先规定容差；不以最终文本“看起来正常”代替"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "模型",
+                    "固定评估集与草稿/目标行为",
+                    "准确率、接受分布及失败样本符合预先定义的回归门槛"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳定性",
+                    "约定时长与负载窗口内的全部尝试",
+                    "无非法访问、无未解释退出或持续内存增长；报告样本量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务",
+                    "同到达率、输入输出长度和资源的完成请求",
+                    "正确性先通过；再比较 goodput 与 TTFT/ITL 分位数"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "goodput 的分母应包括实际时间和可用资源，分子只计按约定正确性及 SLO 完成的工作。不能把崩溃前成功的小样本与稳定运行的全窗口直接比较，也不能把平均接受 token 数当作交付 token/s。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "零失败只适用于测试覆盖的观测窗口。发布结论时同时给出请求数、图重放次数、模式组合和未覆盖项；验收若依赖新的同步或关闭图才能通过，应明确记录该配置差异。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九 发布包含与尚待验证的问题",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8,
+                9
+              ],
+              "text": "本次直接核对 v0.33.0 与 v0.33.0rc3 的 flashinfer.py，两者仍采用临时 offsets 减法表达式；未见本补丁的 builder 持久缓冲。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                10
+              ],
+              "text": "v0.33.0 发布页的标签提交为 4ba787ec9959e566d3b587a796dff07673324da5。这里核对的是标签源码，不是已安装 wheel 或容器内容。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "尚未确认哪一个后续正式版或预发布制品包含修复，也没有验证 vendor 回移补丁。本文没有执行上游单测、真实 capture/replay、GB200 复现或目标设备服务压测。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "FP8 KV 与非 FP8 query 的相邻临时对象、其他图输入、模型 runner 组合和并行复用边界仍须单独验收。本文的结论止于已读源码与已归因的作者陈述，不将局部修复升级为整条推理链的安全保证。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "dynamo-sidecar-migration-error-boundaries",
     "kind": "analysis",
     "title": "Dynamo sidecar 请求迁移：引擎退出、尾token与重放边界",
@@ -2081,6 +2902,1536 @@
                 "未执行上游或新增测试，没有 H20、NIXL 实际设备错误复现与修复对照。",
                 "平台 NotImplementedError 路径、底层库后续设备切换和容器可见设备映射需分别核查。",
                 "没有把本地 pack 完成扩张为 RDMA 完成、取消安全或全系统资源释放保证。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "sglang-routed-draft-context-kv",
+    "kind": "analysis",
+    "title": "SGLang 草稿上下文 KV 的坐标边界：FULL 行号不能代替窗口行号",
+    "summary": "解读 #48001 的 DFLASH/DSPARK 路由写入修复：把子池身份、物理坐标和有效前缀分开检查，并解释单位置融合的退出条件及相邻 CP 配置限制。",
+    "publishedAt": "2026-11-04",
+    "reviewedAt": "2026-11-05",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "投机解码",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang #48001 合入提交",
+        "url": "https://github.com/sgl-project/sglang/commit/249c09bae52310ff04d29c9dce00e17c1830c40e",
+        "publishedAt": "2026-11-04",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "KVLayer 的普通与前缀写入路由",
+        "url": "https://github.com/sgl-project/sglang/blob/249c09bae52310ff04d29c9dce00e17c1830c40e/python/sglang/srt/mem_cache/kv/router.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "DFLASH 上下文物化及 ID 传递",
+        "url": "https://github.com/sgl-project/sglang/blob/249c09bae52310ff04d29c9dce00e17c1830c40e/python/sglang/srt/speculative/dflash_worker_v2.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "DSPARK 融合写入条件与逐层路径",
+        "url": "https://github.com/sgl-project/sglang/blob/249c09bae52310ff04d29c9dce00e17c1830c40e/python/sglang/srt/models/dspark.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "DSPARK 预填充和验证结果注入",
+        "url": "https://github.com/sgl-project/sglang/blob/249c09bae52310ff04d29c9dce00e17c1830c40e/python/sglang/srt/speculative/dspark_components/dspark_kv_inject.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "路由草稿的内存几何回归测试",
+        "url": "https://github.com/sgl-project/sglang/blob/249c09bae52310ff04d29c9dce00e17c1830c40e/test/registered/unit/mem_cache/test_dense_fused_draft_geometry.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "IterationIds 的分空间写入坐标",
+        "url": "https://github.com/sgl-project/sglang/blob/249c09bae52310ff04d29c9dce00e17c1830c40e/python/sglang/srt/mem_cache/kv/alloc/iteration_ids.py",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "相邻 #48002 配置拒绝补丁",
+        "url": "https://github.com/sgl-project/sglang/commit/1666971264a40c66216e68a332658b88072f5b5c",
+        "publishedAt": "2026-11-04",
+        "accessedAt": "2026-11-05"
+      },
+      {
+        "title": "SGLang 正式发行页面",
+        "url": "https://github.com/sgl-project/sglang/releases",
+        "accessedAt": "2026-11-05"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "合入提交 #48001 在 DFLASH 与 DSPARK 上下文 KV 路径中保留窗口写入位置，并为层路由增加前缀写入口。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "DSPARK 的单位置融合布局在存在非 owner 层时返回不可用，不能把这一限制概括成关闭所有融合。",
+        "sourceIndices": [
+          3
+        ]
+      }
+    ],
+    "questions": [
+      "部署产物是否包含修复及其依赖，目标后端是否真正走到相关路由？",
+      "混合 FULL/窗口层、部分接受和零接受时，未提交行及其他请求的 KV 是否保持不变？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验日 2026-11-05。主证据为 SGLang main 合入提交 249c09bae52310ff04d29c9dce00e17c1830c40e，补丁日期 2026-11-04 20:28:07 UTC；相邻 #48002 为 1666971264a40c66216e68a332658b88072f5b5c。完整读取两份补丁，并检查固定提交的层路由、DFLASH/DSPARK 物化、ID 计划及新增测试。只确认源码与测试内容，不声称正式版本或用户镜像已包含；未执行上游测试、GPU/NPU 推理或性能实验。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先保证草稿写入坐标属于当前层",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "值得优先检查的是“能正常跑完但写错行”的风险。将目标模型与草稿模型放进共享 KV 存储后，同一个 token 的语义身份并没有保证它在每个子池中占用相同的物理行。升级时应先证明层、子池、行号和有效前缀四者一致，再比较接受率或延迟。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "#48001 修改路由、DFLASH、DSPARK 及回归测试：前缀写入不再只调用池级入口，调用链显式携带窗口位置。合入差异包含七个文件；这不是吞吐提升公告。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对工程读者最有用的决策是建立两项门槛：混合层的写集必须正确，不受支持的存储组合必须尽早拒绝。二者不能由模型加载成功、一次生成正常或一次性能提升代替。没有相关路由配置的部署，不应仅凭补丁标题就宣称需要紧急切换版本。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：共享存储不等于共享坐标",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "草稿模型消费目标模型特征时，需要把这些特征变成自己后续注意力读取的 K/V。这里讨论的是这一步上下文物化，不是只把已接受的 token ID 接到输出字符串后面。一次投机迭代还会区分可提交前缀和未接受候选，因而“写在哪”与“哪些候选可写”是两道不同的约束。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "IterationIds.write_ids 按 reader 和 IdSpaceKind 返回该子池的写入位置；不存在的子池返回 None，位置结果按空间键缓存。它也支持在一个写入窗口中选列。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议把行号视为带命名空间的坐标：FULL 的第 12 行与窗口的第 12 行可以位于不同视图，窗口中同一 token 也可能在第 3 行。整数值看起来合法，只说明某次数组访问可能没有越界，不能证明读写对象正确。这里的“物理行”是存储池索引，不能直接等同于裸 GPU 地址。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文的 unified 指目标与草稿 KV 存储及其子池组织，不把这一特性解释为 CUDA 统一虚拟内存的按需分页。是否跨设备、是否卸载、是否发生页面迁移，要分别查部署配置与实际执行证据，不能从 flag 名字推断。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：先选所属子池，再限制有效前缀",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "KVLayer.store_prefix 对非 plain 路径先调用 _write_loc，再把对应视图层号传给前缀写入函数。_write_loc 对 owner 层选择 owner/full 坐标，对其他层要求存在窗口坐标；缺失时直接断言，而不是默用 FULL 行号。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创机制示意 同一 token 在两个子池中可以有不同位置",
+              "caption": "原创教学图，非运行时追踪、非耗时或性能图。上下两条路径只比较坐标责任，不表示所有旧配置都会失败。右侧末节点不是生产验收通过；两条路径之间没有执行边。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-hidden",
+                  "label": "相同上下文特征",
+                  "detail": "目标模型的隐藏状态需要物化为草稿 KV；这里不表示重新执行目标模型。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-full",
+                  "label": "只携带 FULL 行号",
+                  "detail": "把一套 FULL 物理行号当成所有草稿层通用的写入位置。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-window",
+                  "label": "交给窗口层写入",
+                  "detail": "层的存储属于窗口子池，但坐标仍来自 FULL 空间。",
+                  "column": 0,
+                  "row": 2,
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-damage",
+                  "label": "写入位置契约破坏",
+                  "detail": "即使索引未越界，也可能覆盖错误行；图不声称已观察到具体用户输出。",
+                  "column": 0,
+                  "row": 3,
+                  "tone": "danger"
+                },
+                {
+                  "id": "new-hidden",
+                  "label": "相同上下文特征",
+                  "detail": "比较保持同一批特征和同一提交前缀，避免把数据变化误判为坐标修复。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-ids",
+                  "label": "携带两种行号",
+                  "detail": "分别保留 FULL 与窗口的物理写入位置，不要求数值相等。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-router",
+                  "label": "按当前层选子池",
+                  "detail": "层路由选取本层的坐标与 view 层号，前缀长度仍单独约束哪些位置可写。",
+                  "column": 1,
+                  "row": 2,
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-write",
+                  "label": "逐层执行受限写入",
+                  "detail": "目标是只写所属子池的有效前缀；设备实现、输出与服务指标仍待验。",
+                  "column": 1,
+                  "row": 3,
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-hidden",
+                  "to": "old-full",
+                  "label": "准备写入位置"
+                },
+                {
+                  "from": "old-full",
+                  "to": "old-window",
+                  "label": "误用同一坐标"
+                },
+                {
+                  "from": "old-window",
+                  "to": "old-damage",
+                  "label": "子池身份与行号不匹配"
+                },
+                {
+                  "from": "new-hidden",
+                  "to": "new-ids",
+                  "label": "从同一迭代计划取两种位置"
+                },
+                {
+                  "from": "new-ids",
+                  "to": "new-router",
+                  "label": "坐标随层的存储身份选择"
+                },
+                {
+                  "from": "new-router",
+                  "to": "new-write",
+                  "label": "再应用提交前缀边界"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "错误坐标的教学路径",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-hidden",
+                      "old-full",
+                      "old-window",
+                      "old-damage"
+                    ]
+                  },
+                  {
+                    "title": "修复责任的教学路径",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "new-hidden",
+                      "new-ids",
+                      "new-router",
+                      "new-write"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "DFLASH 的 _draft_write_ids 增加 kind 参数。普通上下文追加和验证后的前缀提交都把窗口位置向下传递；窗口位置存在时必须与主位置形状一致。逐层与 fused helper 回调都进入同一个层路由写入入口。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "DSPARK 注入器在预填充及带迭代计划的注入中取得窗口坐标，并以 int64 移到目标设备，再交给模型的上下文 KV 写入。验证路径把当前迭代计划继续传入，避免只留下主位置向量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "DSPARK 原有融合内核只接受一套位置向量；布局检查发现任一层不属于 owner 时返回 None。后续逐层路径仍可处理不同子池的位置。这里退出的是一条单位置融合路径，不是所有投影融合，也不是禁用整个 DSPARK。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创例子：请求甲的两个候选在 FULL 中位于 12、13，在窗口中位于 3、4；本轮只允许提交第一个候选。正确写集应分别落在 FULL 的 12 与窗口的 3，两个第二候选槽都保持原值。若只修正提交长度，窗口仍可能写到 12；若只修正坐标，未接受的第二候选仍可能污染下一轮。这个例子仅用于解释不变量，数字不是上游测试或实测结果。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：字节级写集测试比一次文本输出更接近问题",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已读取的源码证据及证明范围",
+              "columns": [
+                "来源",
+                "可确认的内容",
+                "仍不能证明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#48001 固定提交",
+                    "相关上下文路径及测试同时修改",
+                    "正式镜像已包含，或所有模型都受影响"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "router.py",
+                    "前缀写入按本层选择坐标与 view 层号",
+                    "所有设备实现的数值结果"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "dflash_worker_v2.py",
+                    "普通与前缀路径均传递窗口位置",
+                    "GPU fused helper 内核已实测"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "dspark.py",
+                    "单位置融合在非 owner 层存在时退出",
+                    "每种融合均被禁用，或退出没有性能代价"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "test_dense_fused_draft_geometry.py",
+                    "预置哨兵字节，比较整个 arena 的期望写入结果",
+                    "真实硬件、完整模型或长时并发正确性"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "新增用例覆盖普通写入、部分提交和全零提交；DFLASH 分别走非融合与 helper 回调，DSPARK 检查注入后的写集以及单位置布局拒绝。测试通过 CPU fixture、替换设备条件与简化物化器隔离地址语义，本次只读测试，未运行。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这种测试策略的价值在于观察未写区域。只看预期槽是否出现新 K/V，仍可能漏掉额外写坏的邻居；把整个 arena 与期望字节比较，可以让“写对一处但多写另一处”同样失败。实际设备还需要检查异步完成之后的内容，避免比较发生在写入完成以前。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：正确路由可能改变快速路径选择",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "共享存储减少重复管理，并不意味着所有层都能继续使用相同的融合约束。融合省掉的调用与中间步骤，往往建立在布局、形状或坐标一致的前提上。当这些前提不再成立，保留融合可能比回退更危险。评价修复时，应分别记录路径选择和端到端时延，不把任一慢路径出现直接判为回归。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "相邻 #48002 在绑定 CP 策略后拒绝 unified memory 与 sharded-padded CP KV 的组合；错误要求移除其中一个选项。配套单测让该 CP 条件成立时，统一池失败、静态池可继续。这个补丁没有宣告新增该组合支持。"
+            },
+            {
+              "type": "table",
+              "caption": "适用边界与验证责任",
+              "columns": [
+                "环境或负载",
+                "本报告的判断",
+                "不能外推"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "混合 FULL 与窗口草稿层",
+                    "优先检查每层写集、接受前缀和路径选择",
+                    "相同 token 自动得到相同行号"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "仅 owner 层或私有草稿池",
+                    "作为对照，确认非目标路径没有被破坏",
+                    "所有配置都必然受本问题影响"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "H20 与其他 NVIDIA 部署",
+                    "先核对模型、精度、后端、依赖和实际路由，再开展设备实验",
+                    "CPU fixture 能证明 H20 支持或收益"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "昇腾等其他后端",
+                    "需独立核对可达路径与 kernel 契约，不能复用 NVIDIA 结论",
+                    "源码中出现设备分支等于完成支持验收"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "sharded-padded CP 加统一池",
+                    "按新入口的拒绝结果处理，不能静默切换布局后称等价",
+                    "相邻补丁已经支持这种组合"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：从症状回到最早分歧的写集",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下都是拟议诊断假设，不是已证实的线上事故。症状可能是接受率突降、重复前缀时输出变化或并发下偶发错误，但这些表现也可能来自采样、模型兼容性或其他缓存路径。只有找到最早出现差异的 KV 写入，才能把问题归因到本修复范围。"
+            },
+            {
+              "type": "table",
+              "caption": "原创故障假设与需要采集的证据",
+              "columns": [
+                "假设",
+                "最小证据",
+                "排除误判"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "窗口层收到 FULL 坐标",
+                    "同一迭代的 layer route、FULL/窗口位置向量、实际写集",
+                    "只打印形状或最大行号不足；两个空间均可能合法"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "未接受候选覆盖邻居",
+                    "每请求提交长度、写前哨兵、写后差分及请求归属",
+                    "区分同步未完成与真正越界写集"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "单位置融合仍被错误选择",
+                    "融合布局检查结果与实际内核/逐层入口轨迹",
+                    "不凭函数名或开关值认定执行路径"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级后首次启动即报 CP 错误",
+                    "最终生效参数、已绑定 CP 策略、完整错误信息",
+                    "不要改一个参数就宣称负载和布局保持等价"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正确性恢复但延迟增加",
+                    "相同负载下路径分布、投机接受率、提交 token 与墙钟时间",
+                    "先固定数值基线，避免把错误写入带来的假快当参考"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "测试日志可记录匿名请求序号、层号、子池名、逻辑形状和相对槽位，不需要保存用户原始提示词。生产诊断应优先使用合成输入或已经批准的脱敏样本；这个问题的关键证据是写入边界，而不是收集更多业务内容。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：分别验证坐标、前缀和设备路径",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下矩阵尚未执行。先固定同一构建及依赖，使用已知的非投机或非共享存储参考路径，再切换唯一变量。新旧源码对比只在可复现实验环境开展，不把历史主分支和当前二进制混成一个“升级前后”对照。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议实验矩阵",
+              "columns": [
+                "实验",
+                "变量与输入",
+                "观测与失败判据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "E1 路由最小例",
+                    "同一 arena 上构造数值不同的 FULL 与窗口坐标",
+                    "只允许预先列出的子池行变化；任一额外写入失败"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E2 有效前缀边界",
+                    "同批请求分别全接受、部分接受、零接受，加入空批",
+                    "拒绝行及其他请求字节不变；有效 K/V 对上参考"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E3 DFLASH 两条物化路径",
+                    "逐层与实际 fused helper，普通预填充和前缀提交",
+                    "两路径写集一致；单独记录实际内核与回退原因"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E4 DSPARK 布局选择",
+                    "仅 owner 层对照，再加入需要另一套坐标的层",
+                    "混合层不走单位置融合；逐层写入仍满足写集"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E5 真机和精度",
+                    "在实际部署 GPU/NPU、精度、模型与并行设置上复核",
+                    "逐层参考容差预先冻结；不得事后放宽以掩盖错误"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E6 回收与长时压力",
+                    "混合长度、低接受率、批次增减、请求取消与槽位复用",
+                    "无跨请求污染；关注首次分歧，而非只看最终输出"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E7 CP 入口负向测试",
+                    "明确绑定 sharded-padded 策略，分别启用和关闭统一池",
+                    "不支持组合启动失败且错误清晰；对照走到预期入口"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "E1 到 E4 可以缩小到存储接口，E5 才回答目标硬件是否可用；E6 处理生命周期交错，E7 处理不支持组合。不能因为前四项快且稳定就跳过后三项，也不必把所有失败都塞进一次完整模型生成里排查。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：写集正确是硬门槛，性能另设口径",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "上线前预定义验收",
+              "columns": [
+                "维度",
+                "拟议通过条件",
+                "不满足时的处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "构建身份",
+                    "记录框架 SHA、依赖版本、容器摘要，并证明执行文件含相关修复",
+                    "停止把源码状态称为已部署"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "存储隔离",
+                    "最小例中未授权字节变化为零，未接受候选槽和其他请求不变",
+                    "阻止放量，回到首次分歧定位"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数值正确性",
+                    "实际设备 K/V 与参考满足预先确定的精度标准，生成验证通过",
+                    "保留失败样例，不以吞吐抵消数值失败"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "路径一致性",
+                    "记录每类层的实际路由、融合选择、fallback 计数与原因",
+                    "先修正观测，不能凭配置开关宣布覆盖"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "配置边界",
+                    "不支持的 CP 组合在启动阶段清晰失败，受支持对照正常进入测试",
+                    "不隐式改布局；明确重新选择部署参数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务指标",
+                    "在相同 SLO 和负载下记录 TTFT、TPOT、尾延迟、有效提交 tokens/s",
+                    "按既有预算判断是否可接受，必要时保留正确基线"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "效率分母必须统一。建议同时记录整段观测窗口的墙钟时间与实际交付给客户端的 token 数；草稿提出、验证计算和最终提交是不同计数，不能用更多候选 token 充当更高有效吞吐。若发生回退，性能比较需要解释回退比例而不只是给一条均值。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本报告不提供通用的“允许退化百分比”。模型、并发和 SLO 不同，合理预算也不同。应在实验开始前用目标服务的既有指标设门槛，而不是看到结果之后修改验收标准。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "未验证项：合入、发行与真实运行仍是不同证据",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8
+              ],
+              "text": "核验时官方发行页仍把 v0.5.23 标为 Latest，页面显示其发布时间为 11 月 2 日 22:14。本文不把 11 月 4 日的 main 合入等同于该发行或任一用户镜像已经包含修复。"
+            },
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "未运行本补丁的上游测试，也未执行 GPU、H20、昇腾或完整模型推理；所有实验矩阵和验收项保持待执行。",
+                "没有验证正式标签、wheel、容器或部署二进制的包含关系；真正部署前须核对产物及依赖，不能只比较日期。",
+                "没有证明完整统一 KV 改造系列已全部合入。本报告只解读 #48001，并把 #48002 作为独立配置边界。",
+                "没有独立测量融合退出的时延代价、接受率变化或显存收益，不给目标硬件速度倍数。",
+                "本报告的 row 示例、机制图、故障假设和实验方案均为原创分析，不是上游性能数据或已发生的事故记录。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "mooncake-tent-paired-request-attempt-accounting",
+    "kind": "analysis",
+    "title": "Mooncake TENT 配对记账：一次请求与多次传输，必须分开算",
+    "summary": "#5094 将逻辑请求与物理尝试分别闭合，保留运行时关闭采集前已开始的终态记录，并补齐首次尝试前分配失败。本文解释分母、故障归因、守恒验收与生产边界。",
+    "publishedAt": "2026-11-03",
+    "reviewedAt": "2026-11-04",
+    "topics": [
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Mooncake #5094 最终合入差异",
+        "url": "https://github.com/kvcache-ai/Mooncake/commit/e544719fa61a9f877ffc5508ad91845c77aa6f0b",
+        "publishedAt": "2026-11-03",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "TENT 指标设计文档",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e544719fa61a9f877ffc5508ad91845c77aa6f0b/docs/source/design/tent/metrics.md",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "传输引擎最终实现",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e544719fa61a9f877ffc5508ad91845c77aa6f0b/mooncake-transfer-engine/tent/src/runtime/transfer_engine_impl.cpp",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "指标预解析与记录实现",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e544719fa61a9f877ffc5508ad91845c77aa6f0b/mooncake-transfer-engine/tent/src/metrics/tent_metrics.cpp",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "指标回归测试源码",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e544719fa61a9f877ffc5508ad91845c77aa6f0b/mooncake-transfer-engine/tent/tests/metrics_recording_test.cpp",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "预解析原子单元实现",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e544719fa61a9f877ffc5508ad91845c77aa6f0b/mooncake-transfer-engine/tent/include/tent/metrics/cached_metric.h",
+        "accessedAt": "2026-11-03"
+      },
+      {
+        "title": "Mooncake v0.3.14 正式发布说明",
+        "url": "https://github.com/kvcache-ai/Mooncake/releases/tag/v0.3.14",
+        "publishedAt": "2026-11-03",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "v0.3.14 标签源码：metrics.md",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14/docs/source/design/tent/metrics.md",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "v0.3.14 标签源码：transfer_engine_impl.cpp",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14/mooncake-transfer-engine/tent/src/runtime/transfer_engine_impl.cpp",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "v0.3.14 标签源码：tent_metrics.cpp",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14/mooncake-transfer-engine/tent/src/metrics/tent_metrics.cpp",
+        "accessedAt": "2026-11-04"
+      },
+      {
+        "title": "v0.3.14 标签源码：metrics_recording_test.cpp",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/v0.3.14/mooncake-transfer-engine/tent/tests/metrics_recording_test.cpp",
+        "accessedAt": "2026-11-04"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#5094于11月3日合入；11月4日已核实正式v0.3.14标签包含本文相关TENT配对记账实现。wheel及用户镜像仍未核实。",
+        "sourceIndices": [
+          0,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      }
+    ],
+    "questions": [
+      "目标制品和TENT路径是否包含修复？",
+      "端到端请求与传输任务的分母如何映射？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-03核验固定提交e544719fa61a9f877ffc5508ad91845c77aa6f0b的最终差异、TENT文档、引擎、指标与缓存单元实现以及回归测试。合入时间01:54:44 UTC；11月3日首轮仅分析main；11月4日补核正式v0.3.14标签的相关实现，未验证二进制包或用户镜像。只读公开源码，未执行测试或硬件实验。 v0.3.14发布于2026-11-03 11:15:55 UTC，标签指向e1ea5d31bb5e46ff2df9f90e7c2fbaf52fcdee8c；本次为同ID包含关系更新，不是完整发行说明逐项解读。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：请求恢复了，也要看见失败的那次传输",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "Mooncake 于 2026-11-03 01:54:44 UTC 合入 #5094，固定提交 e544719fa61a9f877ffc5508ad91845c77aa6f0b。它为 TENT 增加逻辑请求与物理尝试的配对终态记账，并处理发生在首次尝试之前的分配失败。11月3日首轮讨论的是 main 源码变化；后续发行包含关系见下面11月4日补核。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "主要价值是减少监控中的语义混淆：一次缓存传输通过备用通道最终成功，不代表首选通道没有故障；反过来，一个请求可能在真正发出任何传输前就失败，物理尝试失败数也不能代替请求失败数。应把业务可用性、传输可靠性和账本完整性放在不同看板。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "这不是提高 H20 带宽、消除 RDMA 故障或保证 KV 内容正确的补丁。本站只读了固定版本文档、实现及测试，没有执行硬件测试。目标镜像是否包含修改、使用的是 TENT 还是 Classic TE，以及上层一个生成请求对应多少传输任务，都仍需核实。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6,
+                7,
+                8,
+                9,
+                10
+              ],
+              "text": "2026-11-04补核：v0.3.14于11月3日11:15:55 UTC正式发布，说明列出#5094。其标签的相关TENT实现已经核对；不能据此证明发布wheel、容器或用户镜像实际加载了同一路径。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：生成请求、缓存任务和传输尝试是三个分母",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "TENT 文档把逻辑请求与物理尝试分别建账：逻辑层不加 transport 标签，尝试层按 transport 归因；终态限制为 success、failed、timeout、canceled。一次恢复可以有多个尝试终态，而只有一个逻辑终态。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里的“逻辑请求”不是 HTTP 推理请求。生产集成可能把一条生成请求拆成多个层、块或批次的缓存工作，也可能对相邻工作合并。若直接拿传输失败数除以模型服务请求数，所得比例会随切块策略变化，不能稳定描述任一层的可靠性。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学例：某推理请求需要 10 份缓存工作，其中一份首选路径失败而备用路径成功。服务可以成功，缓存层也可以得到 10 个成功终态，但底层经历了 11 次尝试和 1 次失败。这个例子只说明分母，不声称当前引擎必然按这套粒度拆分，也不是测量结果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "第三个分母是启用记录的工作集。运行时关闭采集后，新工作可能不进入账本。因此守恒检验只能证明被计入的生命周期配对完整，不能证明所有真实流量均已覆盖。服务侧请求总量仍需独立观测。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：在开始时取得记账资格，在终态时消费一次",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "最终引擎在用户拥有的任务状态发布后建立逻辑记账，内部 staging 提交不重复算作用户逻辑请求。物理尝试保存开始时的 transport，防止故障切换覆盖类型后误归因。终态先消费配对标记，再写指标；重复结算有生命周期状态保护。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "指标初始化预先解析有限标签集合。开始记录需要就绪且运行时启用；结束记录不再检查运行时启用状态，因而开始后关闭记录仍可闭合原有配对。结束时仍要求指标对象已初始化，不能把运行时开关保证延伸为任意对象销毁竞态保证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "预解析单元只对已存在的原子单元更新；缺少单元时丢弃该观测，而不是在传输热路径中临时分配、加锁或抛出异常。这是让可观测性尽量不改变数据路径的选择，也意味着“lossless”必须理解为初始化和生命周期契约下的成对记录，不能理解为持久化审计日志。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创建账推导：在同一进程生命周期、相同聚合维度及静止快照下，累计开始数减累计终态数应等于在途数。物理层要把不同 operation 的累计数先聚合到与 in-flight 相同的 transport 维度；不能把某一种操作的计数与全部操作的 gauge 比较。活动流量下逐项读取并非事务快照，短暂差值先作为观测线索，不宜立即判故障。"
+            },
+            {
+              "type": "diagram",
+              "title": "一个逻辑任务，两次独立传输尝试",
+              "caption": "原创非实测示意：紫色是控制账本，橙色是通信尝试，绿色表示传输结果边界。仅展示可以恢复的教学分支，不保证所有错误均可回退，不把成功终态画成KV内容已校验。 11月4日仅按实际路径阶段重新分组以分离连线，逻辑任务与传输尝试仍由节点语义区分；全部节点、边和详细解释保留。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "accept",
+                  "label": "逻辑任务被接受",
+                  "detail": "仅对进入记录集合的用户任务建账，不等于服务请求数。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "逻辑开始",
+                  "tone": "control"
+                },
+                {
+                  "id": "token",
+                  "label": "保留逻辑记账资格",
+                  "detail": "关闭运行时采集不抹掉已开始的配对。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "配对资格",
+                  "tone": "control"
+                },
+                {
+                  "id": "terminal",
+                  "label": "观察逻辑终态",
+                  "detail": "消耗资格，计一次成功、失败、超时或取消。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "唯一终态",
+                  "tone": "control"
+                },
+                {
+                  "id": "ledger",
+                  "label": "逻辑账本闭合",
+                  "detail": "需在静止、同进程范围比较，不是业务数据校验。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "在途归零",
+                  "tone": "control"
+                },
+                {
+                  "id": "rdma",
+                  "label": "首选通道尝试",
+                  "detail": "开始时捕获transport身份，示例使用首选RDMA。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "尝试甲",
+                  "tone": "communication"
+                },
+                {
+                  "id": "failed",
+                  "label": "首个尝试失败",
+                  "detail": "失败归首个transport，不被备用通道覆盖。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "失败结算",
+                  "tone": "communication"
+                },
+                {
+                  "id": "tcp",
+                  "label": "备用通道尝试",
+                  "detail": "示例中的备用TCP是第二次尝试，不是第二个逻辑请求。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "尝试乙",
+                  "tone": "communication"
+                },
+                {
+                  "id": "success",
+                  "label": "备用尝试成功",
+                  "detail": "这里是传输终态示意；模型输出和KV字节正确须独立验收。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "成功结算",
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "accept",
+                  "to": "token",
+                  "label": "建立逻辑配对"
+                },
+                {
+                  "from": "token",
+                  "to": "rdma",
+                  "label": "开始首个尝试"
+                },
+                {
+                  "from": "rdma",
+                  "to": "failed",
+                  "label": "观察失败"
+                },
+                {
+                  "from": "failed",
+                  "to": "tcp",
+                  "label": "教学：选择备用"
+                },
+                {
+                  "from": "tcp",
+                  "to": "success",
+                  "label": "观察成功"
+                },
+                {
+                  "from": "success",
+                  "to": "terminal",
+                  "label": "教学：逻辑成功"
+                },
+                {
+                  "from": "terminal",
+                  "to": "ledger",
+                  "label": "一次结算减在途"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "开始与首次尝试",
+                    "tone": "control",
+                    "nodeIds": [
+                      "accept",
+                      "token",
+                      "rdma",
+                      "failed"
+                    ]
+                  },
+                  {
+                    "title": "备用与最终结算",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "tcp",
+                      "success",
+                      "terminal",
+                      "ledger"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：读最终实现与断言，不把测试代码当运行成绩",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "固定版本证据表",
+              "columns": [
+                "资料",
+                "支持的窄结论",
+                "不能据此推断"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合入差异",
+                    "新增配对记账并补齐提交前失败结算",
+                    "已随正式发行交付"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "引擎实现",
+                    "分配失败任务被标终态，并在建立逻辑配对后结算",
+                    "所有分配失败都会自动切到TCP"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "指标实现",
+                    "初始化预解析；运行时关闭后允许原配对结束",
+                    "进程崩溃也不会丢记账"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "回归测试源码",
+                    "覆盖开关切换、四终态、分配失败和重复查询取消结果",
+                    "本站已运行测试或已在真实RDMA复现"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "新增分配失败测试用受控 transport 构造同一批的第一项失败、第二项成功，并断言只有第二项产生物理尝试；取消与批状态查询仍能到达后续工作。另一测试反复查询已取消的无路由任务，断言它保持取消而非改记失败。它们是已读源码中的预期行为，不是独立执行结果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "证据应分两层解释：测试给出了可复现的具体反例形状；代码阅读说明这些反例与账本设计的连接。两者都不能替代实际构建选项、真实transport、并发压力和上层服务集成测试。"
+            },
+            {
+              "type": "table",
+              "caption": "11月4日标签包含核对；保留首轮机制与测试分析",
+              "columns": [
+                "比较对象",
+                "结果",
+                "结论边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "v0.3.14 metrics.md与首轮固定提交",
+                    "逐字节一致",
+                    "设计文档相同"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.3.14 transfer_engine_impl.cpp",
+                    "逐字节一致",
+                    "本文所读任务生命周期实现相同"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    8
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.3.14 tent_metrics.cpp",
+                    "差异仅注释删减",
+                    "配对记账实现仍在"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3,
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.3.14 metrics_recording_test.cpp",
+                    "差异是注释及断言说明文字",
+                    "不是本站执行了测试"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4,
+                    10
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：严格配对优先于关闭开关后立即停止写数",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "当排障时关闭记录，旧在途工作仍更新终态是合理且必要的。否则在途数可能永久偏高。运维不能把“关闭记录后数值还在变化”直接判断为配置没有生效，应该同时检查新开始数与旧工作排空。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "有限标签帮助控制存储与抓取成本，但牺牲逐请求解释力。不要为了补足根因把请求ID、地址和原始错误字符串加成长期监控标签。需要定位时用受控采样事件与日志关联，避免标签爆炸反过来影响服务。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "预解析把一部分成本移到初始化与常驻内存。相较按需创建标签，空闲时也可能看到零值系列。合理比较对象是同一构建下的启动时间、常驻内存、采集成本与负载延迟，不能仅凭热路径没有分配就宣称零开销。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "状态观测时刻也不同于硬件完成时刻。长尾可能来自通信、调度、轮询或采集；账本增强了区分尝试的能力，却没有提供单独的硬件计时证据。不得把一个尝试延迟指标直接当成NIC线速或设备链路利用率。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：分别报警覆盖率、恢复成本与业务失败",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创诊断假设，不是已确认现场故障",
+              "columns": [
+                "观测组合",
+                "优先验证",
+                "避免误判"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "逻辑成功稳定，首选attempt失败上升",
+                    "备用占比、每请求尝试次数、排队与业务尾延迟",
+                    "服务成功不代表首选网络健康"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "逻辑失败增加，attempt总数未同步增加",
+                    "提交前分配、路由准入、任务终态",
+                    "不要只查网卡错误"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "关闭记录后终态仍增长",
+                    "是否仅已有配对在排空",
+                    "不先判开关失效"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "在途长期不归零",
+                    "任务年龄、重复查询、终态事件与采集完整性",
+                    "gauge高不自动等于内存泄漏"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "守恒残差偶发，静止后消失",
+                    "非原子抓取、窗口对齐、进程重启",
+                    "不把抓取竞态直接当数据丢失"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议并列展示三组指标：服务侧成功率与TTFT/TPOT；传输逻辑层终态及在途年龄；物理层失败、恢复与尝试数量。只有模型/请求层才能决定用户SLO是否达标，传输层指标用于解释成本和故障分支。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "升级时先记录镜像摘要、Mooncake固定revision、编译开关与加载库身份，再确认引擎确实进入TENT。H20 GPU和Ascend NPU环境应各自列出transport和内存类型；不能因为都连接缓存就共用一次验证结果。本文没有修改线上模型配置或执行故障注入。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：先冻结流量验证守恒，再引入并发",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下全部是未执行的实验计划。用父提交与候选提交分别构建相同依赖的测试程序，记录编译器、TENT metrics开关、操作系统、transport、设备、请求大小和并发。先用fake transport验证计数，再使用目标硬件，不将CPU模拟结果外推H20或NPU。"
+            },
+            {
+              "type": "table",
+              "caption": "原创可执行验证设计",
+              "columns": [
+                "场景",
+                "控制变量",
+                "应保存的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正常成功",
+                    "READ/WRITE、单任务/多任务",
+                    "暂停新提交后，开始-终态=在途且最终归零"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "首选失败后恢复",
+                    "固定失败一次，备用成功",
+                    "一个逻辑成功、两个attempt终态；首选失败归因不丢"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "开始后关闭记录",
+                    "阻塞任务开始后关闭，再放行",
+                    "旧配对闭合；关闭期间新任务不混入同一记录集合"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "提交前分配失败",
+                    "同批第一项失败第二项成功",
+                    "逻辑两终态，只有已提交项产生attempt；批查询不阻断"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消与重复查询",
+                    "无路由、取消后重复poll",
+                    "只计一个取消终态，不变成失败或重复扣在途"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "高并发抓取",
+                    "固定流量与多种抓取间隔",
+                    "活动残差分布；静止后准确闭合，记录重启边界"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障恢复SLO",
+                    "真实RDMA/TCP或目标设备路径",
+                    "有效字节校验、attempt放大、尾延迟、CPU和内存占用"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：账本闭合只是第一道门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议在测试前固定口径和阈值",
+              "columns": [
+                "指标",
+                "计算或测量范围",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "逻辑守恒",
+                    "同一进程的开始、全部终态及在途",
+                    "静止快照精确相等；重启不跨代相减"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "物理守恒",
+                    "按transport聚合操作后比较attempt与inflight",
+                    "无负值、重复终态或静止后遗留残差"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "尝试放大",
+                    "同一完成工作集的attempt数/逻辑任务数",
+                    "注入场景符合预先定义，不与窗口内未完成任务混算"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据正确",
+                    "目标字节与参考内容逐项比较",
+                    "恢复成功不能掩盖坏数据或错误终态"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务影响",
+                    "固定模型、负载、缓存冷热与到达率",
+                    "错误率和延迟满足预定SLO；开销门槛单独判定"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "制品与范围",
+                    "实际加载库、revision、TENT路径和设备",
+                    "证明候选进入目标路径，否则结果不具归因性"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "教学阈值不能伪装成普适生产阈值。守恒可以要求受控静止快照精确匹配，而延迟、CPU和内存阈值应由现有服务预算给定。只要数据正确或SLO门失败，即使指标闭合也不能宣称升级成功。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：二进制制品、并发快照与端到端映射",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "已核实正式v0.3.14标签包含相关实现；尚未验证wheel、容器或用户镜像是否包含并实际使用TENT路径。本文不覆盖v0.3.14其他全部变更。",
+                "未运行仓库回归测试、真实RDMA/TCP测试、H20或Ascend实验。",
+                "关闭期间未计入的工作量需服务侧独立覆盖，账本完整性不能代替流量覆盖率。",
+                "初始化失败、销毁顺序、进程崩溃及抓取过程中并发更新的边界需要专门测试。",
+                "一个上层生成请求映射多少TENT逻辑任务、合并与staging分支如何改变分母，需要在所用引擎中核对。",
+                "没有把相邻Classic TE指标新增或其他transport补丁算作本提交的效果。"
               ]
             }
           ]
