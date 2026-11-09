@@ -932,6 +932,853 @@
   },
   {
     "schemaVersion": 1,
+    "id": "sglang-mooncake-registration-failure-contract",
+    "kind": "analysis",
+    "title": "SGLang Mooncake 注册失败：启动即报错之后，重叠例外仍需验收",
+    "summary": "解读 #49156 的批注册异常传播，交叉核对 -7 的重叠语义与尽力回滚，区分初始化拒绝、恢复兼容和真实 KV 可用性。",
+    "publishedAt": "2026-11-08",
+    "reviewedAt": "2026-11-09",
+    "topics": [
+      "SGLang",
+      "PD 分离",
+      "KV Cache",
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang #49156 主线合入提交",
+        "url": "https://github.com/sgl-project/sglang/commit/842b4738315fed2246b04a6fbe92fd6bb311ac25",
+        "publishedAt": "2026-11-08",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "冻结版本：Mooncake 注册包装器",
+        "url": "https://github.com/sgl-project/sglang/blob/842b4738315fed2246b04a6fbe92fd6bb311ac25/python/sglang/srt/distributed/device_communicators/mooncake_transfer_engine.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "冻结版本：KV 与 staging 注册调用方",
+        "url": "https://github.com/sgl-project/sglang/blob/842b4738315fed2246b04a6fbe92fd6bb311ac25/python/sglang/srt/disaggregation/mooncake/conn.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "冻结版本：注册错误回归测试",
+        "url": "https://github.com/sgl-project/sglang/blob/842b4738315fed2246b04a6fbe92fd6bb311ac25/test/registered/unit/disaggregation/test_encode_server.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "Mooncake v0.3.14：错误码定义",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e1ea5d31bb5e46ff2df9f90e7c2fbaf52fcdee8c/mooncake-transfer-engine/include/error.h",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "Mooncake v0.3.14：classic 批注册、重叠检查与回滚",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e1ea5d31bb5e46ff2df9f90e7c2fbaf52fcdee8c/mooncake-transfer-engine/src/transfer_engine_impl.cpp",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "Mooncake v0.3.14：classic 与 TENT 路由",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e1ea5d31bb5e46ff2df9f90e7c2fbaf52fcdee8c/mooncake-transfer-engine/src/transfer_engine.cpp",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "PR #49156：作者的 CI 故障记录与验证说明",
+        "url": "https://github.com/sgl-project/sglang/pull/49156",
+        "review": {
+          "category": "community",
+          "publisher": "SGLang GitHub PR 作者",
+          "status": "attributed",
+          "note": "读取 PR 描述、合并状态、改动与作者验证记录，并对照冻结提交。作者所述 RDMA 故障、约 30 分钟测试与本地完整测试未独立复现；页面 CI 图标不能代表本次报告完成了硬件验证。"
+        },
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "SGLang 官方发布列表",
+        "url": "https://github.com/sgl-project/sglang/releases",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "直接父版本：旧注册返回值契约",
+        "url": "https://github.com/sgl-project/sglang/blob/a7d9f81ee24c5cceeceeb4ccb9072f68d56cb10d/python/sglang/srt/distributed/device_communicators/mooncake_transfer_engine.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "Mooncake v0.3.14：Python 批注册绑定",
+        "url": "https://github.com/kvcache-ai/Mooncake/blob/e1ea5d31bb5e46ff2df9f90e7c2fbaf52fcdee8c/mooncake-integration/transfer_engine/transfer_engine_py.cpp",
+        "accessedAt": "2026-11-09"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#49156 已合入 main；Mooncake 批注册的非零非 -7 结果与后端异常向调用方抛出 RuntimeError。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "-7 仍非致命，而 Mooncake classic 的 -7 可来自批内重叠或与既有区域冲突，不能单独证明整批已注册。",
+        "sourceIndices": [
+          1,
+          5
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "正式产物包含、真实启动与恢复、RDMA/GPU/NPU 数据正确性和资源清理尚未验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "运行产物是否确实包含修复，实际 Mooncake 走哪个实现分支？",
+      "-7 时能否证明每个所需 KV/staging 区间都已可传输？",
+      "一般注册失败是否在真实健康探测和路由准入之前暴露？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核对日期 2026-11-09。SGLang #49156 合入 SHA 842b4738315fed2246b04a6fbe92fd6bb311ac25，直接父 SHA a7d9f81ee24c5cceeceeb4ccb9072f68d56cb10d；Mooncake v0.3.14 固定到 e1ea5d31bb5e46ff2df9f90e7c2fbaf52fcdee8c。主线修复，不宣称正式产物已包含。独立执行 4 个抽取上游测试与 14 个定向方法，父版两个新增回归按预期失败；没有完整导入、C++、真实 RDMA、GPU/NPU 或部署实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论 先让注册失败显形，不能把无异常当成完整就绪证明",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "SGLang #49156 于 2026-11-08 23:59 UTC 合入主线，改变 Mooncake 批注册的错误传播契约。除 -7 重叠例外外，后端非零返回码会抛 RuntimeError，后端抛出的异常也会带 cause 向上传递。它修的是故障被吞掉后的继续执行，不是 RDMA 注册资源不足本身。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最重要的运维价值，是把“开始收请求后持续传输失败”尽量前移成明确的初始化失败。对于依赖 KV 远程访问的服务，进程活着、端口打开和传输所需的内存已登记，是三种不同事实。上线门应检查最后一种，而不是用第一种代替它。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                5
+              ],
+              "text": "但不能写成“所有注册失败都会阻止启动”。包装器有意保留 -7 非致命路径；Mooncake classic 源码中的 -7 还可能表示本次输入区间互相重叠，或与既有区间冲突，并不必然表示整批所需区间都已经注册。这个差别决定故障注入必须单独覆盖重叠情况。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次独立运行了抽取实际 Python 方法的 4 项上游测试与 14 项定向测试；新版本全部通过，直接父版本在新增的两个回归测试上失败。测试使用 mocked 后端，不是完整 SGLang 导入、C++ 编译、真实 RDMA 或 GPU/NPU 实测。正式 Latest 页面仍为 v0.5.23；本文不宣称该修复已进入任何指定 wheel 或镜像。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景 地址存在、注册成功和请求可服务是三个阶段",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "GPU 或主机上的缓冲区有地址，不表示通信库已经为它建立远程访问所需的登记。PD 分离把两类责任拆开了：模型侧负责分配和填写 KV，传输侧负责识别内存及执行远端读写。前一类成功、后一类失败时，模型进程仍可能持有完整张量，却无法完成实例间交接。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                7
+              ],
+              "text": "PR 作者描述的一次 CI 故障始于某 RDMA 设备的内存注册返回 EAGAIN。包装器把失败仅记在 debug，调用方又没有检查整数返回值，后续出现 AddressNotRegistered / KVTransferError。作者记录的一项测试持续约 30 分钟，gsm8k 得分为 0.0。这是该次故障叙述，不是本文复测结果，也不能据此推断任意零分评测都属于注册问题。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "这里至少有三个错误表示层：底层 errno、Mooncake 返回码、Python 异常。Mooncake 定义 ERR_CONTEXT 为 -202、ERR_ADDRESS_OVERLAPPED 为 -7。数字 11 与 -202 不是同一个命名空间；-202 也不能脱离底层日志被翻译成某个唯一的硬件根因。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "有用的排障顺序是先找最早失败的前置条件，再检查它如何传播。若注册已经失败，随后几十个请求的传输报错往往只是后果。先重跑模型精度测试、调投机参数或降低采样温度，可能消耗时间却没有触碰真正的失败边界。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制 将忽略返回码的问题改成异常传播，同时保留恢复例外",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                9
+              ],
+              "text": "旧包装器在 batch_register_memory 抛异常时把返回值改成 -1；非零值只写 debug，再返回整数。新包装器先检查 API 是否存在，构造区间数量、总字节数、地址包络和设备说明，再调用后端。后端异常用 raise ... from 保留原因；非零且非 -7 变为 RuntimeError。成功和 -7 路径都隐式返回 None，因此上层不能通过这个返回值区分两者。"
+            },
+            {
+              "type": "diagram",
+              "title": "错误必须到达调用方，重叠例外仍需独立核验",
+              "caption": "原创错误传播示意，非实测时序。左组是旧路径，右组是新包装器的三个互斥结果；两组不是连续的执行步骤。箭头不表示 RDMA 数据完成或服务已经就绪。-7 与 0 都返回 None，但证据含义不同。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-result",
+                  "label": "后端报错",
+                  "detail": "旧路径收到非零返回码；后端抛异常也被包装器折成 -1。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "后端报错",
+                  "tone": "communication"
+                },
+                {
+                  "id": "old-return",
+                  "label": "只返回码",
+                  "detail": "旧 batch_register 留下 debug 日志并返回错误码，未强制调用方处理。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "只返回码",
+                  "tone": "control"
+                },
+                {
+                  "id": "old-ignore",
+                  "label": "调用方未查",
+                  "detail": "KV 管理器只调用，不接收返回值，因此注册失败不在这里中断。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "调用方未查",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-next",
+                  "label": "初始化继续",
+                  "detail": "后续初始化可以继续。这不是证明其他初始化步骤或健康检查必定成功。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "初始化继续",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "new-result",
+                  "label": "分类结果",
+                  "detail": "新包装器检查后端结果，并保留 Python 异常的 cause。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "分类结果",
+                  "tone": "communication"
+                },
+                {
+                  "id": "new-fatal",
+                  "label": "抛出异常",
+                  "detail": "后端抛异常、缺失 batch API 或非零且不是 -7，变成 RuntimeError。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "抛出异常",
+                  "tone": "danger"
+                },
+                {
+                  "id": "new-overlap",
+                  "label": "重叠例外",
+                  "detail": "-7 记 ERROR 后返回 None。这里没有逐区间确认整批都已可传输。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "重叠例外",
+                  "tone": "control"
+                },
+                {
+                  "id": "new-zero",
+                  "label": "后端成功",
+                  "detail": "0 正常返回 None。真实链路、数据正确性和就绪探测仍要另验。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "后端成功",
+                  "tone": "compute"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-result",
+                  "to": "old-return",
+                  "label": "非零结果或异常折算值"
+                },
+                {
+                  "from": "old-return",
+                  "to": "old-ignore",
+                  "label": "返回整数但调用方不检查"
+                },
+                {
+                  "from": "old-ignore",
+                  "to": "old-next",
+                  "label": "没有由注册失败引发的异常"
+                },
+                {
+                  "from": "new-result",
+                  "to": "new-fatal",
+                  "label": "异常、缺 API 或非零且非 -7"
+                },
+                {
+                  "from": "new-result",
+                  "to": "new-overlap",
+                  "label": "返回 -7：保留兼容性例外"
+                },
+                {
+                  "from": "new-result",
+                  "to": "new-zero",
+                  "label": "返回 0：后端报告成功"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧路径：错误被丢掉",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-result",
+                      "old-return",
+                      "old-ignore",
+                      "old-next"
+                    ]
+                  },
+                  {
+                    "title": "新路径：区分三种结局",
+                    "tone": "control",
+                    "nodeIds": [
+                      "new-result",
+                      "new-fatal",
+                      "new-overlap",
+                      "new-zero"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "调用方在构造 MooncakeKVManager 时先 init_engine，再 register_buffer_to_engine，之后才进入其余初始化。主 KV、aux 与 state 区间由 _registerable_regions 汇总，跳过零长度并按完整的 (ptr, len) 去重；staging 注册也调用同一包装器。两处没有本地捕获注册异常，因此失败可以向上中断，而不需要让每个调用方都新增返回码判断。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "边界一是“去重”不等于“证明没有区间交叠”。相同的地址与长度可被去掉，但部分覆盖、同起点不同长度，以及与历史登记集合的冲突，是另外的问题。新接口仍依赖合法输入和后端语义，不是一个完整的区间验证器。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "Mooncake v0.3.14 classic 批注册先检查零长度、批内重叠，再尝试预留所有区间；之后逐 transport 执行。某 transport 失败时，它反向尝试注销已尝试 transport 的整批地址，释放区间预留并返回原错误。注销失败会记警告，所以只能说“有回滚路径”，不能保证失败后所有驱动资源都已清空。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "边界二是后端身份。相同版本的外层 TransferEngine 可将批注册路由到 classic 或 TENT；本文对上述重叠和回滚的逐步解读只覆盖 classic 实现。不能用 classic 的源码结论为所有构建选项、所有通信协议或所有硬件背书。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据 源码、作者结果与本地差分分别记账",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "本次证据及其证明边界",
+              "columns": [
+                "证据",
+                "能证明什么",
+                "不能证明什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合入提交 842b4738315f",
+                    "两文件变更：包装器与注册测试；main 已包含",
+                    "任何已安装产物包含修复，或所有 CI 通过"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "冻结注册包装器与直接父版本",
+                    "异常/返回值契约、-7 例外、batch_deregister 未变",
+                    "整体进程退出码与健康探测一定符合部署预期"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "KV 管理器调用处",
+                    "初始化与 staging 调用不再忽略传播出的异常",
+                    "所有历史调用者、第三方扩展、生产恢复流程都安全"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "上游两个新增回归用例",
+                    "作者覆盖 -202 抛异常和 -7 记 ERROR",
+                    "真实 NIC 注册失败、混合区间或资源回收成功"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者 CI 故障记录与本地测试说明",
+                    "作者报告存在错误被吞掉的故障链",
+                    "硬件归因已独立复现；完整 CI 绿色"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "本地 AST 抽取差分",
+                    "新 4/4 上游测试通过；父版 2/4 通过且两个新回归失败；另 14/14 定向通过",
+                    "完整项目测试、编译、RDMA、GPU/NPU 或上线验收"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Mooncake v0.3.14 冻结代码",
+                    "classic 的 -7 条件和尽力回滚路径可定位",
+                    "实际安装后端是 classic，或故障后物理 MR 数归零"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5,
+                    6
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "定向测试检查了六种非零非 -7 结果、异常 cause、缺失 API、非连续地址的诊断摘要、注销契约不变、两个调用方的异常传播、空集合跳过、精确去重与部分重叠未被去掉。还核查了直接空输入和不等长列表的包装器边界。测试数量按 14 个方法统计，其中包含参数子案例，不把子案例与方法数相加制造更大的通过数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "未执行完整上游测试集。抽取方法隔离了重依赖，适合验证错误传播分支，却主动移除了真实导入、线程、驱动和进程环境。这个实验设计能反驳“新旧逻辑没有区别”，不能证明“新的服务部署可以稳定运行”。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍 明确失败减少误服务，却不会自动恢复容量",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "启动失败让故障更早、更容易定位，代价是故障节点会直接减少可用副本。如果编排系统只做快速重启，仍可能形成重复申请资源、失败、重启的循环。合理的恢复策略需要同时考虑实例准入、退避、节点隔离和诊断证据；这些属于部署决策，并非本补丁已经实现的能力。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                7
+              ],
+              "text": "作者解释保留 -7，是为了兼容注销失败但被容忍后发生的内存 resume：原区间可能仍在登记表中，不能仅因再注册而让恢复崩溃。batch_deregister 仍保留旧行为。这是有意识的兼容性权衡，而不是忘记把一个非零码升级成异常。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "另一方面，保留例外意味着“未抛异常”不具备严格的整批成功含义。若一批同时含已登记区间和新增区间，或者批内存在部分重叠，-7 本身没有逐区间状态。需要核查所需区间与已有注册集合的关系，不能把日志中的 already registered 直接当作完整可用证明。此处是从两个项目接口组合得出的风险分析，不代表已经发现用户部署发生漏注册。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "新诊断文本中的总字节数是 lengths 之和，地址包络是最小起点到最大终点。非连续缓冲区之间的空洞也处在包络内，所以包络宽度不能拿来当作注册总量或 MR 数；一块区域在多个设备上的登记开销也不能由这两个数字直接推算。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原生包装器不是面向任意输入的校验 API。直接传空列表会在 min 处失败；不等长 ptrs/lengths 没有在此层显式校验。已读取的管理器生成配对、非空区间，但外部调用者仍需保证契约。不要在真实 C++ 绑定上故意传越界长度数组来做“验证”，应用 mock 或单独的受控验证层。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断 先定位最早的注册错误，再解释后续传输失败",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设与所需证据",
+              "columns": [
+                "现象",
+                "候选解释",
+                "最小证据",
+                "不能直接下的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "启动出现 RuntimeError 且 ret=-202",
+                    "后端注册失败已向上传播",
+                    "完整 cause、此前 Mooncake 日志、所选设备、实际构建身份",
+                    "不能仅凭 -202 判定就是 memlock 或某张 NIC 损坏"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "ERROR 级 -7，但构造没有抛异常",
+                    "兼容的重复登记，或其他区间重叠",
+                    "本批区间与历史登记集合、注销结果、每个区域的传输验证",
+                    "不能说整批都已登记，也不能只按日志级别判定进程退出"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "仍然看到 AddressNotRegistered",
+                    "老产物、-7 例外、恢复路径或其他生命周期问题",
+                    "实际 SHA、最早注册日志、区域身份与注销/重建时间线",
+                    "不能据此断言新补丁无效或必须升级模型"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "修复后副本反复重启",
+                    "同一外部注册条件一直未恢复",
+                    "首个错误、重启间隔、节点资源与残留登记变化",
+                    "不能用更快重试等同修复根因"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "注销有警告，恢复后行为异常",
+                    "可能存在残留或不完整回滚",
+                    "原始区域清单、注销状态、恢复清单、真实远端访问",
+                    "不能由 cleanup 已调用推断资源已经释放"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "注册成功但评测错误",
+                    "数据布局、模型或其他服务层问题",
+                    "独立正确性参考、传输完整性及请求终态",
+                    "注册成功不能证明模型数值正确"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "诊断记录应使用合成请求，保留实际 SGLang commit、Mooncake 版本与实现分支、协议、GPU/NIC 对应关系、区域数量和大小。底层日志可能含内存地址或部署细节，适合留在受控排障记录，不应原样公开。本文只使用公开源码和合成地址，没有读取或发布用户生产日志。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对运行中的系统，本报告只建议验证步骤，没有执行重启、改变驱动设置、调整安全限制或修改调度策略。尤其不要为通过测试而临时关闭必要保护，再将该结果归入标准配置的成功记录。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵 把接口分支、进程准入和真实传输分开验证",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下矩阵是待执行计划。本地 mock 结果只覆盖其中部分接口分支；所有真实进程、恢复、NIC、多设备与负载项都未执行。实验前冻结两版软件、驱动、协议、拓扑、请求集和停止条件，不在看到结果后改验收门槛。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议分层实验矩阵",
+              "columns": [
+                "编号与层级",
+                "输入或对照",
+                "观察量",
+                "预期与边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "M1 包装器差分",
+                    "直接父版/修复版 × 0、-202、-7、异常、无 API",
+                    "返回值、异常类型/cause、日志级别",
+                    "与冻结契约一致；mock 不代表真实后端"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M2 调用方",
+                    "KV/aux/state、staging、空集合、精确重复",
+                    "实际调用次数、区间列表、传播位置",
+                    "正常清单只注册所需非零区间；普通错误不被吞掉"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M3 重叠边界",
+                    "全量已登记/部分已登记/批内交叠/完全不重叠",
+                    "返回码、前后登记集合、每个区间访问",
+                    "分别记录；-7 不自动计为完整成功"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M4 单进程准入",
+                    "受控注入一般注册失败与正常注册",
+                    "初始化退出、健康探测、路由加入时刻",
+                    "普通失败实例不得进入计划中的可服务集合"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M5 多设备失败",
+                    "单设备成功、某设备失败、全部正常",
+                    "逐设备注册/回滚记录、残留 MR 与错误链",
+                    "正确暴露首因；不能只检查一张设备的成功"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M6 恢复序列",
+                    "成功注销→resume；失败注销→resume；地址/尺寸改变",
+                    "区域身份、-7 来源、每区间可读写性",
+                    "兼容恢复可用；新增区域不能因其他区域重叠而漏验"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M7 实现与协议",
+                    "实际支持的 classic/TENT 和目标协议分别跑",
+                    "所走分支、错误映射、清理结果",
+                    "每个组合独立结论；不借用其他组合的通过记录"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M8 真实 PD",
+                    "同模型同配置、短长 prompt、KV与staging路径",
+                    "传输校验、token/质量、完成/失败终态",
+                    "与独立参考一致；无不可解释的数据差异"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M9 稳定性与服务",
+                    "故障恢复循环、固定并发、既定持续时间",
+                    "资源趋势、重启、TTFT/TPOT、吞吐与错误率",
+                    "满足预定 SLO 与资源收敛条件；不预设性能收益"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "M3 尤其需要拆成“全部旧区域仍有效”和“旧区域加新区域”两种情况。前者正是兼容例外试图照顾的场景，后者检验该例外是否足以支持目标恢复流程。若只能拿到一个批级返回码，测试报告应承认信息不足，不能把未知区域按成功填表。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "不要在共享生产节点上人为耗尽注册资源。优先用 mock 和受控错误注入验证传播，再在隔离环境验证真实错误与清理。真实实验发生超时、残留或错误资源增长时应停止并保存首因，不能无限重试直到偶然通过。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收 六道门分别回答是否包含、是否拒绝、是否可用",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "执行前预定义的验收记录",
+              "columns": [
+                "验收门",
+                "需要保存的口径",
+                "通过条件",
+                "失败后的动作"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "运行 SHA/镜像摘要、Mooncake版本与实现",
+                    "目标产物确含修复；依赖身份可追踪",
+                    "先解决产物不一致，不用版本名猜测"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "错误传播",
+                    "预设所有普通错误分支、cause与调用位置",
+                    "非零非 -7 和后端异常均按契约传播",
+                    "停止准入验证，修复传播或调用链"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "重叠例外",
+                    "M3/M6 的完整区间集合与状态",
+                    "预期兼容路径可用，所有所需区间有独立证据",
+                    "标为未闭合，不把无异常作为通过"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务准入",
+                    "真实启动/恢复/健康探测/路由时间线",
+                    "失效实例不会接收计划内业务流量",
+                    "保留故障实例证据并停止放量"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据与资源",
+                    "传输校验、质量参考、回滚/恢复后的资源趋势",
+                    "满足预定正确性与收敛口径，无未解释残留",
+                    "分开调查数据损坏和清理问题"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务 SLO",
+                    "固定负载的错误率、TTFT/TPOT分位数、吞吐",
+                    "满足原服务目标，不以其他指标抵消错误",
+                    "回到基线，保留同负载差分"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本报告已经通过的是 Python 抽取逻辑差分，不是上表六道部署验收。父版本两个回归失败是预期对照证据，不应被隐藏成“测试全部绿色”；新版本的 18 个测试方法通过，也不应被描述为完整 SGLang 测试集通过。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "效率收益应首先看失败被发现的时点、无效请求量和排障时间，而不是先给 tokens/s 加一个未经测量的百分比。作者的一次长时间失败测试不构成固定可节省时长；只有同一故障、相同负载与明确时间起点下的对照才能量化。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证 正式交付、重叠例外和真实资源清理尚未闭合",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "未核实任何指定 wheel、容器镜像或正式发布是否包含 #49156；main 合入不等于已经发布给所有用户。",
+                "未执行真实 RDMA、GPU/NPU、C++ 编译、完整上游单测、服务启动或模型评测。",
+                "未验证用户实际采用的 Mooncake 版本、classic/TENT 分支、协议、设备拓扑和恢复流程。",
+                "未证明任意 -7 都是安全的完整重复登记，也未证明部分登记与新增区域组合能正确恢复。",
+                "未测量回滚失败、注销容错后的实际 MR/驱动资源残留；有回滚代码不等于回滚必然完成。",
+                "未验证第三方调用者是否依赖旧整数返回值，或给 batch_register 传入空/不配对列表。",
+                "未证明某个健康探测或编排系统一定阻止注册失败实例收流量，也未设定自动重启或隔离策略。",
+                "未验证正式线上报告页面与移动端展示；报告静态结构、图拓扑与站点发布由交付流程另行记录。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "优先的小实验是：在目标构建中注入一个明确的普通注册失败，证明它确实阻止实例准入；随后单独测试一次 -7，并为每个所需区域保存可访问性证据。前者验证补丁承诺，后者验证它有意留下的兼容边界。两项都完成后，再进入真实 PD 质量与负载验收。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-fa3-batch-invariant-length-selection",
     "kind": "analysis",
     "title": "vLLM 批次不变性：统一 FA3 长度元数据，而不是照抄旧滑窗方案",
