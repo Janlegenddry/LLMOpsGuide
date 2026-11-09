@@ -7,6 +7,8 @@
 - 知识导航：`/LLMOpsGuide/library/`；白皮书：`/LLMOpsGuide/knowledge/`；AI Infra：`/LLMOpsGuide/domains/ai-infra/`
 - 图书馆与白皮书接入：[docs/knowledge-navigation.md](./docs/knowledge-navigation.md)
 
+- 社招岗位：<https://janlegenddry.github.io/LLMOpsGuide/jobs/>；[收录与核验说明](docs/jobs-publishing.md)；只读数据 `/LLMOpsGuide/api/jobs.json`。
+
 - 动态入口：<https://janlegenddry.github.io/LLMOpsGuide/radar/>
 - 内容导入与持续发布：[docs/radar-publishing.md](./docs/radar-publishing.md)
 - 完整报告格式与可导入示例：[docs/radar-report-format.md](./docs/radar-report-format.md)；正文、机制图、证据表及验证矩阵全部持久化。

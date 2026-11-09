@@ -1,7 +1,8 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { withBase } from '../../paths';
 import RadarIndex from '../../components/RadarIndex.astro';
 ---
 <BaseLayout title="动态与解读 · Guanzhi Library" description="围绕 SGLang、GPU 通信与推理系统，保存公开来源、原创解读与可验证的问题。">
-  <div class="home-shell"><p class="reader-owner">Guanzhi Library · AI Infra <span>结论先行 · 证据可追溯</span></p><RadarIndex pageHeading /></div>
+  <div class="home-shell"><p class="reader-owner">Guanzhi Library · AI Infra <span>结论先行 · 证据可追溯</span></p><p class="library-heading-links"><a href={withBase('/jobs/')}>AI Infra 社招岗位 ↗</a></p><RadarIndex pageHeading /></div>
 </BaseLayout>

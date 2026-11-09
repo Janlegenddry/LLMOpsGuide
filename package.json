@@ -12,7 +12,8 @@
     "content:import": "node scripts/import-radar.mjs",
     "content:verify": "node scripts/verify-reports.mjs",
     "knowledge:verify": "node scripts/verify-knowledge.mjs",
-    "library:verify": "node scripts/verify-library.mjs"
+    "library:verify": "node scripts/verify-library.mjs",
+    "jobs:verify": "node scripts/verify-jobs.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.3",

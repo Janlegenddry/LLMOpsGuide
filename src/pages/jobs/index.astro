@@ -1,0 +1,56 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { jobs, jobCategoryNames, jobPriorityNames, jobStatusNames, jobSourceNames } from '../../jobs';
+import { effectiveJobStatus } from '../../lib/jobs-filter';
+import { withBase } from '../../paths';
+import '../../styles/jobs.css';
+const latest = jobs.map(j=>j.verifiedAt).sort().at(-1);
+const locations = [...new Set(jobs.flatMap(j=>j.locations))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
+const filters = [
+  {key:'priority',label:'关注优先级',options:jobPriorityNames},
+  {key:'category',label:'技术方向',options:jobCategoryNames},
+  {key:'location',label:'工作地点',options:Object.fromEntries(locations.map(l=>[l,l]))},
+  {key:'status',label:'岗位状态',options:jobStatusNames},
+  {key:'sourceType',label:'来源类型',options:jobSourceNames},
+];
+---
+<BaseLayout title="社招岗位 · AI Infra · Guanzhi Library" description="AI Infra 社招岗位收集：推理引擎、模型服务、SRE 与分布式系统，保留公开招聘来源、核验日期和能力要求。">
+  <div class="library-shell jobs-shell" data-jobs-index>
+    <header class="library-page-heading jobs-heading">
+      <p class="library-eyebrow">GUANZHI LIBRARY / CAREERS</p>
+      <h1>AI Infra 社招岗位</h1>
+      <p>从技术阅读走向真实岗位。优先看推理服务、稳定性与分布式系统，保留原始招聘信息与核验边界。</p>
+      <div class="jobs-overview"><span><strong>{jobs.length}</strong> 个公开岗位</span><span><strong>{new Set(jobs.map(j=>j.company)).size}</strong> 家公司</span><span>最近核验 <time datetime={latest}>{latest || '暂无数据'}</time></span></div>
+      <div class="library-heading-links"><a href="#jobs-results">查看岗位 ↓</a><a href="#jobs-method">收录与匹配说明</a><a href={withBase('/api/jobs.json')}>公开数据 JSON ↗</a><a href={withBase('/radar/')}>动态与解读 ↗</a></div>
+    </header>
+    <section aria-label="筛选社招岗位">
+      <form class="library-filter jobs-filter" role="search" method="get" action={withBase('/jobs/')}>
+        <div class="library-filter__query"><label for="jobs-query">搜索公司、岗位、技术栈、匹配理由与准备项</label><input id="jobs-query" name="query" type="search" placeholder="例如：SGLang、深圳、GPU、Python" autocomplete="off" /></div>
+        {filters.map(filter=><div><label for={`jobs-${filter.key}`}>{filter.label}</label><select id={`jobs-${filter.key}`} name={filter.key}><option value="all">全部</option>{Object.entries(filter.options).map(([value,label])=><option value={value}>{label}</option>)}</select></div>)}
+      </form>
+      <noscript><p class="jobs-note">筛选需要 JavaScript。下方保留全部岗位、要求和来源链接，可直接浏览。</p></noscript>
+      <div class="library-result-bar"><p id="jobs-count" role="status" aria-live="polite" aria-atomic="true">{jobs.length} 个岗位</p><button type="button" class="library-reset" id="jobs-reset" hidden>清除筛选</button></div>
+      <p class="library-scope">按关注优先级排列，同级按核验日期。可申请仅代表核验时页面可用，不保证当前仍有名额；超过 30 天自动标为待复核。</p>
+    </section>
+    <div class="jobs-results" id="jobs-results">
+      {jobs.map(job=>{
+        const status=effectiveJobStatus(job.status,job.verifiedAt);
+        return <article class="job-card" id={job.id} data-job-record data-category={job.category} data-locations={JSON.stringify(job.locations)} data-status={status} data-original-status={job.status} data-verified-at={job.verifiedAt} data-priority={job.priority} data-source-type={job.sourceType} data-search={[job.company,job.title,job.level,job.summary,...job.skills,...job.locations,...job.matchReasons,...job.gaps].join(' ')}>
+          <header><div class="job-card__company"><span>{job.company}</span><span class="job-priority" data-priority={job.priority}>{jobPriorityNames[job.priority]}</span></div><h2><a href={job.url} target="_blank" rel="noopener noreferrer">{job.title}<span aria-hidden="true"> ↗</span></a></h2><div class="job-card__meta"><span>{job.locations.join(' / ')}</span><span>{jobCategoryNames[job.category]}</span></div></header>
+          <p class="job-card__summary">{job.summary}</p>
+          <div class="library-tags job-skills">{job.skills.map(skill=><span>{skill}</span>)}</div>
+          <dl class="job-card__facts"><div><dt>经验要求</dt><dd>{job.level}</dd></div><div><dt>岗位状态</dt><dd data-job-status>{status==='review'&&job.status==='open'?'待复核 · 超过 30 天':jobStatusNames[status]}</dd></div></dl>
+          <details class="job-assessment"><summary>匹配理由与准备差距<span aria-hidden="true">＋</span></summary><div class="job-assessment__body"><section><h3>方向匹配理由</h3><ul>{job.matchReasons.map(reason=><li>{reason}</li>)}</ul></section><section><h3>需要补齐或确认</h3><ul>{job.gaps.map(gap=><li>{gap}</li>)}</ul></section><p class="job-verification"><strong>核验依据：</strong>{job.statusNote}</p></div></details>
+          <footer><div><span>{jobSourceNames[job.sourceType]} · {job.sourceName}</span><span>核验 <time datetime={job.verifiedAt}>{job.verifiedAt}</time> · 原页日期 {job.postedAt?<time datetime={job.postedAt}>{job.postedAt}</time>:'未披露'}</span></div><a href={job.url} target="_blank" rel="noopener noreferrer">查看原始岗位 ↗</a></footer>
+        </article>;
+      })}
+    </div>
+    <div class="library-empty" id="jobs-empty" hidden={jobs.length>0}><h2>没有符合条件的岗位</h2><p>试试减少筛选条件，或换一个公司、城市和技术关键词。</p></div>
+    <aside class="jobs-method" id="jobs-method" aria-labelledby="jobs-method-title"><h2 id="jobs-method-title">如何使用这份岗位清单</h2><div><section><h3>来源有层级</h3><p>优先核对公司官方招聘页。招聘平台与公开社区线索单独标注，未能确认申请状态的岗位保留为“待复核”。核验日期不等于发布日期。</p></section><section><h3>匹配有边界</h3><p>关注优先级按推理服务、SRE、GPU 与分布式系统的技术方向判断；准备项来自岗位公开要求，不代表对任何个人能力、履历或录用概率的评价。</p></section><section><h3>申请前再确认</h3><p>招聘页面可能变更或关闭。地点、经验、工作许可与团队安排以原页和招聘方说明为准；本页仅汇总公开信息，不代投简历、不提供内部岗位承诺。</p></section></div></aside>
+  </div>
+</BaseLayout>
+<script>
+  import { mountJobsIndex } from '../../scripts/jobs-index';
+  const root=document.querySelector<HTMLElement>('[data-jobs-index]');
+  if(root)mountJobsIndex(root);
+</script>

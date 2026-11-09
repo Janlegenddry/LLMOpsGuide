@@ -36,6 +36,8 @@ jobs:
 
       - name: Verify complete reports
         run: npm run content:verify
+      - name: Verify job listings
+        run: npm run jobs:verify
       - name: Verify library navigation
         run: npm run library:verify
 

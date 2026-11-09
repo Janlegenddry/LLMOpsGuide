@@ -8,6 +8,8 @@
 
 完整深度解读须按 [完整报告格式](docs/radar-report-format.md) 提供 `report`，不要用短 claims 代替正文。构建后运行 `npm run content:verify` 核对长文、图表和公开 JSON 未丢失；两条发布工作流已包含此检查。
 
+社招岗位使用独立 `src/content/jobs.json`，入口 `/jobs/`；收录、公开范围和核验规则见 [jobs-publishing.md](docs/jobs-publishing.md)。维护时保留来源、核验日期与岗位状态，不公开个人求职信息。
+
 ## 1. 拉取最新代码
 
 ```bash
@@ -75,6 +77,7 @@ npm run dev
 ```bash
 npm run build
 npm run library:verify
+npm run jobs:verify
 npm run content:verify
 git diff --check
 ```
