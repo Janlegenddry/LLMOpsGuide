@@ -932,6 +932,734 @@
   },
   {
     "schemaVersion": 1,
+    "id": "triton-mmav5-tmem-verifier-boundaries",
+    "kind": "analysis",
+    "title": "Triton MMAv5 与 TMEM：把结构错误挡在打印和布局计算之前",
+    "summary": "解读 #12666 的完成屏障配对与显式布局四 warp 前置检查，区分验证器健壮性、合法布局和运行时同步，并补齐负向与正向实验矩阵。",
+    "publishedAt": "2026-11-09",
+    "reviewedAt": "2026-11-09",
+    "topics": [
+      "推理编译",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Triton #12666 合入提交",
+        "url": "https://github.com/triton-lang/triton/commit/c6e3d8d67d3693e0ea11c1458a85cb4a8de5aca7",
+        "publishedAt": "2026-11-09",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定 MMAv5 接口验证",
+        "url": "https://github.com/triton-lang/triton/blob/c6e3d8d67d3693e0ea11c1458a85cb4a8de5aca7/lib/Dialect/TritonNvidiaGPU/IR/Dialect.cpp",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定 TMEM 操作验证与MMA打印器",
+        "url": "https://github.com/triton-lang/triton/blob/c6e3d8d67d3693e0ea11c1458a85cb4a8de5aca7/lib/Dialect/TritonNvidiaGPU/IR/Ops.cpp",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定负向 MLIR 回归",
+        "url": "https://github.com/triton-lang/triton/blob/c6e3d8d67d3693e0ea11c1458a85cb4a8de5aca7/test/TritonNvidiaGPU/invalid.mlir",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定 TMEM 布局计算",
+        "url": "https://github.com/triton-lang/triton/blob/c6e3d8d67d3693e0ea11c1458a85cb4a8de5aca7/lib/Dialect/TritonNvidiaGPU/IR/TensorMemoryUtils.cpp",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定 MMAv5 接口定义",
+        "url": "https://github.com/triton-lang/triton/blob/c6e3d8d67d3693e0ea11c1458a85cb4a8de5aca7/include/triton/Dialect/TritonNvidiaGPU/IR/TritonNvidiaGPUOpInterfaces.td",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定普通与scaled操作定义",
+        "url": "https://github.com/triton-lang/triton/blob/c6e3d8d67d3693e0ea11c1458a85cb4a8de5aca7/include/triton/Dialect/TritonNvidiaGPU/IR/TritonNvidiaGPUOps.td",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "作者问题说明",
+        "url": "https://github.com/triton-lang/triton/pull/12666",
+        "review": {
+          "category": "community",
+          "publisher": "Triton PR 作者 lezcano",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "Triton 3.9.0 Release",
+        "url": "https://github.com/triton-lang/triton/releases/tag/v3.9.0",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "v3.9.0 Dialect对照",
+        "url": "https://github.com/triton-lang/triton/blob/v3.9.0/lib/Dialect/TritonNvidiaGPU/IR/Dialect.cpp",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "v3.9.0 Ops对照",
+        "url": "https://github.com/triton-lang/triton/blob/v3.9.0/lib/Dialect/TritonNvidiaGPU/IR/Ops.cpp",
+        "accessedAt": "2026-11-09"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "最终补丁添加MMAv5配对和显式TMEM布局warp数的前置验证。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "编译、回归与GPU运行尚未执行，不能据此宣称性能收益。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "新诊断是否命中目标验证器而非更早语法规则？",
+      "四warp之后布局是否仍合法？",
+      "运行中的Triton产物是否真的包含该提交？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "截至2026-11-09：核对最终提交c6e3d8d67d3693e0ea11c1458a85cb4a8de5aca7、接口、固定源码、负向回归及3.9.0标签。未执行triton-opt、FileCheck、C++构建、GPU或服务性能测试。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一 结论：把无效 IR 变成诊断，不是把内核变快",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "Triton compiler #12666 于11月9日合入，最终差异新增两类验证及两个负向回归。它属于编译器健壮性修复，不是Triton Inference Server更新，也不是新加一条GPU barrier。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对编写Gluon、生成MLIR或修改编译器的人，收益是更早在正确边界拒绝不成立的输入，减少把上游IR构造错误误诊成后端崩溃。对只部署模型的团队，行动是确认真正使用的编译器构建和缓存产物，不要因这条消息盲目调整模型并发或warp配置。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本次完成固定源码、接口、测试与3.9.0标签对照，没有可用triton-opt与FileCheck，因此没有执行C++构建、上游MLIR回归或GPU测试。图、逻辑解释与计划矩阵都是原创分析，不是运行结果。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二 背景：验证器要保护它自己依赖的前提",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                7
+              ],
+              "text": "作者描述了两种失效入口：完成barrier和predicate列表数量失配会走到自定义打印器断言；两warp显式布局只有一个warp基向量，而后续布局逻辑要访问两个。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "编译器通常把验证与执行分开：前者检查程序是否满足某层IR的结构契约，后者产生并运行机器代码。如果验证器自己在发现问题前就依赖了未检查的前提，无效输入可能表现为断言或越界式内部故障，错误信息离真正责任点越来越远。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "列表数量相等是一种结构不变量。例如有两个完成事件却只有一个条件，即使每个元素类型单独合法，元素之间的配对关系仍然不成立。验证器不能凭直觉补一个true，也不应丢掉多余项，因为两种“修复”都可能改变程序语义。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "warp数量约束则是另一类不变量：某种布局算法要求能够表示指定的分布维度。它与GPU总共有多少SM、进程启动了多少线程、整张图里有多少warp都不是同一个数量。诊断必须指向操作所在上下文，而不是用整模型资源估计替代局部布局条件。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三 原理：相等门与四 warp 门分别保护什么",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "两个验证门，均不替代运行时正确性",
+              "caption": "原创非实测示意。两组为独立输入路径，每个检查只拒绝自己负责的不合法结构。通过某个门仅允许继续检查，不代表所有IR合法，更不代表GPU同步或性能已验收。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "mma-input",
+                  "label": "MMAv5 完成barrier与predicate列表",
+                  "detail": "输入是两组按位置对应的操作数；表达式本身的运行时真值不在此图中。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "两组列表",
+                  "tone": "danger"
+                },
+                {
+                  "id": "mma-count",
+                  "label": "数量相等检查",
+                  "detail": "数量不等返回操作诊断，不让无效对象走到假设相等的后续打印路径。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "数量门",
+                  "tone": "danger"
+                },
+                {
+                  "id": "mma-other",
+                  "label": "继续已有MMA验证",
+                  "detail": "同步与异步、形状、精度等其余条件仍分别适用。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "其他检查",
+                  "tone": "danger"
+                },
+                {
+                  "id": "mma-runtime",
+                  "label": "运行时同步与数值待验",
+                  "detail": "相等数量不能证明barrier计数、阶段、谓词和生命周期正确。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "执行待验",
+                  "tone": "danger"
+                },
+                {
+                  "id": "tmem-input",
+                  "label": "带显式寄存器布局的TMEM传输",
+                  "detail": "涉及load/store和有初始化源的alloc；不要推到所有空分配。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "显式布局",
+                  "tone": "compute"
+                },
+                {
+                  "id": "tmem-warps",
+                  "label": "上下文warp数至少四",
+                  "detail": "这是进入布局兼容计算前的必要条件，不是把launch自动改为四warp。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "warp门",
+                  "tone": "compute"
+                },
+                {
+                  "id": "tmem-layout",
+                  "label": "继续检查布局映射兼容",
+                  "detail": "四warp仍可能无法映射到合法TMEM行或形状。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "布局检查",
+                  "tone": "compute"
+                },
+                {
+                  "id": "tmem-runtime",
+                  "label": "合法算子的编译与GPU待验",
+                  "detail": "需要构建、回归、正向编译和硬件执行，不能用负向测试代替。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "执行待验",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "mma-input",
+                  "to": "mma-count",
+                  "label": "先对齐结构约束"
+                },
+                {
+                  "from": "mma-count",
+                  "to": "mma-other",
+                  "label": "仅相等时继续"
+                },
+                {
+                  "from": "mma-other",
+                  "to": "mma-runtime",
+                  "label": "通过静态门后仍须执行验收"
+                },
+                {
+                  "from": "tmem-input",
+                  "to": "tmem-warps",
+                  "label": "适用显式布局路径"
+                },
+                {
+                  "from": "tmem-warps",
+                  "to": "tmem-layout",
+                  "label": "数量满足才检查映射"
+                },
+                {
+                  "from": "tmem-layout",
+                  "to": "tmem-runtime",
+                  "label": "布局通过仍不等于执行正确"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "MMAv5 列表契约",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "mma-input",
+                      "mma-count",
+                      "mma-other",
+                      "mma-runtime"
+                    ]
+                  },
+                  {
+                    "title": "TMEM 布局契约",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "tmem-input",
+                      "tmem-warps",
+                      "tmem-layout",
+                      "tmem-runtime"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                5
+              ],
+              "text": "固定verifyMMAv5Op在原有同步/异步与类型检查之前，比较completion barriers与predicates的数量；不等就返回操作错误。MMAv5接口定义把验证接到同一个实现，并提供两组操作数访问器。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "普通TCGen5MMA与scaled变体均实现该接口。由共同接口覆盖这两类操作，不表示新增了两套同步协议；它只是把共同的结构条件放到共享入口。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "TMEM公共辅助验证先要求2D；没有encoding直接返回。只有带显式encoding的路径才新增上下文warp数<4的拒绝，然后继续原有布局兼容检查。load、store和有src的alloc调用该辅助函数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "布局工具会读取warp基向量0与1，并检查它们对应TMEM行位32与64，之后重写相应映射。源码中这些索引说明为什么进入该路径前要先证明布局具有所需warp维度。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里有两个不能省略的“仅”。第一，仅比较数量，不证明每个predicate控制的是正确barrier。两个列表都长为二，仍可能在上游交换了含义。第二，仅证明warp数量达到门槛，不证明布局映射兼容。四warp错误布局仍应被后续规则拒绝。把门槛当作充分条件，会制造一种新的误解：编译错误消失就等于程序语义正确。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "也不能把静态门写成性能建议。“至少四”说明这一输入形式的准入边界，不意味着用更多warp一定更快。若为了绕过诊断直接改launch参数，却不检查寄存器布局和资源使用，可能只是把一个可解释的静态问题变成更昂贵的执行问题。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四 证据：两个负向用例并非完整覆盖",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据与支持范围",
+              "columns": [
+                "材料",
+                "已读到的内容",
+                "边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "最终提交",
+                    "三文件差异：验证5行、回归22行。",
+                    "小补丁也要核对接口覆盖，不能按行数估算风险。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "负向用例一",
+                    "用generic tc_gen5_mma缺失completion predicate，期待专用错误。",
+                    "只新增普通MMA用例，不代表scaled负向变体已运行。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "负向用例二",
+                    "两warp、显式blocked layout的tmem_load，期待至少四warp诊断。",
+                    "不等于store、初始化alloc、嵌套上下文全覆盖。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "自定义打印器",
+                    "保留barrier和predicate数量相等的assert。",
+                    "修复在更早的验证门；不是删除断言掩盖错误。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "接口连接",
+                    "共享接口使用verifyMMAv5Op。",
+                    "接口结构支持覆盖判断，仍需编译和测试运行见证。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "为什么负向测试使用通用形式值得注意？手写的漂亮语法可能已经强制一对一地读入两个列表，难以构造这个反例；而IR还可能由其他前端、变换或通用序列化路径产生。故障注入应到达想测试的验证层，而不是先被更早的语法规则拦下。否则“测试报错”并不能证明目标门在工作。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最有说服力的回归应同时包含反向对照：旧构建对相同无效输入进入原先的失败模式，新构建以预期诊断拒绝；同时合法输入仍能通过。只截取一条新错误信息，可以证实一个样例，但无法排除误拒绝合法程序或测试根本没有使用目标二进制。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五 取舍：更早失败有价值，放宽检查却没有证据",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "更早、稳定的失败对批量编译服务有操作价值：错误可分类、可回放，任务不必等到低层打印或变换时才暴露。但本次没有测量编译吞吐、进程退出率或排错工时，不能将这一工程判断写成量化生产收益。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上游前端如果曾经意外生成不满足契约的IR，升级后可能更早报错。应优先修正IR构造，而不是回退验证器或静默补齐predicate。真正需要支持新的布局形式时，应完整扩展语义与布局算法，而不是单独删除四warp门。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "没有encoding的早返回是当前实现的一部分，不表示所有无encoding操作都合法。它仅说明这一个辅助检查尚未对该路径应用显式布局规则；其他类型、目标和后续pass仍有自己的要求。报告不把未经过某个局部门解释成绕过全部验证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "空TMEM分配与有初始化源的分配也应分开。把一个带寄存器到TMEM搬运的规则推广到没有源数据的操作，会给用户错误的迁移建议。适用边界的精确性比“所有TMEM现在至少四warp”这种易传播口号更重要。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六 故障假设：打印器崩溃可能源自更早的 IR 构造",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障定位矩阵",
+              "columns": [
+                "症状",
+                "应保留的证据",
+                "不应立即做的事"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "打印或报错过程断言",
+                    "最小generic IR、两列表长度、二进制SHA、验证pass位置",
+                    "不要直接删掉打印器assert。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "两warp布局触发布局工具故障",
+                    "操作上下文warp数、encoding、TMEM shape和变换前后IR",
+                    "不要只把全局num_warps改大后宣布修复。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新版以专用错误拒绝旧工作负载",
+                    "生成该IR的前端/pass版本、完整diagnostic、合法性契约",
+                    "不要把更早失败一律判为性能回归。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "四warp仍失败",
+                    "后续布局诊断、基向量映射、资源配置",
+                    "不要假设通过数量门就应跳过布局兼容规则。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "只在嵌套warp specialization出错",
+                    "父模块和操作局部warp上下文、最小嵌套复现",
+                    "不要用父模块数量代替操作有效上下文。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "排查时应把原始IR、变换后IR与打印时IR分开保存。如果传递给日志系统的对象已经无效，日志路径的故障可能遮住第一个错误。一个实用的流程是先用不会依赖自定义打印假设的形式保存最小输入，再在固定二进制上验证；本文没有确认所有通用打印路径都具备该性质，因此实际工具链还要自测。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七 实验：负向矩阵、合法对照与执行边界",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "全部待执行的编译器验证矩阵",
+              "columns": [
+                "维度",
+                "输入",
+                "预期观察"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "MMA列表",
+                    "plain/scaled；barriers和predicates取0/1/2，数量相等与不等",
+                    "失配以同类诊断拒绝；相等仅进入后续检查，不直接判合法。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "MMA模式",
+                    "sync/async、相同合法类型，分别带和不带barrier",
+                    "新数量门与既有同步规则独立；记录最先命中的诊断。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "TMEM入口",
+                    "load/store/有src alloc/无src alloc",
+                    "显式区分公共helper覆盖和不覆盖的入口。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "TMEM布局",
+                    "1/2/4/8warp；合法与非法encoding；有/无encoding",
+                    "低于门槛在适用路径拒绝；满足数量仍运行布局检查。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "上下文",
+                    "普通模块与嵌套warp specialization",
+                    "记录操作有效warp数量与诊断归属，不能仅看模块属性。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回归与正向",
+                    "固定前后版本，invalid.mlir与原有正向套件",
+                    "旧/新错误模式、合法编译产物和测试总数。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GPU可选后续",
+                    "合法代表算子在对应GPU执行；固定编译缓存",
+                    "数值和同步回归；不得把负向编译检查作为GPU通过证据。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "实验应锁定编译器源码SHA、LLVM版本、构建模式和实际调用二进制路径。assert-enabled与release构建的失败外观可能不同，不能只在一种构建模式记录“没有崩溃”。每次对照清楚标注运行了哪个pass和是否启用了验证，否则无法判断新检查是否真的到达。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "若资源有限，先做无需GPU的构建与负向/正向MLIR套件，再决定是否运行GPU层。这个顺序能尽早检查本补丁的直接目标，但不削减后续真实算子的正确性要求。此次没有安装或构建完整Triton，因此所有这些执行结果仍为空。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八 验收：拒绝正确，合法程序不被误伤",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议预定义验收门",
+              "columns": [
+                "门",
+                "通过条件",
+                "停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份",
+                    "实际二进制含c6e3d8d…或经验证等价修改，构建参数可追溯",
+                    "源码对照正确但运行的是旧wheel或旧缓存。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "负向",
+                    "每个适用失配输入得到预期操作错误，没有assert、进程异常退出或超时",
+                    "错误由前置语法失败产生，未命中目标验证器。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正向",
+                    "原合法MMA/TMEM套件通过，额外边界组合符合既有契约",
+                    "四warp不合法布局被误放行，或合法输入被新增门误拒。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "覆盖",
+                    "plain/scaled、load/store/初始化alloc分别有见证；例外路径单列",
+                    "只用新增两例宣称所有入口全覆盖。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GPU与服务",
+                    "若要宣称部署收益，另做真实算子和服务指标对照",
+                    "静态拒绝成功被包装为数值、吞吐或稳定性已验收。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次补丁没有性能目标，因此不要求一个虚构的吞吐提升阈值。若团队担心新增验证成本，应另测相同合法输入的编译延迟分布，并把它与模型运行时延迟分开。报告的核心验收是诊断正确性和无误拒绝，性能测量属于独立问题。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九 未验证项：主线、标签与实际 wheel 分开核对",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                8,
+                9,
+                10
+              ],
+              "text": "查阅时Triton最新正式Release为3.9.0，发布日期10月27日；本次合入晚于该版本。读取3.9.0的Dialect与Ops未见新增的两条诊断检查。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "标签对照不是用户已安装wheel的清单。框架可能固定另一提交、回补修复、带私有patch或使用缓存编译产物。必须对照实际分发与运行身份，不应仅凭pip包版本号推导是否具备本修复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "未执行：完整构建、FileCheck回归、正向编译、scaled扩展反例、store/alloc扩展反例、嵌套warp上下文、GPU同步与数值、编译或服务性能。未证明：所有无效IR均能安全拒绝、所有四warp布局均合法、所有模型均受此问题影响。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这是一项边界明确的编译器检查改进。合理的采用方式是先让错误更可解释，再用独立证据证明合法工作负载没有回归，而不是从“多了验证”推导“GPU执行已经更安全或更快”。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-mooncake-registration-failure-contract",
     "kind": "analysis",
     "title": "SGLang Mooncake 注册失败：启动即报错之后，重叠例外仍需验收",
