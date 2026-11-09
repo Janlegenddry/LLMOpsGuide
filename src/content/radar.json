@@ -1,6 +1,763 @@
 [
   {
     "schemaVersion": 1,
+    "id": "vllm-fa3-batch-invariant-length-selection",
+    "kind": "analysis",
+    "title": "vLLM 批次不变性：统一 FA3 长度元数据，而不是照抄旧滑窗方案",
+    "summary": "解读 #65627 最终两行修复，拆开 host 选择上限与真实 KV 长度，核对更新后的 H100 正反测试与旧 PR 描述差异。附原创机制图和验证矩阵。",
+    "publishedAt": "2026-11-08",
+    "reviewedAt": "2026-11-08",
+    "topics": [
+      "vLLM",
+      "推理编译",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM #65627 最终合入差异",
+        "url": "https://github.com/vllm-project/vllm/commit/d1879210a4b10773d22a2a659152beca0d35d007",
+        "publishedAt": "2026-11-08",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "最终 FlashAttention metadata builder",
+        "url": "https://github.com/vllm-project/vllm/blob/d1879210a4b10773d22a2a659152beca0d35d007/vllm/v1/attention/backends/flash_attn.py",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "最终 H100 定向回归测试",
+        "url": "https://github.com/vllm-project/vllm/blob/d1879210a4b10773d22a2a659152beca0d35d007/tests/v1/determinism/test_batch_invariance.py",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "冻结 FA3 host window 判断",
+        "url": "https://github.com/vllm-project/flash-attention/blob/b273a02621d3c94bc747df67204f591b67f38fae/hopper/flash_api.cpp",
+        "review": {
+          "category": "blog",
+          "publisher": "vLLM FlashAttention 官方源码",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "冻结 FA3 tile 选择",
+        "url": "https://github.com/vllm-project/flash-attention/blob/b273a02621d3c94bc747df67204f591b67f38fae/hopper/tile_size.h",
+        "review": {
+          "category": "blog",
+          "publisher": "vLLM FlashAttention 官方源码",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "PR 早期方案与尚未同步的说明",
+        "url": "https://github.com/vllm-project/vllm/pull/65627",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM PR 作者 anhtra3889",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "最终 override 对应 H100 正反测试",
+        "url": "https://github.com/vllm-project/vllm/pull/65627#issuecomment-6707741375",
+        "review": {
+          "category": "community",
+          "publisher": "PR 作者 anhtra3889",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "早期测试的 H100 阴性结果",
+        "url": "https://github.com/vllm-project/vllm/pull/65627#issuecomment-6634783966",
+        "review": {
+          "category": "community",
+          "publisher": "社区测试者 imthomp",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "随机提示提前结束的测试诊断",
+        "url": "https://github.com/vllm-project/vllm/pull/65627#issuecomment-6691484841",
+        "review": {
+          "category": "community",
+          "publisher": "PR 作者 anhtra3889",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "v0.33.0 标签中的 backend",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/v1/attention/backends/flash_attn.py",
+        "accessedAt": "2026-11-08"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "最终补丁在 batch-invariant builder 中令 max_seq_len 等于模型上限。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "实际部署包含关系与服务性能尚未验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "加载的后端是否含最终 override？",
+      "测试是否跨多个 KV tile 且完整生成预定步数？",
+      "每请求真实长度是否仍独立保护访问？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-08 核对固定提交、最终测试、冻结 FA3 host/tile 源码、作者较晚 H100 对照评论和 v0.33.0 标签文件。已运行 CPU 选择规则枚举；未执行 GPU、上游 pytest、模型或服务测试。最终实现优先于 PR 旧描述。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一 结论：固定元数据，不是关闭滑窗",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "vLLM #65627 于 11 月 8 日合入。最终修改是 batch-invariant 模式下令 FlashAttention builder 的 max_seq_len 等于 max_model_len，并新增定向测试；不是 PR 旧描述中的逐层 window_left+2。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "工程判断应落在“消除一个选择输入的批次依赖”上。相同注意力掩码与数学函数，可以因为归约 tile 不同而经过不同的浮点运算路径。固定 host 选择上限有机会消除这一差异来源，但不能替代对实际 kernel、有效 KV 访问、完整输出和性能的验证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议首先确认服务确实启用批次不变性、使用 FlashAttention，并在同一配置下交替出现图回放与 eager。满足这些条件时，把此补丁纳入数值一致性候选；没有进入该路径的服务不应因标题中的“滑窗修复”而直接升级或承诺收益。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二 背景：数学等价为何仍不逐位相同",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                3
+              ],
+              "text": "冻结 FA3 host 代码在左窗口覆盖最长序列时可将窗口消去，同时另行接收每请求的 seqused_k。这里讨论 host 的分支输入，不是把最大长度当成每个请求的实际长度。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                4
+              ],
+              "text": "冻结 tile 函数在相关 head-dim-256 非 FP8 分支给 local 路径 64、另一分支 80 的 KV tile。这个事实限定于所读函数和条件，不能外推所有 head dimension、dtype 或 FlashAttention 版本。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学例：同一串数按不同分组求和，实数代数结果不变，但浮点舍入位置可能不同。在线 softmax 还包含分块最大值、归一化与累加状态，重排会改变中间值。若服务要求跨批次逐位相同，测试应检查 token 与 logprob，而不只检查容差内接近。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如果目标序列短到两个候选 tile 都只需一块，路径选择差异可能没有形成有效的多块归约见证。因此一个通过的短序列测试既可能说明修复有效，也可能说明它从未触发能够暴露问题的形状。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三 机制：选择上限与实际长度分开审查",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "固定选择输入，减少路径分叉",
+              "caption": "原创非实测依赖图。上组表示可能的路径分叉，下组表示最终补丁的统一输入及待验门；节点不是等比例时间。model 上限不是实际可读 KV 长度，边只取声明依赖。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-eager",
+                  "label": "eager 使用本批次长度",
+                  "detail": "同一短请求与其他请求混排时，host 可见最大长度随批次变化。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "批次长度",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-graph",
+                  "label": "图捕获使用模型上限",
+                  "detail": "纯 decode 与混排可能分别进入图与 eager，两条路径的 host 选择输入不同。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "捕获上限",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-select",
+                  "label": "相同数学范围仍可选不同 tile",
+                  "detail": "窗口是否被消去会影响归约分块；选择相同数学函数不保证相同浮点路径。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "选择分叉",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-bits",
+                  "label": "逐位对照可能出现差异",
+                  "detail": "必须用真实日志验证，此图不声明任意模型必然产生差异。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "差异见证",
+                  "tone": "danger"
+                },
+                {
+                  "id": "new-bound",
+                  "label": "metadata 使用固定模型上限",
+                  "detail": "本次最终改动统一 max_seq_len，不是早期 window_left+2 下界。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "固定上限",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-select",
+                  "label": "同配置选择输入保持一致",
+                  "detail": "同一模型上限和窗口下，消窗判定不再随当前批次最大长度变化。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "一致输入",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-length",
+                  "label": "每请求长度保持独立",
+                  "detail": "真实长度、block table 与有效访问范围仍要分别检查，不凭上限扩大输入。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "真实范围",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-test",
+                  "label": "数值与性能验收待验",
+                  "detail": "需要最差批次的逐位 witness 和性能门，不能由统一输入推断全部确定性。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "验收待验",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-eager",
+                  "to": "old-select",
+                  "label": "短批次作为一种选择输入"
+                },
+                {
+                  "from": "old-graph",
+                  "to": "old-select",
+                  "label": "模型上限作为另一种选择输入"
+                },
+                {
+                  "from": "old-select",
+                  "to": "old-bits",
+                  "label": "分块差异可能改变舍入"
+                },
+                {
+                  "from": "new-bound",
+                  "to": "new-select",
+                  "label": "消除这个 host 输入的批次依赖"
+                },
+                {
+                  "from": "new-bound",
+                  "to": "new-length",
+                  "label": "区分选择上限与实际访问长度"
+                },
+                {
+                  "from": "new-select",
+                  "to": "new-test",
+                  "label": "核对实际 kernel 与逐位结果"
+                },
+                {
+                  "from": "new-length",
+                  "to": "new-test",
+                  "label": "同时核对合法访问范围"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧路径的选择分叉",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-eager",
+                      "old-graph",
+                      "old-select",
+                      "old-bits"
+                    ]
+                  },
+                  {
+                    "title": "最终补丁与独立验收",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "new-bound",
+                      "new-select",
+                      "new-length",
+                      "new-test"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "最终 builder 仍从 common metadata 获取 seq_lens、block table 和 slot mapping；变更覆盖该 builder 的 batch-invariant 分支，并非仅在 windowed layer 判断。既有分支也会禁用 AOT schedule 并固定 max_num_splits=1。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "由此推导：模型上限若高于窗口，统一输入可能使相关 eager 和 captured 路径都保留 local 选择；模型上限不超过窗口时，两边也可能一致地消去窗口。所以准确叙述是“固定选择输入”，不能继续沿用“每一步都强制保留滑窗”的旧方案叙述。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "该修复没有增加实际 token，也不等于分配与上限等长的新 KV。必须沿调用链核对每请求长度如何传递、后端是否仍以有效长度保护访问。将 host 启发式参数和设备端访问长度混在一起，会导致两个相反的误判：要么把合法上限误报成越界，要么在真实长度失配时误以为上限已保证安全。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "现有并行、RSWA、encoder 或 speculative 分支不能因为共用一个 builder 就视为已验证。本次改动消除一个输入变量，不说明后续所有 branch、不同 backend 和所有随机源均已稳定。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四 证据：最终代码优先于旧描述",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "关键证据及可支持的结论",
+              "columns": [
+                "材料",
+                "核对结果",
+                "边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合入差异",
+                    "backend 两行赋值改动，另加 H100 回归",
+                    "源码存在不等于部署镜像包含"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "PR 正文",
+                    "仍描述 window_left+2 及旧 H100 TODO",
+                    "不是最终实现的权威复述"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "Nov7 H100 评论",
+                    "保留 override 通过；移除后 logprob 断言失败，最大绝对差 1.137e-01",
+                    "作者结果，本站未复现"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "首版测试",
+                    "H100 上带修复和不带修复均通过",
+                    "该版测试未能区分基线与候选"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "中途测试",
+                    "随机 token 提示触发提前结束，长度断言先失败",
+                    "失败发生在数值比较前，不能归因数值修复"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    8
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "证据链应保存三个独立身份：实际合入的代码、生成结果的测试版本、报告测试的运行环境。旧补丁的成功日志可以帮助定位机制，但不能自动证明后续简化版本。这里找到了针对最终 max_seq_len override 的较晚正反对照，因此不能沿用旧正文的“更新测试仍待 H100”状态；也不能把社区评论写成本站实测。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原始评论里大幅数值差异不应被单独当成模型质量损害的量化结论。它是一个逐位不变性反例；最终业务影响还需要真实提示分布、生成长度和下游质量评估。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五 取舍：确定性需要独立的成本账本",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "固定上限可能改变后端调度启发式在短请求上的选择，也可能影响临时内存或并行程度。即使只改 Python 整数，也不能推导设备执行成本为零。性能比较必须固定服务配置与批次分布，并同时记录实际 kernel 名称、数量及耗时。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要把“保持固定选择”与“总是选择最快 kernel”绑定。线上策略可以在严格逐位不变性与吞吐目标之间做明示选择，但不能一面宣称逐位合同，一面让负载组成静默改变计算路径。若业务只要求数值容差，应以实际需求作决策，不能把更严格合同的成本隐藏起来。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本主题不是禁用滑窗，也不是扩大每条序列的注意力可见范围。对非滑窗层与其他模型的影响属于需要测量的范围，而不是正文旧句“其他配置完全不变”能够覆盖的结论。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六 生产故障假设与诊断顺序",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设，不是已发生的用户事故",
+              "columns": [
+                "假设",
+                "需要收集的证据",
+                "如何排除替代解释"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "图/eager 选择仍分叉",
+                    "同一目标的 step、捕获/回放标记、max_seq_len、window、kernel",
+                    "确认真正执行目标 revision，排除后端切换"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "短测试假阴性",
+                    "每步有效 KV 数、tile 数及完整生成长度",
+                    "用跨多个 tile 的目标，不只拉长 filler"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "测试提前终止",
+                    "EOS/stop 原因与生成 token 数",
+                    "先保证预定步数，再解释 logprob"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真实访问长度失配",
+                    "seq_lens、block table 范围及 sanitizer 日志",
+                    "固定上限不是有效数据长度"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "修复后性能退化",
+                    "同请求负载的 kernel、峰值内存、TTFT/TPOT",
+                    "排除预热、图重捕获与版本漂移"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "其他确定性来源",
+                    "dtype、并行配置、采样种子与相同请求身份",
+                    "单一 patch 不排除所有浮点或调度差异"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "诊断时先定位第一处发生差异的 step，再向前核对输入与状态。只看最终生成文本，可能看不到 logprob 已经分叉；只看平均 logprob 误差，可能掩盖少数请求导致的 token 改变。对出现错误的请求保留最小重放输入及不含用户隐私的统计证据，再在隔离环境定位。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七 实验矩阵：先证明测试能够失败",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "最终测试限定 CUDA SM90；目标随机长度为 256–512，filler 在窗口半长至窗口减生成长度间，生成 16 token 且 ignore_eos=True。它比较 token 相同和 logprob 逐位相同，关闭 prefix caching。"
+            },
+            {
+              "type": "table",
+              "caption": "待执行的原创验证矩阵",
+              "columns": [
+                "维度",
+                "对照与变量",
+                "必须保存的 witness"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "版本",
+                    "父提交与最终提交，固定 FA revision/torch/CUDA",
+                    "已加载源码、环境摘要、测试 SHA"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正反区分",
+                    "同最终测试，在基线移除 override 与修复版本比较",
+                    "基线确实失败；候选通过；第一差异 step"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "长度",
+                    "小于两种 tile、跨多个 tile、窗口边缘、超过窗口",
+                    "实际 KV、tile 分块和 local 选择"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "上限",
+                    "max_model_len 小于、等于、大于 window",
+                    "每配置选择输入一致，而非假定都 local"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "执行模式",
+                    "纯 decode 图回放、混合 prefill/decode、禁图",
+                    "同一目标在各路径的完整 logprobs"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "路径外推",
+                    "不同 head dim、dtype、非滑窗层、encoder/CP 分支",
+                    "逐组合独立标记已测/跳过，不借用 H100 结论"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "固定到达率与请求分布，多轮交替基线/候选",
+                    "TTFT、TPOT、goodput、显存、超时与置信范围"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本次仅执行 CPU 选择规则教学枚举，展示固定输入如何消去这一布尔分支的批次依赖；未执行 CUDA、模型加载、上游 pytest 或服务测试。教学模型不模拟注意力数值，不能用“选择一致”冒充“GPU 输出逐位一致”。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八 验收：正确性与成本分别设门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创预定义验收门，执行前冻结",
+              "columns": [
+                "门",
+                "口径",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "制品身份",
+                    "后端代码、依赖、图配置均可追溯",
+                    "唯一代码变量明确，不以包名代替内容"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障见证",
+                    "候选测试能区分旧/新",
+                    "旧版本触发目标差异，不能两边都过仍声称修复已证明"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "确定性",
+                    "同一目标所有规定 step 的 token/logprob",
+                    "精确 token 和逐位 logprob；不得事后放宽成 allclose"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "访问安全",
+                    "有效 KV 长度及地址范围",
+                    "零未解释越界或未初始化读取"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "完整性",
+                    "没有提前 EOS、跳测和 backend 偷换",
+                    "完整预定步数与真实 FA3 路径"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "多轮同负载服务与 kernel 指标",
+                    "预先定义容忍回归；失败即暂停扩大应用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "扩展范围",
+                    "不同架构/并行/encoder 独立记录",
+                    "未测路径不进入已通过范围"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如果基线没有出现差异，先说明此环境没有获得故障见证。可以继续做常规回归，但结论只能是该批测试没有发现问题，不是缺陷已被消除。若逐位一致性仍失败，先保存最早差异，不要通过减少生成步数、删去混排或改成较宽容差来获得绿灯。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九 版本与未验证边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                9
+              ],
+              "text": "直接读取 v0.33.0 标签 backend，目标 builder 尚无本次 max_seq_len=max_model_len 赋值。该结论只覆盖所读标签文件，不代表任意厂商 wheel 或回移补丁。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "发布身份至少有源码提交、源码标签和安装制品三层。标签名称不能证明目标 wheel 包含补丁，某个标签存在也不等于已完成正式 Release 发布核验。本报告以固定提交为修复身份。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "未验证发布制品的包含关系、完整 GPU/服务回归、跨架构成本与其他 backend 的确定性。CPU 枚举与 schema 通过仅证明教学模型及交付格式，硬件验证仍未执行。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "mooncake-pg-rpc-executor-drain",
     "kind": "analysis",
     "title": "Mooncake PG 关闭边界：socket 串行化之后，还要等回调真正退出",
