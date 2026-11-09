@@ -1,6 +1,977 @@
 [
   {
     "schemaVersion": 1,
+    "id": "sglang-pd-spec-kv-layout-contract",
+    "kind": "analysis",
+    "title": "SGLang PD 草稿 KV 的三态契约：缺席声明不等于布局兼容",
+    "summary": "解读 #48375 在 DSpark/DFLASH 预填充分离中增加布局互验，区分空字典、无 entries 和具体布局，并给出混合版本与 PP 的验证矩阵。",
+    "publishedAt": "2026-11-07",
+    "reviewedAt": "2026-11-08",
+    "topics": [
+      "SGLang",
+      "PD 分离",
+      "投机解码",
+      "KV Cache"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang #48375 合入提交",
+        "url": "https://github.com/sgl-project/sglang/commit/043cfc4d3a2cc2a931d15862f08c4b60b692c957",
+        "publishedAt": "2026-11-07",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "冻结版本：三态 draft KV 布局生成",
+        "url": "https://github.com/sgl-project/sglang/blob/043cfc4d3a2cc2a931d15862f08c4b60b692c957/python/sglang/srt/disaggregation/utils.py",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "冻结版本：Python bootstrap 与 decode 准入",
+        "url": "https://github.com/sgl-project/sglang/blob/043cfc4d3a2cc2a931d15862f08c4b60b692c957/python/sglang/srt/disaggregation/common/conn.py",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "冻结版本：Rust bootstrap 注册表",
+        "url": "https://github.com/sgl-project/sglang/blob/043cfc4d3a2cc2a931d15862f08c4b60b692c957/rust/sglang-server/src/api_server/disaggregation/bootstrap.rs",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "冻结版本：spec KV 布局单元测试",
+        "url": "https://github.com/sgl-project/sglang/blob/043cfc4d3a2cc2a931d15862f08c4b60b692c957/test/registered/unit/disaggregation/test_pd_spec_kv_layout.py",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "PR #48375 设计说明与作者验证记录",
+        "url": "https://github.com/sgl-project/sglang/pull/48375",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "直接父版本：旧 decode 响应反序列化",
+        "url": "https://github.com/sgl-project/sglang/blob/985837b6ffc78067a5baa0f8bcc2cee3e072293b/python/sglang/srt/disaggregation/common/conn.py",
+        "accessedAt": "2026-11-08"
+      },
+      {
+        "title": "冻结版本：bootstrap 请求字段测试",
+        "url": "https://github.com/sgl-project/sglang/blob/043cfc4d3a2cc2a931d15862f08c4b60b692c957/test/registered/unit/disaggregation/test_register_to_bootstrap.py",
+        "accessedAt": "2026-11-08"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "合入主线的 #48375 增加 spec_kv_layout，并在 decode 将不匹配布局写入映射缓存之前拒绝。",
+        "sourceIndices": [
+          0,
+          2
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "本地 {} 与 None 的意义不同；layout 包含算法和 draft entry 数，而非 block size 或 draft token 数。",
+        "sourceIndices": [
+          1
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "正式产物包含关系、真实 draft KV 数值、混合版本升级及服务 SLO 仍待验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际 P/D 与 bootstrap 产物是否包含这次变更？",
+      "所有应受保护的 rank 是否都发布了可比较布局？",
+      "如何验证旧版本兼容路径没有被误标为新保护已生效？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核对日期 2026-11-08；以 #48375 合入 SHA 043cfc4d3a2cc2a931d15862f08c4b60b692c957 及直接父 SHA 985837b6ffc78067a5baa0f8bcc2cee3e072293b 为边界。读取 PR 与五个变更文件；本地仅执行 51 个 AST 抽取逻辑案例，未执行 GPU、Rust、完整上游测试或生产部署。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论 先约定草稿 KV 的含义，再讨论传输是否成功",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对于预填充与解码分离的投机部署，传输完成只能说明某些字节到达目的地，不能保证接收者用相同的规则解释它们。本次值得新增一道上线门：在同一组 P/D 实例开始配对前，记录双方是否发布 draft KV 布局、各自的算法和 entry 数，并把明确不匹配当成配置错误，而不是网络抖动。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "#48375 于 2026-11-07 合入主线，冻结提交为 043cfc4d3a2cc2a931d15862f08c4b60b692c957。它增加 spec_kv_layout 声明与匹配检查，涉及 Python 连接管理器、Python/Rust bootstrap 和定向测试。本报告不据此认定任何正式版本或运行镜像已包含变化。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最容易读错的是三种状态：{} 不是 None，布局缺席也不是“确定兼容”。这一区分既让 target-only decode 拒绝已声明的 DSpark/DFLASH draft KV，又避免误拒没有 draft entries 的流水线 rank。升级时优先证明控制面的兼容矩阵成立，再做真实数据面和服务验收。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "适合关注：DSpark/DFLASH 的 PD、混用前后端实现、PP 中部分 rank 无 draft KV、计划滚动升级的部署。",
+                "不应直接外推：所有投机算法、所有 DSV4 state-only 布局、checkpoint 身份校验、不同 TP/CP 的全局可兼容性。",
+                "当前完成：原始 PR、直接父版本和合入源码核对；51 个抽取源码逻辑案例通过。GPU、完整上游测试、Rust 执行与生产测量均未做。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景 同形的缓冲区未必承载同一种草稿上下文",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                5
+              ],
+              "text": "作者解释 DSpark/DFLASH 的 prefill 会从 target hidden states 生成 draft context KV，而 decode 不能只靠传来的 token 元数据重建这些字节。因而两端对 draft KV 的算法或 entry 数理解不同，不能仅靠传输成功来消除风险。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以把 PD 交接拆成四层：地址能否访问、字节是否完整、布局是否对应、模型语义是否正确。网络后端主要解决前两层，布局声明补充第三层，但并不自动覆盖第四层。工程上的危险是把四个不同的判断压成一个“请求成功”：数据没有被截断，却仍可能被错误地解释。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个教学反例是两端拥有一样大的接收区，却把某几段解释成不同算法的草稿上下文。缓冲区大小相等、传输字节计数相等、bootstrap 可访问，三者都不能推出模型行为一致。另一个反例则相反：某个 PP rank 没有草稿层，如果强迫它提供和其他 rank 相同的本地 KV 条目，就会误伤合法拓扑。两个反例共同要求协议表达“已知不使用”与“本 rank 没有这类数据”的区别。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "这次新增的布局键仅含 algorithm 与 num_draft_entries。源码明确不把 block size 加入这一声明，因为这里的 prefill draft KV 按 token 写入；DSV4.1 的 SWA 环形布局仍由独立校验处理。不能把该简化解释为所有模型的 block size 都可任意不同。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "明确算法名称是必要条件之一，而不是 checkpoint 等价的充分条件。相同算法与 entry 数仍可能使用不同权重或其他未覆盖配置。",
+                "升级前建立运行产物清单：P、D、bootstrap 后端、各 PP rank 的角色和真实镜像摘要。不要只抄启动命令。",
+                "将“不受本次检查覆盖”单独记录，不要和“已验证匹配”共用绿色状态。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制 本地三态、聚合首值与解码前置拒绝",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "布局函数对非 DFlash-family 模式返回 {}，对该家族但 num_draft_entries 为零的 rank 返回 None，对有 draft entries 的 rank 返回算法名与 entry 数。这些是本地状态，不是三种不同的网络载荷。"
+            },
+            {
+              "type": "table",
+              "caption": "三态教学对照：先保留语义，再看上报",
+              "columns": [
+                "本地值",
+                "教学含义",
+                "Prefill 上报",
+                "Decode 面对非空远端布局"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "{}",
+                    "明确当前模式不注入这类 draft KV",
+                    "归一化为 null",
+                    "本地仍为已知空字典，可触发不同"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "None",
+                    "该 rank 没有可参与本项比较的 draft entries",
+                    "null",
+                    "本项跳过；不是全局兼容认证"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "非空布局对象",
+                    "算法与 draft entry 数可比较",
+                    "携带对象",
+                    "一致则过此门，不同则拒绝"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "diagram",
+              "title": "同一个空值在发布端与消费端承担不同职责",
+              "caption": "原创控制面机制示意，非实测数据路径。第一组是 prefill 到 bootstrap 的声明流程，第二组是 decode 的本地三态与兼容检查。箭头只表达已声明关系；判定通过不表示 KV 已传完、不表示数值正确，也不代表滚动升级完成。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "p-local",
+                  "label": "先识别本 rank",
+                  "detail": "不是从算法名称单独推断布局，还要知道本 rank 是否真正持有 draft KV entries。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "先识别本 rank",
+                  "tone": "compute"
+                },
+                {
+                  "id": "p-put",
+                  "label": "PUT 传布局",
+                  "detail": "本地空字典与 None 在上报端均序列化为 null，非空布局才携带算法和 entry 数。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "PUT 传布局",
+                  "tone": "communication"
+                },
+                {
+                  "id": "p-reg",
+                  "label": "保留已知布局",
+                  "detail": "Python 和 Rust 注册表保留首个非 None 布局；无 draft 的 PP rank 不抹掉它，冲突已知值被拒。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "保留已知布局",
+                  "tone": "control"
+                },
+                {
+                  "id": "p-get",
+                  "label": "GET 读声明",
+                  "detail": "聚合布局为 None 时 GET 不带该字段。没有声明不是一致性证明。",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "GET 读声明",
+                  "tone": "communication"
+                },
+                {
+                  "id": "d-local",
+                  "label": "本地三态",
+                  "detail": "{} 表示当前模式不注入 draft KV；None 表示此 rank 无 draft entries；非空字典表示具体布局。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "本地三态",
+                  "tone": "compute"
+                },
+                {
+                  "id": "d-check",
+                  "label": "按存在性比较",
+                  "detail": "远端与本地均非 None 才比较字典。{} 也是已知值，因此能与远端非空布局形成冲突。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "按存在性比较",
+                  "tone": "control"
+                },
+                {
+                  "id": "d-reject",
+                  "label": "不匹配拒绝",
+                  "detail": "不匹配先报错，不进入 prefill_info_table；不是所有网络连接或预分配都由此图证明不存在。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "不匹配拒绝",
+                  "tone": "danger"
+                },
+                {
+                  "id": "d-admit",
+                  "label": "仅通过此门",
+                  "detail": "匹配或缺少声明可通过这一项。其他布局检查与业务正确性依然独立。",
+                  "column": 1,
+                  "row": 3,
+                  "shortLabel": "仅通过此门",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "p-local",
+                  "to": "p-put",
+                  "label": "上报前归一化：空字典和 None 均成为 null"
+                },
+                {
+                  "from": "p-put",
+                  "to": "p-reg",
+                  "label": "已知布局首次保留，冲突已知值返回错误"
+                },
+                {
+                  "from": "p-reg",
+                  "to": "p-get",
+                  "label": "聚合值非 None 才在响应中发布"
+                },
+                {
+                  "from": "p-get",
+                  "to": "d-check",
+                  "label": "远端声明输入；未发布字段恢复为 None"
+                },
+                {
+                  "from": "d-local",
+                  "to": "d-check",
+                  "label": "保留本地 {} 与 None 的语义区别"
+                },
+                {
+                  "from": "d-check",
+                  "to": "d-reject",
+                  "label": "双方非 None 且字典不同"
+                },
+                {
+                  "from": "d-check",
+                  "to": "d-admit",
+                  "label": "字典一致，或任一端没有可比较布局"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "Prefill 与注册表声明",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "p-local",
+                      "p-put",
+                      "p-reg",
+                      "p-get"
+                    ]
+                  },
+                  {
+                    "title": "Decode 局部准入判定",
+                    "tone": "control",
+                    "nodeIds": [
+                      "d-local",
+                      "d-check",
+                      "d-reject",
+                      "d-admit"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                3
+              ],
+              "text": "Python 与 Rust bootstrap 都保留首个非 None 布局，之后缺席布局的 rank 不会抹掉它；只有两个已知布局冲突时才拒绝。这样既允许 draftless PP rank 先注册，也允许它后注册。它表达的是当前聚合声明，而不是对每个 rank 的完整模型拓扑证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "Decode 的新比较条件是两端布局均非 None 且字典不同。异常发生在 _resolve_rank_mapping 和 prefill_info_table 写入之前。除此之外，decode 现在只将已知字段送入 PrefillServerInfo，避免新增的未知响应键直接破坏构造；成功获取过的地址仍有缓存快路。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此应分开观测四个事件：注册表接受某个 rank、GET 返回可用拓扑、decode 接纳该拓扑、真实请求完成。注册表接纳不代表 decode 必须接纳；decode 通过这道门不代表后续数据无误。已有缓存快路也提示，测试重配置时要确认实际触发了重新获取，不能仅修改远端字段后重复一条已缓存请求就声称新规则生效。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "还有一处与 PR 摘要措辞需要区分：最终源码的 PUT payload 显式包含 spec_kv_layout: null；GET 则在聚合值为 None 时省略该字段。所谓普通 PD“无新布局”应理解为没有非空布局声明，而非请求 JSON 字节完全不变。新增请求字段测试也直接断言该 key 存在且值为 None。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "不要把 {} 替换成 None 来让错误消失。两者在 decode 端有不同的保护含义。",
+                "不要从 GET 缺字段推断 P 端有或没有草稿 KV；旧版本、target-only 与 draftless 都可能没有声明。",
+                "不要扩大 num_draft_entries 的含义。它不是生成 token 数、接受长度、迭代步数，也不是通用 checkpoint 指纹。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据 把源码事实、作者实验和本地逻辑检查分开",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "本次核对的证据与不能证明的事",
+              "columns": [
+                "证据",
+                "直接支持",
+                "边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合入提交与文件列表",
+                    "主线已增加布局函数、控制面字段和测试",
+                    "不证明标签、wheel 或用户镜像包含"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "布局生成函数",
+                    "三态返回与两字段布局",
+                    "不证明所有模型生成的 KV 语义相同"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "Python / Rust 注册表",
+                    "首个已知值保留、冲突已知值拒绝",
+                    "Rust 源码已读但未在本环境编译运行"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "单元测试定义",
+                    "覆盖算法/entry 冲突、缺席值、PP 注册顺序、未来字段",
+                    "测试存在不等于本次完整执行"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者定向验证",
+                    "报告 221 tests、175 subtests 及差分组合检查",
+                    "本报告未独立重跑；不能替代真实部署验收"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者旧 head H200 记录",
+                    "4 个 NIXL 请求以 stop 完成",
+                    "旧 head、普通小模型路径，不能证明新布局的真实 draft KV 数值正确"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "本轮抽取逻辑检查",
+                    "10 个布局返回、25 个 decode 比较、16 个注册顺序，共 51 案例",
+                    "使用替身枚举/响应；非完整单测、网络服务或 GPU 实验"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "独立逻辑检查直接从冻结 Python 文件抽取函数和比较语句，并保留原条件执行。它核对 {} 与 None 的差别、两个注册顺序以及冲突后首值不被覆盖；同时检查准入守卫位于映射与缓存写入前，并确认 PUT null 与 GET 省略的差别。这个检查降低了人工读代码时看漏分支的风险，但替身类型没有覆盖真实 SpeculativeAlgorithm、进程拓扑、HTTP 并发和 GPU 依赖。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                5
+              ],
+              "text": "本文不会将 PR 页面附带的 CI 图标解释成所有测试都通过。页面存在红色、未完成等不同状态，作者自述的定向回归是另一份证据。是否能交付，必须追到目标 commit 的具体 job 和失败原因，再在实际构建上复核。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "源码定位使用完整 SHA，不用可变 main 链接替代冻结证据。",
+                "原始 PR 多个迭代补丁曾比较更多设置，最终合入只保留算法和 entry 数；不能把第一版 patch 当成最终实现。",
+                "本轮没有把任何报错归因到用户集群，也没有声称用户正在使用这一组合。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍 兼容性保留了旧路径，也保留了未知区",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这是一道按字段存在性开启的检查，而不是要求所有旧实例立刻升级的新强制协议。它减少旧组合被无故拒绝的概率，代价是远端未发布字段时无法提供新的布局保证。因此“连接仍能建立”与“保护已经启用”必须是两张不同的验收表。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                6
+              ],
+              "text": "直接父版本把整个响应字典交给 PrefillServerInfo 构造，且没有 spec_kv_layout 字段；新版本先过滤未知字段。新 prefill 向旧 decode 发布非空布局时，旧构造会遇到未知参数并走获取失败处理。与其泛称滚动兼容，不如逐项验证谁先升级、谁保留旧实现、是否实际发布该字段。"
+            },
+            {
+              "type": "table",
+              "caption": "建议理解的兼容矩阵，结果是本项逻辑而非完整服务结论",
+              "columns": [
+                "P/注册表响应",
+                "Decode 条件",
+                "本项预期",
+                "运维解释"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "旧/缺字段",
+                    "新 decode 且有布局",
+                    "跳过新比较",
+                    "保留旧行为，但没有新的互验保证"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新非空布局",
+                    "新 decode，相同对象",
+                    "通过本项",
+                    "继续其他配置与数据面验收"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新非空布局",
+                    "新 target-only，{}",
+                    "拒绝",
+                    "显式配置差异，不按网络瞬时错重试"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新非空布局",
+                    "新 draftless rank，None",
+                    "跳过本项",
+                    "应结合其他 rank 和整体拓扑验证"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新非空布局",
+                    "直接父版本 decode",
+                    "响应解析失败路径",
+                    "升级顺序不能假定对称"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新非空布局",
+                    "任意历史版本 decode",
+                    "未知",
+                    "只核对了直接父版本，不覆盖所有历史版"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对于滚动升级，可以把“先验证消费者认识新字段，再让生产者发布它”作为候选顺序；但不能只凭这一个 PR 就下达通用执行命令。真实系统可能还有 DSV4.1 的独立强约束、bootstrap 重启策略、版本 pin、会话路由以及其他新增字段。先在隔离实例证明矩阵，再确定排空与替换策略。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "过滤未知字段有扩展性收益，也有清晰边界：它只是减少结构解析失败，并没有让旧消费者自动理解未来字段的安全语义。若未来字段改变必需的 KV 解释方式，就不能因为“JSON 能读”而默认协议已经成功协商。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断 先定位哪一层拒绝，再决定是否重试",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设与证伪线索；不是已发生事故",
+              "columns": [
+                "现象",
+                "候选解释",
+                "应抓证据",
+                "不能直接下的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "bootstrap PUT 返回 400",
+                    "两个 rank 发布不同已知布局",
+                    "每个 rank 的角色、payload、注册顺序与首个保留值",
+                    "不能只看到 400 就认定网络不通"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GET 一直未 ready",
+                    "冲突 rank 未完成注册或其他拓扑未齐",
+                    "注册计数、所需 world 拓扑、全部 rank 的成功响应",
+                    "不能把未 ready 等同 GPU 算子故障"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "decode 获取拓扑失败",
+                    "旧消费者无法构造带新键的响应",
+                    "实际运行 commit、原始 GET schema、解析异常类型",
+                    "不能承诺无限重试会修好协议不兼容"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新 decode 明确 layout mismatch",
+                    "算法/entry 数不符，或本地为 {}",
+                    "远端非空对象和本地实际三态，别只看 CLI",
+                    "不能把 None 和 {} 合并为同一状态"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "没有 mismatch 但输出异常",
+                    "缺席字段绕过本项，或仍有权重/其他布局差异",
+                    "字段是否发布、缓存是否重取、checkpoint 摘要与独立参考",
+                    "不能用控制面通过来免除数值诊断"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "改配置后行为不变",
+                    "实际实例/缓存映射仍是旧身份",
+                    "进程启动时间、服务实例 ID、bootstrap 地址与重新获取证据",
+                    "不能仅凭重复请求宣称热更新已被验证"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "观测数据应保留角色而不仅是主机名。尤其在 PP 中，同一服务的一些 rank 有 draft entries，另一些没有；把所有空值压成“未启用投机”会制造错误的排障路径。建议日志分别记录算法、entry 数、值分类、后端、rank 与实际产物身份，在不记录请求正文的前提下即可诊断大多数控制面差异。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "拒绝策略也要分层：明确 mismatch 是配置拒绝，短退避无法改变其含义；连接暂不可达和拓扑尚未 ready 则可能是启动顺序问题。实验应检验路由器是否把拒绝暴露为可理解的错误，避免把流量不断重派给同一不兼容配对。是否需要隔离实例取决于实际运维方案，本报告未替用户改动任何路由。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵 将控制面证明与数据面证明拆开执行",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "下面是待执行计划。所有计数、延迟和资源门槛应在测试前固定记录，不能看到结果后再改口径。以目标构建及其直接父构建构成 A/B，先完成 CPU/HTTP 控制面，再进行真实 draft 模型与传输后端测试，最后做服务稳定性。本文没有执行这些 GPU、Rust 或线上实验。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议验证矩阵",
+              "columns": [
+                "编号/层级",
+                "自变量与对照",
+                "采集内容",
+                "通过条件或处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "M1 本地三态",
+                    "非家族 / DSpark / DFLASH × entry 0/非零",
+                    "原始值类别、上报 JSON、GET 字段",
+                    "和冻结逻辑一致；不以 truthiness 抹掉 decode 语义"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M2 rank 聚合",
+                    "PP 两 rank；有值→无值 / 无值→有值 / 同值 / 冲突值",
+                    "每次 PUT 响应、最终聚合值、readiness",
+                    "两合法顺序同结果；冲突拒绝且不覆盖已知值"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M3 后端一致性",
+                    "相同 M2 载荷分别走 Python 与 Rust",
+                    "状态码、规范化字段、注册计数",
+                    "语义一致；差异逐项解释，不能只比 HTTP 200"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M4 解码配对",
+                    "匹配 / 算法差异 / entry 差异 / target-only / draftless",
+                    "异常类型、prefill_info_table、后续登记行为",
+                    "显式冲突在准入前拒绝；跳过仅发生在定义条件"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M5 升级顺序",
+                    "父 D+新 P；新 D+父 P；双新；bootstrap 分开换",
+                    "实际响应、日志、成功配对与保护启用状态",
+                    "结果符合预先矩阵；未保护组合不能标验收完成"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M6 真实数据面",
+                    "真实支持 draft checkpoint；NIXL/Mooncake 各单独验证",
+                    "固定随机种子的 token/质量参考、KV 校验、错误率",
+                    "与参考在预定容差内；没有未解释错 token"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M7 PP/参数范围",
+                    "有/无 draft 的 PP stage；允许的 block size 差异",
+                    "逐 rank entries、控制面响应、模型输出",
+                    "不误拒合法拓扑；其他独立约束保持有效"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M8 重启与缓存",
+                    "冷启动、地址复用、清晰的实例替换和断流恢复",
+                    "拓扑重新获取、旧缓存淘汰证据、请求终态",
+                    "无不兼容流量被静默接纳；缓存行为被实际证明"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "M9 压测与收尾",
+                    "固定并发、长短 prompt、启动失败与重复重试",
+                    "TTFT、TPOT、吞吐、重试、room/连接/内存趋势",
+                    "满足既定 SLO，异常配对不会造成无界重试或资源增长"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "质量比较不能仅使用接受长度：接受长度变化可能来自随机性、draft 参数或模型差异，也可能与 bug 无关。使用同一权重、采样设置和请求集，先对贪心 token 序列做严格比较，再根据业务需要加入随机采样的统计质量验证。性能指标放在正确性通过之后；失败测试不应通过减小并发、缩短 prompt 或换模型悄悄绕过去。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收 兼容、保护启用、数值和服务分别记账",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟议验收门，阈值必须在执行前预登记",
+              "columns": [
+                "门",
+                "指标口径",
+                "合格标准",
+                "不合格时"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "P/D/bootstrap 的实际 commit、镜像摘要、后端",
+                    "明确包含目标变更及依赖，来源可追踪",
+                    "停止推广；不能只用版本字符串推断"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "声明一致性",
+                    "每个 rank 的本地三态、PUT 与 GET",
+                    "角色符合预期；合法注册顺序结果相同",
+                    "先修配置或聚合差异"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "拒绝位置",
+                    "故意构造的 mismatch 与后续准入记录",
+                    "全部预期冲突均在规定边界前被拒",
+                    "视作正确性失败，不看吞吐抵消"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "保护覆盖",
+                    "实际业务配对中发布并比较布局的占比",
+                    "所有计划受保护配对均有证据；未覆盖单列",
+                    "不以请求成功冒充保护覆盖"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "质量与数据完整性",
+                    "匹配同模型同配置参考的 token、质量、KV 检查",
+                    "满足预定精度口径；无无法解释的差异",
+                    "回到基线并保留最小复现"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可用性与恢复",
+                    "混合版本、重启、拒绝重试后的完成/失败终态",
+                    "无卡死、无无限重试；错误可诊断",
+                    "停止放量，修复恢复路径"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务与资源",
+                    "预定负载的 TTFT/TPOT 分位数、吞吐、资源趋势",
+                    "满足原有 SLO；长跑无不可解释增长",
+                    "不能用控制面正确代替服务验收"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "零误拒与零漏拒只针对预先列出的配置集合，不能宣传为所有组合的形式化证明。部署报告应该同时列出测试总数、未覆盖项、实际 rank 拓扑和负载范围。若测试故意采用旧 P，结果可以是“兼容路径工作且未启用新保护”，而不能写成“spec KV 校验通过”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次独立检查的验收结论仅是：51 个抽取代码逻辑案例以及两项源码顺序/序列化核查通过。它不是上表任何真实部署门的替代证据。静态报告 schema 和图拓扑校验由交付流程另记，不与模型正确性混为一项。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证 正式发布、完整测试与真实配对仍未闭合",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "未确认目标正式 release、wheel 或具体容器镜像是否包含该合入提交。主线合并不能写成已经发布。",
+                "未执行上游 221 tests/175 subtests、作者差分 oracle、Rust registry 测试或真实 GPU PD。作者提供的结果仍标为作者证据。",
+                "未确认任何用户正在运行的模型、draft checkpoint、PP/TP/CP 拓扑及传输后端，本报告没有用户事故归因。",
+                "未验证相同 algorithm 和 num_draft_entries 是否足以覆盖目标部署的所有权重/布局差异。它不是通用模型指纹。",
+                "未验证所有历史版本；升级兼容只从直接父版本源码推导，其他历史分支需要逐版本核对。",
+                "未验证未来未知字段的业务语义。过滤未知键只提供结构容忍，不是安全协议协商。",
+                "未执行真实并发注册、地址复用、缓存刷新、排空及失败后资源收敛测试。",
+                "本报告是新增公开资料解读，未修改上游代码、未替用户运行生产命令、未完成站点发布。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "如果只能先做一件事，优先在目标镜像上保存真实 P/D 两侧的三态、GET payload 与配对结果，随后故意制造一个 algorithm 不匹配，验证它能在预期准入位置拒绝。这个小实验能迅速分清“代码已包含”“功能已启用”“功能确实挡住错误”三种不同状态；它仍不能替代后续质量与负载验证。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "mooncake-rdma-fork-state-ownership",
     "kind": "analysis",
     "title": "Mooncake MR 注销回退：fork 状态应由 libibverbs 统一记账",
