@@ -2536,6 +2536,753 @@
   },
   {
     "schemaVersion": 1,
+    "id": "vllm-nixl-fabric-transport-contract",
+    "kind": "analysis",
+    "title": "vLLM NIXL 同机传输：FABRIC 回退后的可用性不等于 NVLink",
+    "summary": "解读 #65137 的 IMEX 探测、保守默认与 FABRIC 分配回退，保留 B200、GB200、PCIe-only 三种证据边界，并制定协议与服务双层验收。",
+    "publishedAt": "2026-11-08",
+    "reviewedAt": "2026-11-09",
+    "topics": [
+      "KV Cache",
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM #65137 合入提交",
+        "url": "https://github.com/vllm-project/vllm/commit/80e2e486f2b895c06ea962e6146b8f97376dcaff",
+        "publishedAt": "2026-11-08",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定配置解析和默认策略",
+        "url": "https://github.com/vllm-project/vllm/blob/80e2e486f2b895c06ea962e6146b8f97376dcaff/vllm/config/vllm.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定 CUDA VMM 分配器与 IMEX 探测",
+        "url": "https://github.com/vllm-project/vllm/blob/80e2e486f2b895c06ea962e6146b8f97376dcaff/vllm/utils/vmm_driver.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定 NIXL 设备内存识别",
+        "url": "https://github.com/vllm-project/vllm/blob/80e2e486f2b895c06ea962e6146b8f97376dcaff/vllm/config/kv_transfer.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定 VMM 单元回归",
+        "url": "https://github.com/vllm-project/vllm/blob/80e2e486f2b895c06ea962e6146b8f97376dcaff/tests/utils_/test_vmm_driver.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定配置单元回归",
+        "url": "https://github.com/vllm-project/vllm/blob/80e2e486f2b895c06ea962e6146b8f97376dcaff/tests/v1/engine/test_engine_args.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "作者 B200 实验和版本说明",
+        "url": "https://github.com/vllm-project/vllm/pull/65137",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM PR 作者 gcanlin",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "GB200 社区独立测试与 RDMA 回退",
+        "url": "https://github.com/vllm-project/vllm/pull/65137#issuecomment-6719070889",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM 社区测试者 Pb314314",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "PCIe-only 社区反例",
+        "url": "https://github.com/vllm-project/vllm/pull/65137#issuecomment-6624076747",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM 社区测试者 weimin023",
+          "status": "attributed",
+          "note": "已阅读原始页面与对应固定源码。作者实验单独归因，本站未运行 GPU；正文区分最终实现、旧描述和未验证边界。"
+        },
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "固定 NIXL 使用文档",
+        "url": "https://github.com/vllm-project/vllm/blob/80e2e486f2b895c06ea962e6146b8f97376dcaff/docs/features/nixl_connector_usage.md",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "v0.33.0 标签配置对照",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/config/vllm.py",
+        "accessedAt": "2026-11-09"
+      },
+      {
+        "title": "vLLM 最新 Release 页面",
+        "url": "https://github.com/vllm-project/vllm/releases/tag/v0.33.0rc3",
+        "accessedAt": "2026-11-09"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "最终补丁加入IMEX感知默认策略与指定FABRIC错误回退。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "实际发行制品包含关系、真实传输与服务净收益仍待验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "进程能打开通道后，FABRIC分配是否真的成功？",
+      "实际KV读经cuda_ipc、RDMA还是TCP？",
+      "分配回退后是否有显式降级状态？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "截至2026-11-09：核对PR、最终提交80e2e486f2b895c06ea962e6146b8f97376dcaff、固定源码、单元回归、原始作者与社区评论以及v0.33.0标签。执行36项CPU替身契约检查；未执行GPU、NIXL、真实IMEX或端到端服务。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一 结论：缓存容量优化不能吞掉传输路径",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "vLLM #65137 已于 11 月 8 日合入。它修改 NIXL 与 extensible KV 的默认组合，并让 CUDA VMM 分配器按条件申请 FABRIC；这不是一个“打开后所有同机通信都恢复 NVLink”的无条件承诺。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "部署时先回答三个问题：这块 KV 是怎样分配的，当前进程具备什么导出条件，实际读请求选中了什么协议。配置项、驱动 API 成功和端到端性能各是一层证据，任何一层都不能代替下一层。对已有 P/D 服务，优先增加协议观测和可回滚对照，再决定是否启用新的内存分配路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原作者报告的巨大差异发生在特定 B200 同机配置的 KV 传输段。它揭示静默慢路径值得防范，但不能直接换算成模型吞吐倍数。更重要的判断是：当系统允许合法降级时，正确性通过和服务正常返回都不足以证明性能路径仍然成立。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次执行了 36 项 CPU 契约检查，直接调用固定 Python 源码中的驱动方法及提取的配置方法，驱动、平台和连接器依赖均为替身，36 项通过。没有加载 CUDA 驱动，没有执行 NIXL、GPU、上游完整 pytest、真实 IMEX 权限或服务压测。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二 背景：地址可用、可导出与高速可达是三件事",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                9
+              ],
+              "text": "固定文档说明：extensible KV 使用驱动虚拟内存映射；同机 UCX 的相应高速访问依赖 CUDA fabric 句柄和 IMEX 通道。文档建议通过 UCX_PROTO_INFO=y 观察实际 KV read 协议，而不是仅检查配置开关。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以把分配契约理解为三层。第一层是本地计算能否访问地址；第二层是另一进程能否以受支持的方式导出与导入这段内存；第三层是通信栈根据拓扑、版本和配置选择了哪条路径。第一层成功不会自动补齐后两层。服务只校验输出时，数据依然可能正确，但每次交接都付出额外等待。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "P/D 的成本不仅是计算。首 token 等待可能包含排队、prefill、目的端准备、KV 读和 decode 调度。若只计 token 生成的 GPU busy time，传输路径退化容易被藏在 host gap 或远端等待中。诊断需要同一个请求 ID 上的分段时间线，而不是把两个总利用率图对齐后猜原因。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "CPU staging 不是此设备 KV 判定的等价情形。源码会识别以 Nixl 开头的直接或 MultiConnector 子连接器，并按子配置或父配置判断 kv_buffer_device 是否为 cpu。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三 原理：保守默认与分配回退必须分开读",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "两个独立决策，不是一张 NVLink 保证书",
+              "caption": "原创非实测机制示意。上组是配置政策，下组是分配时能力与回退；两组不是同一成功流水线。最终协议只能在真实传输中确认，不能从通道存在或分配成功推导。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "policy-input",
+                  "label": "识别 NIXL 设备 KV",
+                  "detail": "只讨论直接设备内存或 MultiConnector 中对应子连接器，不把 CPU staging 混入。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "设备 KV",
+                  "tone": "danger"
+                },
+                {
+                  "id": "policy-probe",
+                  "label": "探测进程能否打开通道",
+                  "detail": "探测是权限与可见性的一层证据；不是 GPU FABRIC 分配成功的证据。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "通道探测",
+                  "tone": "danger"
+                },
+                {
+                  "id": "policy-off",
+                  "label": "无通道且默认：关闭 extensible",
+                  "detail": "采用保守默认，避免继续使用无法完成所需导出的分配路径。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "默认关闭",
+                  "tone": "danger"
+                },
+                {
+                  "id": "policy-explicit",
+                  "label": "无通道且显式请求：保留并警告",
+                  "detail": "显式启用仍可能得到较慢的同机协议，不能称为自动优化完成。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "显式保留",
+                  "tone": "danger"
+                },
+                {
+                  "id": "alloc-probe",
+                  "label": "设备能力与通道共同判断",
+                  "detail": "请求 FABRIC 的必要条件不同于上组只影响默认开关的通道检查。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "分配条件",
+                  "tone": "compute"
+                },
+                {
+                  "id": "alloc-request",
+                  "label": "尝试申请 FABRIC 句柄",
+                  "detail": "请求成功与实际远端导出、协议选择仍是不同证据。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "请求句柄",
+                  "tone": "compute"
+                },
+                {
+                  "id": "alloc-fallback",
+                  "label": "800 或 801：不用 FABRIC 重试",
+                  "detail": "记住该设备不再申请；分配活下来不表示仍走 NVLink。其他错误继续报错。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "有损回退",
+                  "tone": "compute"
+                },
+                {
+                  "id": "runtime-check",
+                  "label": "实际协议与服务验收待验",
+                  "detail": "需观察 KV read 的 UCX 协议、传输尾延迟和业务 SLO。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "协议待验",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "policy-input",
+                  "to": "policy-probe",
+                  "label": "默认判断前识别用途"
+                },
+                {
+                  "from": "policy-probe",
+                  "to": "policy-off",
+                  "label": "无通道且请求未指定"
+                },
+                {
+                  "from": "policy-probe",
+                  "to": "policy-explicit",
+                  "label": "无通道且明确启用"
+                },
+                {
+                  "from": "alloc-probe",
+                  "to": "alloc-request",
+                  "label": "设备支持且通道可打开"
+                },
+                {
+                  "from": "alloc-request",
+                  "to": "alloc-fallback",
+                  "label": "仅指定错误允许回退"
+                },
+                {
+                  "from": "alloc-request",
+                  "to": "runtime-check",
+                  "label": "成功分配后仍须验证"
+                },
+                {
+                  "from": "alloc-fallback",
+                  "to": "runtime-check",
+                  "label": "回退也必须重新核对"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "配置政策",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "policy-input",
+                      "policy-probe",
+                      "policy-off",
+                      "policy-explicit"
+                    ]
+                  },
+                  {
+                    "title": "分配与真实协议",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "alloc-probe",
+                      "alloc-request",
+                      "alloc-fallback",
+                      "runtime-check"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "配置解析在请求未指定时，除既有不支持条件外，还用“设备 NIXL 且无可打开 IMEX 通道”关闭 extensible。显式开启在未触发不支持条件时被保留并警告；已有 ROCm 注册内存约束并未被放开。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "驱动需要设备 FABRIC 能力和可打开通道才请求句柄；若分配返回 800 或 801，会清掉该设备的能力缓存并以无 FABRIC 方式重试。OOM 不在重试白名单。通道探测实际尝试 open，而非仅判断路径存在。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "由此可以推导一个容易遗漏的状态：配置阶段见到了通道，所以保留了 extensible；分配阶段却被拒绝了 FABRIC，因而成功创建一块没有该句柄的内存。系统可以恢复可用，却没有同时恢复预期的高速路径。这不是代码自相矛盾，而是可用性回退和性能目标不同。告警应当携带降级状态，不能只把最终 create 成功记成“优化启用”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "另一个推导是拓扑不能由通道探测替代。保守默认可能影响只跨机传输的部署，也无法覆盖所有 PCIe-only 环境。是否重新启用，应根据该服务真实的 P/D 放置策略决定。如果调度器允许后续迁到同一台主机，今天的跨机对照不能替未来同机路径背书。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "图中的实线表示配置或代码依赖，不表示已经测得的传输时序。最后的协议验收节点刻意保持待验：开关为 true、句柄被请求以及分配成功，都不是一条观测到的 NVLink 数据流。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四 证据：三个拓扑，三个不同的反例",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原始实验必须保留归属和版本",
+              "columns": [
+                "证据",
+                "观察",
+                "不能推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "作者 B200",
+                    "8×B200，GLM-5.3-Flash，NIXL 1.5.2：主线 9.9s/次；补丁无通道 23.6ms、有通道 24.2ms。两行用 4904c38f42。",
+                    "不是最终合入 SHA 的本次复现，也不是整体吞吐倍数。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "GB200 评论",
+                    "4 GPU tray、NIXL 1.5.0：约733MB 的读从8.9ms降至3.2–3.3ms；旧路径为 rc_mlx5 RDMA。测试为2cdaab3759合到fd8f3f398e。",
+                    "并非所有退化都经 TCP；未测无通道分支。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "PCIe-only 评论",
+                    "2×RTX PRO 6000、NIXL 1.5.2：仅关闭 extensible 仍慢；另开 GET zero-copy 后 KV read 22–25ms。作者明确未运行该PR。",
+                    "手工配置对照不是最终补丁验收，也不是通用环境变量处方。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    8
+                  ]
+                },
+                {
+                  "cells": [
+                    "VMM 单测",
+                    "覆盖能力与通道组合、指定错误回退、OOM 不回退，以及可打开路径。",
+                    "替身驱动不证明真实设备或 UCX 选路。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "配置单测",
+                    "覆盖默认无通道关闭、显式无通道保留、有通道默认保留，以及已有 ROCm 限制。",
+                    "未等价覆盖所有 MultiConnector 与调度拓扑。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6
+              ],
+              "text": "第一项作者另外报告一小时 AgentX：24,041 次、平均894MB、22.1ms、零失败，但使用较早 ff4c74f38c。不同提交的日志只能证明该次实验，不可拼接成最终产物全覆盖。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "GB200 的价值不是另一个漂亮数字，而是排除了“失去 NVLink 就一定 TCP”的过度归纳。协议名与拓扑给出了更准确的诊断分叉：数据路径可能经过 NIC，仍然可用且快于 TCP，却比本应使用的同机高速路径慢。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "主线合入、单测文本、作者运行、最终发行制品包含关系和用户生产效果是五种不同证据。此次保留各项来源的提交身份，没有用机器人 CI 触发评论代替通过结果，也没有把第三方实验写成本站测量。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五 取舍：宁可保留慢路径，也不能把慢路径记成成功优化",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "内存容量策略和通信性能之间有真实取舍。关闭 extensible 可能放弃“按真实暖机后余量分配”的便利；保留它却失去合适的导出能力，可能增加传输延迟。正确决策应比较一次请求的净收益，而不是只优化单个内存预算数字。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对回退分支应同时定义可用性与性能状态：可用性说明分配是否完成、服务是否能处理请求；性能状态说明预期协议是否仍成立。两者分离后，调度器才有机会减少受影响的同机组合，而不是等到超时率升高才发现降级。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "显式选项可以绕过保守默认，但不是绕过已有不支持条件。报告不建议批量覆盖所有部署，也不自动创建设备节点、变更设备 cgroup 或放宽容器权限。IMEX 配置属于管理员应审查的环境条件，研究中的只读检查不能替代安全审批。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "吞吐评估还要控制 KV 大小、P/D 拓扑、并发、MTP、模型精度和缓存命中。极慢基线可能放大倍率；更快的协议也可能把瓶颈转移到 decode 或排队。不要把一次传输的时间差按请求数机械相乘，当成可以兑现的每日 GPU 成本节省。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六 生产故障假设：准确率不变但首包突然变慢",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创诊断表：先收集见证，再改开关",
+              "columns": [
+                "假设",
+                "最小见证",
+                "排除与处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "升级后同机 KV 走了其他协议",
+                    "同请求的 KV read 协议、内存分配类型、P/D 所在 GPU 与版本",
+                    "先对照同模型旧配置；不要以输出正确排除此假设。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "通道路径存在但容器打不开",
+                    "进程内只读 open 的错误与容器设备映射",
+                    "不直接扩大权限；交由管理员审查特定通道配置。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "FABRIC 请求被拒后隐式降级",
+                    "驱动返回码、分配警告、后续每设备请求状态",
+                    "区分800/801与OOM；重新核对协议，必要时回滚组合。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "PCIe-only 或 UCX 策略导致读路径退化",
+                    "GPU拓扑、实际 UCX 配置、版本和 get 协议",
+                    "不能仅凭关闭 extensible 判定已恢复；做单变量对照。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "只跨机假设被新调度打破",
+                    "P/D 放置记录与迁移时间线",
+                    "同机与跨机分别验收，重排策略不能继承旧拓扑结论。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个完整的事故证据包应能把“哪块内存、哪个进程、哪次请求、哪种协议”连起来。只记录环境变量会遗漏最终驱动回退，只记录带宽会遗漏拓扑和数据量，只看服务总延迟则难以区分传输与排队。建议在变更窗口先对少量请求保留协议诊断，避免长期高量日志干扰基准。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七 实验：先验证分支，再测性能",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "待执行硬件与服务矩阵；不是已通过结果",
+              "columns": [
+                "组别",
+                "变量与对照",
+                "必须保存"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "同机 NVLink",
+                    "extensible默认/显式关闭；通道可用/不可用；其他配置固定",
+                    "实际导出与读协议、KV字节数、P/D节点、传输p50/p95/p99"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "分配错误",
+                    "受控环境分别注入800、801、OOM与回退后二次失败",
+                    "请求次数、能力缓存、告警和错误传播；不修改生产驱动"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "拓扑",
+                    "NVLink、PCIe-only、跨机RDMA；允许混合放置的调度",
+                    "每一种拓扑独立结果，不汇总成一个速度倍数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "配置边界",
+                    "NIXL CPU staging、设备KV、MultiConnector子配置覆盖、非NIXL",
+                    "解析结果和实际分配/注册路径；不只看最终开关"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "版本与负载",
+                    "锁定镜像/依赖；短长上下文、冷暖缓存、低高并发、MTP开关",
+                    "A/B交替、相同数据集、全部请求结果与失败分母"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务层",
+                    "在相同SLO下扫并发，而非只测单次KV",
+                    "TTFT、TPOT、完成吞吐、队列时长与错误率"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "已执行的36项CPU检查只针对可精确定义的配置和错误分支：四种能力/通道组合、回退与非回退、回退失败传播，以及24种平台/设备NIXL/通道/显式请求组合。它帮助检查本文对代码的解释，并不模拟通信。实际硬件实验仍全部待做。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "性能对照应先证明两边处理相同工作量。若启用新策略导致 KV 容量或调度批次变化，需分别报告“同工作量传输对照”和“自然调度服务对照”。后一项可以衡量整体收益，却不能再把差值全部归因给单个传输机制。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八 验收：建立协议门、正确性门和服务门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议预先登记的验收口径；阈值是实验计划",
+              "columns": [
+                "门",
+                "通过条件",
+                "失败动作"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "确认运行镜像实际含80e2e486…或等价补丁；锁定UCX/NIXL/驱动",
+                    "身份不明不解释性能变化"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "协议",
+                    "每种目标拓扑均有实际KV读协议见证；降级显式可见",
+                    "协议不符先定位，不以吞吐均值掩盖"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正确性",
+                    "同输入质量指标不越预设容差；无新增传输失败、未完成请求或数据损坏",
+                    "任一安全失败停止放量"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "同字节量下传输p95不退化；目标业务TTFT/TPOT满足原SLO",
+                    "净收益为负则保留基线或缩小适用范围"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳定性",
+                    "持续负载覆盖容量变化、重启和调度迁移；记录全部失败分母",
+                    "出现降级和尾延迟异常立即停止扩容"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不应预设“必须获得400倍”。合适的目标来自用户自己的旧路径、目标拓扑与业务SLO。对零失败样本也要保留分母与时间窗：观察到零次失败不是失败概率为零；在更大规模或另一种拓扑上，仍需重新建立统计边界。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九 未验证项：主线合入不等于发行和生产证明",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                11
+              ],
+              "text": "查阅时 latest Release 名称为v0.33.0，实际tag为v0.33.0rc3且prerelease=false。它的11月2日发布时间和本次11月8日合入不是同一个事件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                10
+              ],
+              "text": "读取的v0.33.0标签配置没有此次配置解析方法；同标签的vmm_driver.py路径返回404。该对照支持“不能把本次主线修复直接归给既有标签”，不构成所有第三方镜像的内容审计。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "仍待核对：实际镜像是否回补；最终合入相对作者测试提交的完整行为；设备能力为假但通道可用时的部署路径；真实IMEX访问与FABRIC申请；MultiConnector全部覆盖；只跨机与混合调度；长期资源影响和业务净收益。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本报告没有检查UCX内部所有实现路径。对旧路径原因的讨论以已读vLLM代码、文档与原始协议观测为界；不能把作者明确说明的推断扩写成本站完成了UCX源码审计。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "flashinfer-alphamoe-accumulator-stream-identity",
     "kind": "analysis",
     "title": "FlashInfer 常驻累加区：流身份、负零与复用完成门",
