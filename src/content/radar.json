@@ -1,6 +1,670 @@
 [
   {
     "schemaVersion": 1,
+    "id": "vllm-ascend-sync-kv-load-step-contract",
+    "kind": "analysis",
+    "title": "Ascend 同步 KV 加载：本步依赖声明不能丢在调度器副本里",
+    "summary": "BalanceScheduler 与 DyntraLBScheduler 恢复 has_sync_kv_loads 传播，让同步命中的加载在 forward 前启动。重点解释逐步逻辑或、异步请求准入、逐层等待以及正式标签与回补分支的不同证据。",
+    "publishedAt": "2026-11-10",
+    "reviewedAt": "2026-11-11",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM-Ascend · 同步 KV 标志修复提交",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/b7ec7deb3380806ae64466db0c1f344403fe333f",
+        "publishedAt": "2026-11-10",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "BalanceScheduler · 冻结的同步准入与输出",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/b7ec7deb3380806ae64466db0c1f344403fe333f/vllm_ascend/patch/platform/patch_balance_schedule.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "DyntraLBScheduler · 冻结的同步准入与兼容门",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/b7ec7deb3380806ae64466db0c1f344403fe333f/vllm_ascend/core/dyntra_lb_scheduler.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "vLLM · 冻结的连接器加载与 forward 顺序",
+        "url": "https://github.com/vllm-project/vllm/blob/24420b7a341af37a9bc3186e6fc6062512e0aa58/vllm/v1/worker/kv_connector_model_runner_mixin.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "BalanceScheduler · 同步、异步及混合步单元测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/b7ec7deb3380806ae64466db0c1f344403fe333f/tests/ut/patch/platform/test_patch_balance_schedule.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "DyntraLBScheduler · 同步、异步及混合步单元测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/b7ec7deb3380806ae64466db0c1f344403fe333f/tests/ut/core/test_dyntra_lb_scheduler.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "vLLM-Ascend #20810 · 变更与验证范围",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/20810",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "vLLM-Ascend #21454 · v0.30.0 分支回补状态",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/21454",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "v0.30.0 正式标签 · BalanceScheduler",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.30.0/vllm_ascend/patch/platform/patch_balance_schedule.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "v0.32.0rc1 标签 · BalanceScheduler",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.32.0rc1/vllm_ascend/patch/platform/patch_balance_schedule.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "vLLM · 冻结的 SchedulerOutput 默认值",
+        "url": "https://github.com/vllm-project/vllm/blob/24420b7a341af37a9bc3186e6fc6062512e0aa58/vllm/v1/core/sched/output.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "v0.30.0 正式标签 · DyntraLBScheduler",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.30.0/vllm_ascend/core/dyntra_lb_scheduler.py",
+        "accessedAt": "2026-11-11"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "主干提交 b7ec7deb 为两个调度器恢复同步加载标志；#21454 已合入 releases/v0.30.0 分支，不能等同于正式 v0.30.0 标签更新。",
+        "sourceIndices": [
+          0,
+          7,
+          8,
+          11
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "真实 NPU 上的逐层 KV 恢复、输出一致性、异常路径和服务性能尚未执行。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "本次调度步中，哪些已准入请求真正依赖同步外部 KV？",
+      "实际 worker 是否在 forward 之前启动加载，逐层读取前又等待了什么？",
+      "镜像使用哪个 Ascend 提交、vLLM 提交与连接器版本，是否真的包含修复？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-11 核对公开冻结源码、PR 与标签文件。主线是 2026-11-10 合入的 b7ec7deb；独立核对 #21454 的分支回补。无 NPU、真实连接器或业务回归结果。源码顺序分析不等同于硬件实验，公开测试代码不等同于本站执行通过。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：同步依赖必须先声明，才能先启动",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "外部缓存命中把计算变成了一个有前置数据依赖的任务。调度器不仅要决定“这个请求可以算多少 token”，还要告诉执行端“当前这次 forward 会消费刚恢复的 KV”。如果只保留 token 数，执行端仍可能选择适用于异步接收的延后提交路径；表面上省下了前向之前的主机开销，实际却把数据生产者排在消费者之后。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "冻结变更在 BalanceScheduler 和 DyntraLBScheduler 中补回逐步标志：每次 schedule 从 False 开始；同步外部命中请求进入 running 时置 True；构造 SchedulerOutput 时传递。Dyntra 保留字段兼容检测。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "优先判断运行实例是否同时使用这两个调度器之一、同步外部命中以及会消费该 KV 的 forward。不要把普通本地前缀命中、异步 PD 接收或所有 Ascend 输出异常统一归到这条修复。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：命中信息不等于可读数据",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以把一次调度步拆成三个账本：逻辑上已计算的 token、当前显存页的内容、这一轮 worker 必须完成的加载动作。前两项并不天然同步。调度器根据缓存索引发现历史前缀，并不表示设备页此刻已经存有该历史前缀。能跳过重复 prefill 的依据，必须同真正的数据恢复相接。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3,
+                10
+              ],
+              "text": "冻结的 worker mixin 先绑定连接器元数据，再按 has_sync_kv_loads 选择 start_load_kv 的调用位置：真值时在 yield 前启动，假值时在 finally 中启动。SchedulerOutput 的字段默认 False。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里的“同步”是当前计算步对外部 KV 的依赖分类，并不承诺一次函数调用阻塞至所有层搬运完毕。逐层连接器可以先建立加载流水线，再由每层等待相应数据。因而源码证据支持“启动顺序被修复”，不能单凭一个布尔值宣称端到端数据正确性已经证明。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：逐步逻辑或，而非最后一个请求的状态",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "同步外部命中至少要跨过两个条件：命中量大于零，且请求确实进入当前步的计算集合。两个修复点都位于异步分支的 continue 之后；异步命中会进入 WAITING_FOR_REMOTE_KVS，不为本步增加计算 token。"
+            },
+            {
+              "type": "diagram",
+              "title": "同一个外部命中，两种 forward 启动顺序",
+              "caption": "原创非实测示意。仅比较已准入的同步外部 KV 命中；异步等待请求不进入这条计算链。箭头表示程序依赖，不表示数据已全部搬完、耗时比例或硬件验收。修复后的逐层读取仍依赖连接器本身的等待契约。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-admit",
+                  "label": "同步命中准入",
+                  "detail": "旧调度器允许依赖外部 KV 的请求进入当前计算步。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "同步命中准入",
+                  "tone": "kv"
+                },
+                {
+                  "id": "old-flag",
+                  "label": "标志仍为假",
+                  "detail": "未传播 has_sync_kv_loads，worker 得到默认 False。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "标志仍为假",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-forward",
+                  "label": "先进入前向",
+                  "detail": "本次 forward 已开始，但 start_load_kv 尚未调用。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "先进入前向",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-load",
+                  "label": "之后才启动加载",
+                  "detail": "context manager 在 forward 区域之后才调用加载。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "之后才启动加载",
+                  "tone": "communication"
+                },
+                {
+                  "id": "new-admit",
+                  "label": "同步命中准入",
+                  "detail": "修复不改变命中含义：当前请求仍要消费外部 KV。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "同步命中准入",
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-flag",
+                  "label": "本步标志为真",
+                  "detail": "本步任一已准入同步命中都将标志置 True。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "本步标志为真",
+                  "tone": "control"
+                },
+                {
+                  "id": "new-load",
+                  "label": "先启动加载",
+                  "detail": "worker 在进入 forward 区域前调用 start_load_kv。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "先启动加载",
+                  "tone": "communication"
+                },
+                {
+                  "id": "new-forward",
+                  "label": "前向消费 KV",
+                  "detail": "层式连接器仍需每层等待；正确完成由连接器的具体等待实现负责。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "前向消费 KV",
+                  "tone": "compute"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-admit",
+                  "to": "old-flag",
+                  "label": "同步依赖没有写进输出"
+                },
+                {
+                  "from": "old-flag",
+                  "to": "old-forward",
+                  "label": "False 选择延后加载分支"
+                },
+                {
+                  "from": "old-forward",
+                  "to": "old-load",
+                  "label": "forward 区域退出后才开始加载"
+                },
+                {
+                  "from": "new-admit",
+                  "to": "new-flag",
+                  "label": "同步准入对本步做逻辑或"
+                },
+                {
+                  "from": "new-flag",
+                  "to": "new-load",
+                  "label": "True 选择前置启动"
+                },
+                {
+                  "from": "new-load",
+                  "to": "new-forward",
+                  "label": "已启动后进入计算；逐层就绪仍需等待"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧路径：依赖声明丢失",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-admit",
+                      "old-flag",
+                      "old-forward",
+                      "old-load"
+                    ]
+                  },
+                  {
+                    "title": "修复路径：声明驱动顺序",
+                    "tone": "control",
+                    "nodeIds": [
+                      "new-admit",
+                      "new-flag",
+                      "new-load",
+                      "new-forward"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这个标志是一项集合性质：只要本步任一个已准入请求需要同步恢复，整步就不能采用“所有加载都放在 forward 后”的顺序。后面遇到一个异步请求，不能把先前的 True 重置为 False；下一步又必须重新初始化，不能让上一步的 True 泄漏成永久同步策略。混合负载恰好能暴露这两种相反的错误。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "从依赖图看，修复增加的是加载启动到 forward 的先后边。它不新增网络重试，不决定缓存内容校验，也不替代某层的完成事件。若 start_load_kv 已在前面调用而输出仍错，应继续追踪层名、块映射、请求身份与等待事件，避免把所有恢复错误都归因到调度布尔值。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：代码传播、测试意图与版本归属分开看",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已阅读的证据及边界",
+              "columns": [
+                "证据对象",
+                "能够支持",
+                "仍不能支持"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "主干 b7ec7deb",
+                    "两个调度器恢复逐步初始化、同步准入置位和输出传播。",
+                    "不是整个 Ascend KV 子系统重构。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "worker mixin 与 SchedulerOutput",
+                    "默认 False 会选择 forward 区域之后启动；True 选择之前。",
+                    "不独立证明每个连接器的逐层等待正确。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3,
+                    10
+                  ]
+                },
+                {
+                  "cells": [
+                    "两组冻结单元测试",
+                    "覆盖同步命中、无命中、异步命中及同步/异步混合步。",
+                    "测试内容可读不等于本站执行通过，也不等于 NPU e2e。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "#21454",
+                    "已合入 releases/v0.30.0 的独立回补。",
+                    "release 分支名称不等于原正式标签包含它。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.30.0 与 v0.32.0rc1 标签文件",
+                    "检查的 BalanceScheduler 文件均未出现新增标志；v0.30.0 Dyntra 同样未补。",
+                    "不从日期推断任何未知镜像、wheel 或后续 tag 的包含关系。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    8,
+                    9,
+                    11
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6,
+                7
+              ],
+              "text": "PR 明确将作者端的静态检查与 NPU 复现分开，并注明作者环境没有执行所列单元测试。回补讨论后来报告 CPU CI 通过；本文仅把它当作者/维护者报告，不把该陈述升级为独立实测，也不写成全部 CI 无条件通过。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：前置必要工作，保留可安全重叠的路径",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "只要当前计算依赖恢复内容，加载提交成本就不能靠错误排序隐藏。反过来，当请求仍在异步接收队列、这一轮并不读取其 KV 时，维持延后提交可以继续减少前向关键路径上的主机工作。正确修复不是全局打开同步，而是让选择与实际依赖相符。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "混合步被提升为前置启动，并不意味该步的所有请求都要串行等待所有层或所有远端请求。具体并行度来自连接器如何批量启动、如何为每层提供完成条件，以及模型在哪里消费。若把该标志解释为“全局同步屏障”，会夸大开销，也可能诱发不必要的性能规避。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "Dyntra 的字段能力检测只处理与不同 SchedulerOutput 结构的接口兼容，不是证明所有旧版本都具有相同 worker 时序。适配器、引擎与外部 KV 插件仍应作为一个可追溯的组合验收。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：先找缺失的时序，再判断内容错误",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设，不是实际事故记录",
+              "columns": [
+                "可观测症状",
+                "待验证机制",
+                "优先采集的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "冷启动正常，暖外部缓存时答案异常",
+                    "外部命中绕过计算，但本步未前置启动恢复。",
+                    "每步标志、同步命中量、实际准入请求、start_load 与 forward 顺序。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "只有混合同步/异步请求时失败",
+                    "步级逻辑或被后续请求覆盖，或异步请求被错误准入。",
+                    "按请求记录命中类别与状态，再对照步级汇总。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "标志为真、启动顺序正确，仍读到错误 KV",
+                    "连接器的层完成、映射或失败处理存在另一个问题。",
+                    "请求与层标识、目标块地址、完成事件、参考内容和异常日志。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "修复后无命中流量也整体变慢",
+                    "标志未在新步清零，或实际运行的调度器/worker 不匹配。",
+                    "连续无命中步的标志，调用位置，版本摘要与时序剖析。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "诊断时把内容正确性与服务时延分开。网络吞吐正常不能证明读取发生在正确时间；同样，TTFT 变好也不能抵消答案对缓存冷热状态的异常依赖。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：验证“谁被准入”和“何时启动”",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下均为待执行实验。固定模型 revision、Ascend/vLLM 提交、外部连接器、块大小与请求集；先建立未修复与修复后的可比环境，再按一次一个变量的方式扩展。对确定性负载比较 token 或 logits，对非确定性负载预先定义数值与任务分数容差。"
+            },
+            {
+              "type": "table",
+              "caption": "原创最小实验矩阵",
+              "columns": [
+                "场景",
+                "唯一变化或注入",
+                "应记录",
+                "预定义通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "同步外部命中",
+                    "旧/修复调度器；同一已恢复前缀",
+                    "准入集合、标志、启动时刻、层等待、输出",
+                    "标志 True；加载先启动；与无外部缓存参考一致。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "无外部命中",
+                    "命中数为零，其余相同",
+                    "本步标志、加载位置、无效等待",
+                    "标志 False，未增加不必要的同步等待。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "异步命中",
+                    "只切为 load_kv_async=True",
+                    "请求状态、计算 token、接收完成",
+                    "未完成请求不准入当前计算；该请求不单独使标志 True。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "混合步与相邻步",
+                    "同步+异步，同步+无命中，之后纯无命中",
+                    "逐请求类别、本步逻辑或、下一步清零",
+                    "混合步 True；下一步无依赖恢复 False。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "分层恢复失败",
+                    "在某层延迟或失败，不修改正常层",
+                    "层等待、错误终态、错误率、KV 资源",
+                    "不得静默读取未就绪内容；终态与清理符合事先设定的连接器契约。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：依赖、内容、稳定性、性能四道门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "上线前必须冻结的指标口径",
+              "columns": [
+                "维度",
+                "定义与记录",
+                "通过门槛"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "版本身份",
+                    "镜像 digest、Ascend 与 vLLM SHA、插件版本、实际调度器",
+                    "能追到包含修复的具体代码；分支名或安装时间不算。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "步级依赖",
+                    "本步存在已准入同步外部命中 ⇔ 标志应为 True",
+                    "所有指定正负例和混合步均满足，下一步重新计算。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据正确性",
+                    "冷/暖缓存、逐层延迟对照的 token/logits/任务分数",
+                    "按实验前登记的容差通过；不得用吞吐补偿数值失败。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "失败处理",
+                    "错误、超时、取消及资源回收的观测窗口",
+                    "无静默读取未就绪 KV；满足预先约定的终态与恢复预算。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务表现",
+                    "同负载逐请求 TTFT、ITL、错误率与样本数",
+                    "正确性通过后再满足既定业务 SLO；不得套用通用回退百分比。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议先用最小同一请求对照证明时序，再用混合流量验证步级聚合，最后才观察线上代表性负载。发现退化先保留版本和事件序列，回到可解释基线；不要用清空缓存掩盖长期正确性缺口。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "未闭合项：回补不是发布，单元测试不是设备验收",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "尚未执行上述单元、NPU 逐层恢复或业务回归；无法给出真实故障率或性能开销。",
+                "#21454 合入的是 release 分支；正式 v0.30.0 标签与已核对的 v0.32.0rc1 文件仍不可视为包含修复。后续标签、wheel 与镜像需要重新核对。",
+                "标志修复不证明第三方连接器的层等待、失败、取消、重试与块复用均正确。",
+                "Dyntra 的兼容门不能替代逐个支持的 vLLM 版本组合验证。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可迁移的教训是：复制调度器时，最容易遗漏的可能不是调度算法，而是连接计算与外部副作用的元数据。输出字段的默认值只保证接口能构造，不保证默认语义适用于每个复制出来的调度路径。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "mooncake-ub-batch-admission-atomicity",
     "kind": "analysis",
     "title": "Mooncake UB 批量提交：失败不能偷偷放行前半批",
