@@ -1,6 +1,644 @@
 [
   {
     "schemaVersion": 1,
+    "id": "flashinfer-tgv-two-cta-exit-lifetime",
+    "kind": "analysis",
+    "title": "FlashInfer 2-CTA TGV：算完自己的矩阵，不等于可以退出",
+    "summary": "主干为 BF16 TGV 的 2-CTA 路径补上退出 cluster barrier，保护对端仍需访问的 CTA 生命周期。正式 v0.7.4 标签仍未含该栅栏；作者单 B300 数值与微基准不能替代多卡 Graph+PDL 故障复现。",
+    "publishedAt": "2026-11-11",
+    "reviewedAt": "2026-11-11",
+    "topics": [
+      "推理编译",
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "FlashInfer · 2-CTA 退出栅栏合入提交",
+        "url": "https://github.com/flashinfer-ai/flashinfer/commit/24630ce2404ebcd2b8d2f65720709362e25e3305",
+        "publishedAt": "2026-11-11",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "TGV CuTe kernel · 冻结实现",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/24630ce2404ebcd2b8d2f65720709362e25e3305/flashinfer/gemm/kernels/tgv_gemm_cute_ext.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "FlashInfer #9146 · 复现边界与作者验证",
+        "url": "https://github.com/flashinfer-ai/flashinfer/pull/9146",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "FlashInfer v0.7.4 · 正式发布清单",
+        "url": "https://github.com/flashinfer-ai/flashinfer/releases/tag/v0.7.4",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "FlashInfer v0.7.4 · 冻结标签的 TGV 实现",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/v0.7.4/flashinfer/gemm/kernels/tgv_gemm_cute_ext.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "FlashInfer v0.7.3 · 冻结标签的 TGV 实现",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/v0.7.3/flashinfer/gemm/kernels/tgv_gemm_cute_ext.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "FlashInfer · 冻结的 TGV 正确性测试",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/24630ce2404ebcd2b8d2f65720709362e25e3305/tests/gemm/test_tgv_gemm.py",
+        "accessedAt": "2026-11-11"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "24630ce 在 use_2cta 编译期分支中，于 warp dispatch 及 TMEM 释放之后增加 cluster arrive/wait；已核对的 v0.7.4 标签文件仍无该退出栅栏。",
+        "sourceIndices": [
+          0,
+          1,
+          4
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本站未在 B200/B300、CUDA Graph 或 PDL 环境复现故障或测量开销。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "运行时真正命中哪个 GEMM backend 和 tactic，是否走 2-CTA？",
+      "是否同时存在 CUDA Graph、PDL 与不均衡的 CTA 完成顺序？",
+      "实际 kernel 来源及缓存是否确实含退出栅栏，而非只升级了包名？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-11 核对 24630ce 冻结实现、#9146、正式 v0.7.4 清单及 v0.7.3/v0.7.4 标签文件。本站未执行 GPU 测试。作者微基准与故障描述单独标记；不把同日发布、主干合入或安装版本号当作修复包含证明。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：协作对象的寿命也是正确性条件",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "两个 CTA 共同处理一个矩阵 tile 时，某一侧“我的算术已经完成”只是一条局部事实。另一侧可能还要向它的屏障或共享状态发送尾部操作；如果前者已经退出，后者面对的不是一个较慢消费者，而是一个已经不存在的协作对象。退出边界因此必须与协作范围一致。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "冻结提交为 TGV CuTe BF16 kernel 的 use_2cta 分支增加尾部 cluster_arrive_relaxed 与 cluster_wait。代码位于 warp dispatch 之后，不进入 1-CTA 编译路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3,
+                4
+              ],
+              "text": "最容易误判的是版本：11 月 11 日可见正式 v0.7.4，但该标签的对应文件仍仅有入口 cluster 同步，未包含此次退出栅栏。应核对实际 kernel 内容和产物来源，而非把“最新版本”当修复证明。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：入口同步解决出生，退出同步解决寿命",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "入口 cluster barrier 解决的是协作开始时双方已准备好，不能把这项保证延伸到结束时。随着独立 warp 工作、异步数据移动和不同资源竞争推进，最初同时进入的两个 CTA 仍可能在不同时间走到末尾。协作越接近结束，依赖的次数可能越少，但只要还存在一次对端操作，生命周期要求就仍在。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "当部署允许前后继 kernel 重叠时，额外资源竞争可能拉开两个 CTA 的完成时刻。需要分别检查 kernel 之间的数据依赖，以及同一 cluster 内参与者的退出条件；前者的优化许可不构成后者自动安全的证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对排障而言，PDL 是一个可能改变调度相对时机的条件，不是所有 Xid 13 的通用解释。先定位错误 kernel、tactic 与 cluster 路径，再讨论完成顺序。没有这些身份信息，随意关闭整个优化栈很难形成可验证的归因。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：退出栅栏放在共同尾部，不能插错位置",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "冻结实现的每个 CTA 有 256 线程，即八个 warp。DMA、MMA 与 epilogue 走各自分支；2-CTA 入口已有 cluster 同步。尾部新增栅栏位于所有分支汇合之后；MMA 路径先等待本 CTA epilogue 的既有 mbarrier 阶段，再调用带 is_two_cta 的 dealloc_tmem。"
+            },
+            {
+              "type": "diagram",
+              "title": "两个 CTA 的退出，必须等双方都到达",
+              "caption": "原创非实测语义图，展示修复后的两条 CTA 生命周期。每个 CTA 包含八个 warp，图不是单 warp 时间线。各 warp 从各自职责路径落到栅栏；仅 MMA warp 执行 dealloc，不暗示栅栏前另有全体同步。双方按原有协议结束尾部，再到达 cluster barrier；wait 的放行依赖双方到达。箭头不证明任意异步传输自动排空，也不表示等比例耗时。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "a-tail",
+                  "label": "A 尾部协议",
+                  "detail": "A 的 MMA/epilogue 按原有 mbarrier 完成配合，并到达 TMEM 释放之后。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "A 尾部协议",
+                  "tone": "compute"
+                },
+                {
+                  "id": "a-arrive",
+                  "label": "A 全体到达",
+                  "detail": "A 的所有 warp 汇合到 cluster_arrive_relaxed。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "A 全体到达",
+                  "tone": "communication"
+                },
+                {
+                  "id": "a-wait",
+                  "label": "A 等双方",
+                  "detail": "cluster_wait 不能只因 A 自己已到达就放行。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "A 等双方",
+                  "tone": "control"
+                },
+                {
+                  "id": "a-exit",
+                  "label": "A 允许退出",
+                  "detail": "同一 cluster 的全体到达条件满足后，A 才能离开 kernel。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "A 允许退出",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "b-tail",
+                  "label": "B 尾部协议",
+                  "detail": "B 可晚于 A；其依赖对端存在的尾部协议仍需完成。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "B 尾部协议",
+                  "tone": "compute"
+                },
+                {
+                  "id": "b-arrive",
+                  "label": "B 全体到达",
+                  "detail": "B 的所有 warp 汇合到同一 cluster barrier。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "B 全体到达",
+                  "tone": "communication"
+                },
+                {
+                  "id": "b-wait",
+                  "label": "B 等双方",
+                  "detail": "B 也参与等待，不能独立宣布整个 cluster 已结束。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "B 等双方",
+                  "tone": "control"
+                },
+                {
+                  "id": "b-exit",
+                  "label": "B 允许退出",
+                  "detail": "放行后退出，不再让对端访问已经退出的 CTA。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "B 允许退出",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "a-tail",
+                  "to": "a-arrive",
+                  "label": "尾部及 dealloc 之后"
+                },
+                {
+                  "from": "a-arrive",
+                  "to": "a-wait",
+                  "label": "本 CTA 到达"
+                },
+                {
+                  "from": "a-wait",
+                  "to": "a-exit",
+                  "label": "等待满足才退出"
+                },
+                {
+                  "from": "b-tail",
+                  "to": "b-arrive",
+                  "label": "尾部及 dealloc 之后"
+                },
+                {
+                  "from": "b-arrive",
+                  "to": "b-wait",
+                  "label": "本 CTA 到达"
+                },
+                {
+                  "from": "b-wait",
+                  "to": "b-exit",
+                  "label": "等待满足才退出"
+                },
+                {
+                  "from": "a-arrive",
+                  "to": "b-wait",
+                  "label": "B 的放行也需要 A 到达"
+                },
+                {
+                  "from": "b-arrive",
+                  "to": "a-wait",
+                  "label": "A 的放行也需要 B 到达"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "CTA A：可能较早完成",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "a-tail",
+                      "a-arrive",
+                      "a-wait",
+                      "a-exit"
+                    ]
+                  },
+                  {
+                    "title": "CTA B：可能仍有尾部工作",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "b-tail",
+                      "b-arrive",
+                      "b-wait",
+                      "b-exit"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原有 mbarrier 管数据阶段，新增 cluster barrier 管 CTA 退出资格。这是两种不同的证明：一个说明某项操作满足了协议，另一个说明参与者尚未离场。不能因为存在退出栅栏，就删除已有的数据完成等待；也不能认为已有数据屏障会自动延长所有对端 CTA 的寿命。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "位置同样是语义的一部分。若某侧先进入新栅栏，而另一侧仍在等待前者参加 TMEM 的成对释放，就可能把原来的退出竞态改成等待环。源码明确将栅栏放在双方 dealloc 之后。移植时必须保留这个先后关系，而不是搜索函数末尾后随意插入一条同步指令。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码闭合的边界与仍开放的复现问题",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "独立阅读后的证据分层",
+              "columns": [
+                "证据",
+                "已确认的范围",
+                "不能推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "冻结提交与 kernel",
+                    "2-CTA 尾部全体到达/等待；1-CTA 不加入新栅栏。",
+                    "不能断言全部 GEMM backend、SM 架构或产物均包含它。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.7.3 / v0.7.4 标签文件",
+                    "检查到入口同步但没有新退出栅栏。",
+                    "正式 v0.7.4 已发布不等于这个主干修复已交付。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "冻结 test_tgv_gemm.py",
+                    "覆盖形状、dtype、bias 与 PDL，经 autotuner 入口调用；不逐一强制所有 tactic。",
+                    "常规数值测试不是不均衡调度竞态的确定性复现。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "#9146 作者验证",
+                    "单 B300，补丁施加到 v0.7.3 副本；报告 94 项测试通过及小幅微基准差异。",
+                    "不是本站复测，不代表原多卡故障已稳定复现并消失。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                2
+              ],
+              "text": "作者报告没有确定性复现器，单卡 B300 未重现该竞态。所列计时选取 base/fix/fix/base 各臂两次运行中的较小值，汇总几何均值约 1.008 倍、最差约 1.017 倍；基线自身个别形状波动可达 2.4%。这些数字只能描述那组微基准，不能被转写为生产开销上限。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对罕见调度错误，无法复现既不是修复无效的证据，也不是修复完成验证的证据。源码分析说明修复针对哪一条寿命缺口；针对真实部署的压力试验还需回答覆盖是否足够。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：局部提早退出换成协作范围内的等待",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "新增等待可能让先完成的一侧多驻留一段尾部时间。这不是无条件性能优化，而是让资源退出与协作责任一致。应比较同一 backend、同一 tactic、同一 PDL 设置下的延迟变化，不能让自动调优同时换了算法后再把全部差异归给 barrier。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "1-CTA 分支没有新增栅栏，可作为有帮助的负向对照，但它与 2-CTA 的工作划分、资源占用并不完全相同。因此“1-CTA 不崩、2-CTA 崩”只是定位线索，而不是等成本性能对照或根因的独立证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "实际部署还存在源码副本和编译缓存边界。主仓库修复、框架内 vendored copy、已编译 kernel 与本机缓存是不同对象；必须记录真实被调用对象，避免在修好的源码旁边继续运行旧产物。这里提出的是验证要求，不声称任何特定缓存机制已经发生错误。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：把异步报错追到具体 kernel 身份",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设与取证，不是新增事故声明",
+              "columns": [
+                "症状",
+                "待验证假设",
+                "需要保留的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "Graph+PDL 压力下偶发 CTA not present",
+                    "2-CTA 某侧过早退出，另一侧仍有对端尾部操作。",
+                    "core dump/kernel 名、tactic、SM 架构、Graph/PDL 开关和版本摘要。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级包后同样报错",
+                    "实际标签不含修复，或仍执行旧 kernel 来源/产物。",
+                    "运行模块路径、文件/产物 hash、加载路径、编译与缓存身份。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "自行插入 barrier 后挂住",
+                    "某一参与者在 TMEM 成对释放前进入了等待。",
+                    "两个 CTA 尾部程序顺序、warp 到达范围及停留位置。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "修复后微基准变慢、业务无变化",
+                    "尾部等待成本被其他瓶颈掩盖，或调优选择已改变。",
+                    "固定 tactic 成对结果与真实服务 TTFT/ITL 分开对照。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "CUDA 错误可能在后续 API 才被主机观察到。错误首次被报告的位置不等于发出错误访问的 kernel；保留实际执行身份和时间线比仅记录最后一个 Python 栈帧更有价值。此项为通用排障推导，仍需设备证据确认。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：数值、路径与调度压力分别验证",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下测试尚未执行。先冻结 GPU 型号、驱动、CUDA、CuTe DSL、FlashInfer SHA、权重与请求形状。明确旧/修复产物只差目标补丁，并固定 tactic；自动调优另开一组，记录最终选择。"
+            },
+            {
+              "type": "table",
+              "caption": "原创隔离验证矩阵",
+              "columns": [
+                "组别",
+                "对照",
+                "观察量",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "路径身份",
+                    "1-CTA / 2-CTA；固定 backend、tactic",
+                    "被调用 kernel、编译参数、分支与文件 hash",
+                    "确实命中预期分支；不能把回退当修复。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数值正确性",
+                    "同形状与 dtype，旧/修复，bias 开/关",
+                    "对独立高精度参考的误差分布",
+                    "满足实验前按模型和 dtype 约定的容差。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "Graph 与 PDL",
+                    "eager、Graph；PDL 开/关，单变量变化",
+                    "设备错误、hang、重放次数、运行时长",
+                    "全部条件完整记录；目标压力窗口无该错误，但不宣称零风险。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "调度压力",
+                    "代表性并发、不同形状、实际部署拓扑",
+                    "CTA 不均衡线索、故障率和完成时限",
+                    "预定压力覆盖与时限全部完成；异常可归因。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "固定 tactic 的交错配对运行，再单独测试 autotune",
+                    "全分布和重复样本，服务 TTFT/ITL 与吞吐",
+                    "数值/稳定性先过门，再满足既定 SLO；不只报告最小值。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：运行身份先于“补丁已经安装”",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预先登记的上线门禁",
+              "columns": [
+                "门禁",
+                "指标口径",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "SHA、标签、模块来源、编译产物/缓存摘要",
+                    "运行对象可追到含退出栅栏的实现；v0.7.4 版本号本身不算。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期结构",
+                    "两 CTA 的 warp 汇合与 dealloc→barrier 顺序",
+                    "同步作用域完整，退出只在双方到达后发生。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据准确性",
+                    "各支持形状、bias/dtype 的参考误差",
+                    "全部达到预设容差；不以无崩溃替代正确性。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳定性窗口",
+                    "规定配置、并发、时长和重放次数内的错误与挂起",
+                    "窗口全部执行；目标故障未出现，并明确样本覆盖局限。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务代价",
+                    "固定路径的配对计时及端到端请求分布",
+                    "满足业务预算；报告分布与波动，不套作者单卡最小值。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如果主干修复尚未进入受控交付产物，不应直接跳过构建、数值和压力门就投入生产。暂用已验证的替代路径可以是工程选择，但必须记录收益损失与适用负载，而不能宣称某个开关对所有情况都安全。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：把“没有重现”留在正确的证据等级",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "本站未进行任何 B200/B300 GPU、CUDA Graph、PDL 或业务验证。",
+                "作者没有确定性复现器；单卡测试通过不证明原多卡压力条件下的竞态已被覆盖。",
+                "v0.7.4 正式标签未含该退出栅栏；后续正式版本、wheel、框架依赖 pin 与缓存产物需继续核对。",
+                "relaxed arrive 的使用依赖既有数据阶段协议；此修复不能替代对任意新跨 CTA 访问的独立顺序证明。",
+                "未测不同 tactic、形状、拓扑与实际服务负载下的长尾和成本。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可迁移的原则是：协作范围决定完成边界。局部结果可见、局部内存已释放、整个协作组允许退出，是三件需要分别证明的事。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-ascend-sync-kv-load-step-contract",
     "kind": "analysis",
     "title": "Ascend 同步 KV 加载：本步依赖声明不能丢在调度器副本里",
