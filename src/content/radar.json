@@ -639,6 +639,796 @@
   },
   {
     "schemaVersion": 1,
+    "id": "pytorch-nccl-ep-handle-window-boundaries",
+    "kind": "analysis",
+    "title": "PyTorch NCCL EP：句柄复用要保活计数器，零拷贝要对齐窗口原点",
+    "summary": "从 HT FLAT 计数器的路径一致性与句柄所有权，到 signal pad、handle 和张量视图的三层地址坐标，解释为何普通 round-trip 通过还不够。用冻结源码、新增测试与独立实验矩阵区分主干修复、路径命中及正式部署。",
+    "publishedAt": "2026-11-10",
+    "reviewedAt": "2026-11-11",
+    "topics": [
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "PyTorch 修复提交：NCCL EP 句柄复用与窗口偏移",
+        "url": "https://github.com/pytorch/pytorch/commit/65286c9a8bf882bd74ff4518086514efb3226bd4",
+        "publishedAt": "2026-11-10",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "冻结实现：nccl_ep.cu",
+        "url": "https://github.com/pytorch/pytorch/blob/65286c9a8bf882bd74ff4518086514efb3226bd4/torch/csrc/distributed/c10d/symm_mem/nccl_ep.cu",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "冻结句柄所有权：nccl_ep.hpp",
+        "url": "https://github.com/pytorch/pytorch/blob/65286c9a8bf882bd74ff4518086514efb3226bd4/torch/csrc/distributed/c10d/symm_mem/nccl_ep.hpp",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "冻结窗口布局：NCCLSymmetricMemory.cu",
+        "url": "https://github.com/pytorch/pytorch/blob/65286c9a8bf882bd74ff4518086514efb3226bd4/torch/csrc/distributed/c10d/symm_mem/NCCLSymmetricMemory.cu",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "冻结回归：test_token_switch.py",
+        "url": "https://github.com/pytorch/pytorch/blob/65286c9a8bf882bd74ff4518086514efb3226bd4/test/distributed/test_token_switch.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "冻结 Python 接口契约：_token_switch.py",
+        "url": "https://github.com/pytorch/pytorch/blob/65286c9a8bf882bd74ff4518086514efb3226bd4/torch/distributed/_token_switch.py",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "正式标签 v2.15.0 的旧实现",
+        "url": "https://github.com/pytorch/pytorch/blob/v2.15.0/torch/csrc/distributed/c10d/symm_mem/nccl_ep.cu",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "PyTorch 官方 Releases 列表",
+        "url": "https://github.com/pytorch/pytorch/releases",
+        "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "PyTorch #197194 合并记录",
+        "url": "https://github.com/pytorch/pytorch/pull/197194",
+        "accessedAt": "2026-11-11"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "主干提交 65286c9 补齐并保活 HT FLAT 缺省专家计数器，修正 window-backed token 描述符偏移；v2.15.0 对照文件仍是旧实现。",
+        "sourceIndices": [
+          0,
+          1,
+          2,
+          6
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "尚未执行多 GPU 回归或确认目标正式安装包包含性，不声明性能收益或所有 teardown 路径已安全。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "真实运行的是 NCCL window 还是普通指针回退？",
+      "同一 group 带计数与省略计数交替时，缓冲与句柄的寿命是否清楚？",
+      "非零 storage offset 的 dispatch 和 combine 是否分别有保护区域验收？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核对日期 2026-11-11。以 PyTorch 提交 65286c9a8bf882bd74ff4518086514efb3226bd4 冻结代码与测试为主要证据，以 v2.15.0 标签作旧实现对照。本文仅使用公开资料，提供原创解释与待执行实验；未运行 CUDA/NCCL EP 或业务负载，不把主干合并当正式发布。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：句柄存活与窗口坐标，必须分别证明",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这次修复值得关注的不是一个新的 MoE 吞吐数字，而是两个容易被“通信成功”掩盖的接口条件：同一 EP group 的多轮路由，不能因调用方省略可选计数器而切入不同元数据路径；进入零拷贝后，偏移的原点必须是注册窗口，而不是张量数据区。运维上应把复用序列与真正的窗口路径各设一道验收门。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                2,
+                6,
+                8
+              ],
+              "text": "2026-11-10 的提交 65286c9 修订了 PyTorch TokenSwitchNCCL 的 HT FLAT 计数器绑定、句柄保活和 NCCL 对称内存偏移计算。本文核对的 v2.15.0 标签文件仍有旧偏移公式和可选计数器分支；这里报告的是主干修复，不把该合并写成已进入正式安装包。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "作者在提交说明中报告：同一 group 先使用显式计数器、再不提供计数器，会在 pec 与 nopec 元数据路径之间切换，后续 create_routing 曾触发 CUDA illegal address。本文没有复现该错误，也没有测量修复后的延迟或显存变化。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议先核查实际构建是否启用 NCCL EP、运行时加载的扩展和对称内存后端，再用同组重复路由及带偏移视图做定向回归。单次新建 group 的普通 device-pointer 测试通过，不足以替代这两类证据。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：为什么可选输出也会影响底层执行",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                5
+              ],
+              "text": "TokenSwitch 的路由阶段根据 top-k 专家索引建立 routing，dispatch 把 token 送到对应专家，combine 收集专家输出。修复中的 group 明确选择 NCCL_EP_ALGO_HIGH_THROUGHPUT；Python 接口把 per_expert_token_counts 定义为每个本地专家接收的 token/expert 对数量，而非全局专家数或 rank 数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可选参数在 Python 层意味着调用方可以不接收这个统计结果，并不自动意味着底层内核不需要同等生命周期的工作缓冲。把“用户是否观察计数”与“内核是否得到计数器”混为一谈，容易让一次表面无关的 API 变化改变重复调用的内部路线。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "另一条路径来自对称内存。make_ep_tensor 只在张量属于对称内存且 rendezvous 得到 NCCLSymmetricMemory 时构造 window-backed 描述符；否则仍用普通设备指针。窗口描述符使用 win_hdl 与 win_offset，而不是直接设置 data 指针。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "因此，看到业务输出正确时仍要问：实际跑的是哪条路径？默认后端若回退到普通指针，可能完全没覆盖有问题的窗口坐标。新增测试在初始化时显式选择并断言 NCCL 对称内存后端，正是在补这一层证据。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：一条所有权链，两次坐标转换",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "修复记录 group 的 num_local_experts，并检查全局专家数能被 world size 整除。若调用方提供计数器，native 层要求长度恰等于本地专家数；若没提供且 layout 是 Flat，则内部创建计数器。NcclEpHandle 新增 recv_expert_counter 成员，持有传给底层元数据操作的张量。"
+            },
+            {
+              "type": "diagram",
+              "title": "图一：调用方可以省略计数器，句柄不能省略保活",
+              "caption": "原创机制示意，非实测。两条输入分支汇合到同一绑定与持有链；箭头表示选择、传递和所有权，不表示 GPU 完成时刻。仅解释 HT FLAT 条件，不将 expert-major 或 LL 路径画成同一实现。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "nodes": [
+                {
+                  "id": "provided",
+                  "label": "调用方提供计数器",
+                  "detail": "检查一维、int32、与 topk 相同设备、元素数恰等于本地专家数；描述符仍要求连续内存。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "absent",
+                  "label": "HT FLAT 未提供计数器",
+                  "detail": "分配长度为本地专家数的零初始化 int32 缓冲。",
+                  "column": 0,
+                  "row": 2
+                },
+                {
+                  "id": "bound",
+                  "label": "绑定 expert_counters",
+                  "detail": "两条分支都把有效计数缓冲传给创建句柄所需的 layout_info。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "handle",
+                  "label": "NcclEpHandle 持有张量",
+                  "detail": "计数器与 topk_idx、总计数一起存为成员，避免只靠函数内临时包装对象保持引用。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "consumer",
+                  "label": "元数据内核使用缓冲",
+                  "detail": "内核访问设备地址；句柄生命周期内保持张量，不等于已证明任意销毁时刻都安全。",
+                  "column": 3,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "provided",
+                  "to": "bound",
+                  "label": "通过形状、类型、设备和长度检查后绑定"
+                },
+                {
+                  "from": "absent",
+                  "to": "bound",
+                  "label": "内部补齐可选输出对应缓冲"
+                },
+                {
+                  "from": "bound",
+                  "to": "handle",
+                  "label": "创建底层句柄后移动张量引用到持有者"
+                },
+                {
+                  "from": "handle",
+                  "to": "consumer",
+                  "label": "持有引用支撑设备缓冲寿命，不代表完成栅栏"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这不是把 Python 可选参数改成必填，而是把底层资源责任从调用方的观察意愿中分离出来。调用方不读取计数，仍能由内部提供必要存储；调用方提供计数，也由句柄额外保留引用。该设计解决的是引用存活，不能据此宣称任意跨流、并发销毁、通信器重建都已安全。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                3
+              ],
+              "text": "NCCLSymmetricMemory 注册单一 combined window，包含前部信号区域和后部用户数据。get_window_offset() 返回 buffer_offset_ 加当前 handle 的 offset_。修复后的 make_ep_tensor 再加张量 storage_offset() 乘 element_size()，并拒绝空 window handle。"
+            },
+            {
+              "type": "diagram",
+              "title": "图二：窗口原点、数据原点与视图原点不能混用",
+              "caption": "原创地址关系示意，非按字节比例绘制，也不是访问时间线。B 为窗口到数据区的偏移，O 为对称内存 handle 的数据偏移，V 为 storage_offset×element_size。正确偏移为 B+O+V；无任何吞吐或内存规模实测。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                3
+              ],
+              "nodes": [
+                {
+                  "id": "window",
+                  "label": "注册窗口原点 W",
+                  "detail": "window 从包含信号区的 allocation base 开始。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "data",
+                  "label": "数据区原点 W+B",
+                  "detail": "B 由 signal pad 大小及对齐决定，不是固定业务常量。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "handledata",
+                  "label": "handle 数据原点 W+B+O",
+                  "detail": "get_window_offset() 返回 B+O，保留 handle 相对数据区的偏移。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "view",
+                  "label": "张量视图原点 W+B+O+V",
+                  "detail": "V 使用张量 storage_offset 的元素数乘 element_size，结果为字节。",
+                  "column": 3,
+                  "row": 0
+                },
+                {
+                  "id": "descriptor",
+                  "label": "EP window 描述符",
+                  "detail": "传入 window handle，并以 W 为原点填写 B+O+V；不能只把 data_ptr 与数据区指针相减。",
+                  "column": 3,
+                  "row": 2
+                }
+              ],
+              "edges": [
+                {
+                  "from": "window",
+                  "to": "data",
+                  "label": "跨过信号区及对齐空间 B"
+                },
+                {
+                  "from": "data",
+                  "to": "handledata",
+                  "label": "增加 handle 在数据区中的偏移 O"
+                },
+                {
+                  "from": "handledata",
+                  "to": "view",
+                  "label": "增加视图的字节偏移 V"
+                },
+                {
+                  "from": "window",
+                  "to": "descriptor",
+                  "label": "win_hdl 定义偏移原点 W"
+                },
+                {
+                  "from": "view",
+                  "to": "descriptor",
+                  "label": "win_offset 指向张量视图起点"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个纯教学例子：若窗口到数据区偏移 B 为 4096 字节、handle 偏移 O 为 0、视图偏移 V 为 512 字节，正确窗口偏移应是 4608 字节。旧公式只从数据区原点扣起时会漏掉 B。数字只用来说明坐标误差，不代表默认 signal pad 或硬件配置。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "该 helper 用于 dispatch 的 token 输入与 token 输出，以及 combine 的 expert-token 输入；冻结代码里的 combine 输出仍直接使用普通 EpTensor(out_tokens)。不能把“dispatch/combine 修复”扩写为两者所有输入输出都进入零拷贝。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：新增测试证明了什么，又没有证明什么",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "冻结改动与证据边界",
+              "columns": [
+                "证据",
+                "实际变化",
+                "不能据此声称"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "提交与 #197194 合并记录",
+                    "2026-11-10 合入对应修复。",
+                    "不是正式 wheel、镜像或发布版本包含性的证明。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    8
+                  ]
+                },
+                {
+                  "cells": [
+                    "nccl_ep.cu / nccl_ep.hpp",
+                    "Flat 缺省计数器内部补齐并由句柄保活；显式计数器严格校验。",
+                    "不是所有 NCCL 算法、所有 layout 或并发销毁路径都已验证。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "NCCLSymmetricMemory.cu",
+                    "注册范围包含信号区；窗口偏移含数据区和 handle 偏移。",
+                    "数据区指针差不能自动代替 window offset。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "test_create_routing_with_then_without_counts",
+                    "同组先带计数再省略，后续 dispatch 验证收到的 token。",
+                    "只看见测试源码，不宣称本文或全部 CI 环境跑过。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "test_create_routing_invalid_counts",
+                    "拒绝错误 dtype、零长/过长、二维及 CPU 计数器。",
+                    "不代表所有异常参数组合均被测试。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "test_dispatch_symm_mem_tokens_storage_offset",
+                    "输入与输出使用对称内存后半视图；检查 token 正确和输出前半保持零。",
+                    "该新增偏移测试不等于 combine 非零偏移已有专门覆盖。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "测试初始化与 worker cleanup",
+                    "选择 NCCL 后端，清理缓存 TokenSwitch 后再正常销毁 process group。",
+                    "异常退出、异步工作未完成及任意销毁次序仍需独立证明。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "v2.15.0 标签源码",
+                    "仍采用 data_ptr 减数据区指针和旧计数器分支。",
+                    "不据此推断其他补丁版本、私有回补或当前部署产物。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对这类缺陷，测试本身也需要路径证据。用普通 CUDA 后端运行一个叫“symm_mem”的测试，可能仅验证回退分支；用每次重新创建的 group 运行路由测试，又可能避开复用历史。新增用例把两种隐藏前提显式化，因而比单独增加正常 round-trip 样本更有诊断价值。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：避免错误路径，不能跳过资源与兼容性核算",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "内部计数器让缺省调用多了一份按本地专家数分配的 int32 张量及初始化工作。其原始数据规模可按 4×本地专家数估算，但 allocator 粒度、并发句柄数及缓存复用会影响实际占用。本文不把这种字节算术当作测得的显存差，也不先验断言开销可忽略。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                5,
+                0
+              ],
+              "text": "接口长度约束从文档中的“至少覆盖本地专家”收紧为“恰好等于本地专家”。历史调用若错误传了 world_size 长度、全局专家长度或多余元素，在新实现中可能尽早报错。应逐一核查调用点，而不是把新错误当作无关兼容性回归或静默截断。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "修复价值主要集中在启用 NCCL EP 的 HT FLAT 组复用，以及真正使用 NCCL 对称内存 window 的 token 通道。普通 all-reduce、不同 MoE 通信库和未启用 USE_NCCL_EP 的构建不能直接套用结论；错误消失也不意味着分布式输出质量、吞吐和 teardown 已通过生产验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "析构时检查 destroy 返回码并给出 warning，可让清理错误留下线索而不从 noexcept 析构函数抛出异常。但 warning 只是诊断行为，不是资源已经成功释放的凭据；测试中的正常退出清理顺序也不等于故障恢复协议。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产关联：从同一症状区分两种边界错误",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设，未声称发生于真实业务",
+              "columns": [
+                "可观察症状",
+                "需要区分的假设",
+                "优先收集的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "单次路由正常，复用同组后 illegal address",
+                    "不同调用改变计数器是否存在；也可能是无关 kernel 错误延迟上报。",
+                    "group/handle 身份、路由调用序列、layout、计数器 shape/dtype/device、首次错误对应的 CUDA 操作。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "普通张量正常，对称内存路径出现错误 token",
+                    "窗口原点与数据原点混用，或视图字节偏移计算有误。",
+                    "实际后端与描述符类型、window offset、storage_offset、element_size、输入/输出前缀哨兵。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "结果正确，但疑似没有获得零拷贝收益",
+                    "测试或业务实际走了普通设备指针回退。",
+                    "NCCL 后端选择、rendezvous 结果、窗口描述符命中证明；再比较传输和端到端指标。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级后 create_routing 立即报参数错误",
+                    "历史调用依赖过长计数器或传入了非本地专家长度。",
+                    "总专家数、world size、本地专家数及调用方缓冲实际元素数。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "退出时出现 destroy warning 或挂起",
+                    "句柄/group/进程组寿命顺序、未完成设备工作或独立通信问题。",
+                    "最早异常、清理对象顺序、在途调用、退出时限；不要只消除 warning。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "定位时先把可重复的调用历史缩小，再讨论硬件或网络。非法地址具有异步报错特性，报错位置未必是首次写坏位置；窗口错误又可能以错误数据而不是立刻崩溃表现。应在隔离环境增加边界同步和哨兵，保留原始生产时间线，避免把调试同步后的现象等同原负载行为。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先证明路径命中，再验证复用与切片",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下均为待执行的原创验证，不是官方测试运行结果。准备同一模型或合成路由输入、固定 GPU/NCCL/NCCL EP/PyTorch 构建，至少两 GPU；记录 USE_NCCL_EP、扩展加载结果、通信拓扑、随机种子和实际对称内存后端。将旧基线和含修复的候选成对运行，单次只改变一个因素。"
+            },
+            {
+              "type": "table",
+              "caption": "隔离实验矩阵",
+              "columns": [
+                "实验",
+                "控制变量与扰动",
+                "观察",
+                "预定义通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "组复用序列",
+                    "固定 group；带计数→无计数、多次交替；另设每轮新组对照。",
+                    "首次失败位置、收到的 token、每专家计数、句柄数量。",
+                    "所有声明支持的序列结果符合参考，无非法访问；失败能定位至首次异常。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "计数缓冲契约",
+                    "分别测试正确长度、过短/过长、错误 dtype/device、非连续视图。",
+                    "错误是否在提交通信前产生；正确输入是否通过。",
+                    "无效输入被清晰拒绝，合法输入与预期计数一致；不得默默接受不兼容布局。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "计数器持有",
+                    "创建 routing 后释放调用方引用，保持 routing；插入 allocator 压力。",
+                    "计数器底层地址寿命、输出与内存检查。",
+                    "句柄仍有效时缓冲未被复用；不把提前销毁 routing 列为安全保证。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "dispatch 窗口切片",
+                    "确认 NCCL window 路径，输入/输出零与非零偏移分别变化。",
+                    "输出 token、前后保护区域、offset 单位及 window 命中。",
+                    "正确区域与参考相同，所有保护区不变，实际路径有证据。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "combine 输入偏移",
+                    "固定路由和专家输出，仅改变对称内存输入的视图偏移。",
+                    "combine 输出与普通指针对照、保护区域、真实路径。",
+                    "数值按预先确定容差通过，保护区不变；单列为新增待补覆盖。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正常及异常清理",
+                    "正常完成后清理；另在受控异常下观察退出，不混入性能采样。",
+                    "句柄、group、进程组销毁次序及 warning、退出时长。",
+                    "正常退出无异常清理告警；故障路径满足预先定义的退出预算且不掩盖首因。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "代价与业务",
+                    "正确性全部通过后，固定请求分布和并发，仅换版本。",
+                    "端到端 TTFT/ITL/吞吐、路由耗时、显存峰值。",
+                    "服务满足原有 SLO；任何收益超过重复运行波动，资源增量可解释。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要为了构造实验同时改变 EP 算法、expert layout、世界规模和模型量化。对随机路由先比较 token 所属 rank 与专家计数，对浮点 combine 再采用事先定义的数值容差；性能样本必须排除用于定位首错的额外同步。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：六种证据各自过门，不互相替代",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预定义验收记录",
+              "columns": [
+                "门禁",
+                "指标或留存记录",
+                "通过标准"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物身份",
+                    "PyTorch commit、wheel/镜像身份、NCCL 与 NCCL EP 版本、编译选项。",
+                    "能证明实际执行实现包含目标修改；版本名字和主干合并状态不够。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "路径身份",
+                    "后端、NCCLSymmetricMemory 类型、描述符 window/普通指针路径。",
+                    "零拷贝用例明确命中 window，不以输出正确代替路径命中。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据完整性",
+                    "token/rank 对应、专家计数、combine 误差、前后哨兵。",
+                    "整型及复制语义精确相同；浮点容差预先定义；保护区零改变。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "复用稳定性",
+                    "同组交替序列、句柄寿命、allocator 压力、GPU 错误计数。",
+                    "全部支持序列无非法访问和跨样本污染，不隐藏偶发失败。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源与清理",
+                    "活动句柄、内存峰值、destroy warning、退出时长。",
+                    "资源随负载有可解释上界；退出满足事先预算，清理错误不能被吞掉。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务与成本",
+                    "逐请求延迟分位数、错误率、有效吞吐、样本数与重复区间。",
+                    "先满足质量与原有 SLO，再判断性能和成本；不臆造统一加速比例。"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议仅在隔离验证和产物身份核对后做小范围切换。出现数值异常、哨兵破坏或非法访问时，即使吞吐提高也停止放量，保存路由输入与对象寿命证据后回到已验证基线；遇到参数契约错误则修正调用方，不能用随意裁剪计数器掩盖专家映射不一致。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：主干修复不等于部署完成",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                6,
+                7,
+                8
+              ],
+              "text": "已核对的是冻结源码、提交与合并记录、测试源码，以及 v2.15.0 对照文件。官方 Releases 列表读取到 v2.15.0，但没有据此声称后续正式包已收录本提交。本站未构建 PyTorch，也未运行多 GPU、NCCL EP、compute-sanitizer 或端到端服务测试。"
+            },
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "运行环境是否实际加载了包含修复的 PyTorch native 扩展，还是只升级了 Python 文件？",
+                "NCCL EP 自身版本如何影响作者报告的 pec/nopec 切换问题？目前只确认 wrapper 选择了避免该切换的方案。",
+                "同组多轮、高并发及多 stream 下，调用方计数器复用和 routing 销毁顺序是否满足实际使用契约？",
+                "combine 输入的非零 storage offset 与不同 handle 数据偏移组合尚需专门执行验证，不能由新增 dispatch 测试自动外推。",
+                "GPU 型号、节点拓扑、group 大小和专家分布扩大后，正确性、资源增长与退出时间是否仍达标？",
+                "修复何时进入目标正式 wheel、镜像或发行分支，需追踪该具体产物，而不是按日期猜测。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这篇的工程要点可以压缩成两问：设备使用的缓冲由谁保活，地址偏移又相对谁计算？先给出这两条可审计的证据链，再讨论零拷贝与复用带来的性能价值。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-ascend-sync-kv-load-step-contract",
     "kind": "analysis",
     "title": "Ascend 同步 KV 加载：本步依赖声明不能丢在调度器副本里",
