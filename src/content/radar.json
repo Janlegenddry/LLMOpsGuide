@@ -1,6 +1,942 @@
 [
   {
     "schemaVersion": 1,
+    "id": "vllm-extensible-kv-startup-memory-lifetimes",
+    "kind": "analysis",
+    "title": "vLLM 启动显存的两条边界：调优峰值不能常驻，捕获空间不能被预热占满",
+    "summary": "11 月 12 日两项 main 修复分别处理 FlashInfer 一次性调优峰值与 CUDA Graph 捕获前的 KV 物理映射。按冻结代码解释 1/2 块最小映射、草稿与 DCP 地址保护、最终缓存下的自适应成本重测，并保留作者实验与生产验收边界。",
+    "publishedAt": "2026-11-12",
+    "reviewedAt": "2026-11-13",
+    "topics": [
+      "vLLM",
+      "KV Cache",
+      "推理编译",
+      "投机解码",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM · FlashInfer 调优峰值核算修复合入",
+        "url": "https://github.com/vllm-project/vllm/commit/318fca3fddcd6950eeb739737eaafb0973e5f34a",
+        "publishedAt": "2026-11-12",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM · 图捕获前回收预热物理页合入",
+        "url": "https://github.com/vllm-project/vllm/commit/3319c629a148c8f7ce088445911d9db4119af134",
+        "publishedAt": "2026-11-12",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM Worker · 冻结启动顺序与最终重新计时",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/vllm/v1/worker/gpu_worker.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM kernel_warmup · 冻结调优窗口",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/vllm/model_executor/warmup/kernel_warmup.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM extensible_kv_cache · 冻结物理映射与预算",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/vllm/v1/worker/extensible_kv_cache.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM sizing warmup · 冻结请求槽位覆盖",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/vllm/v1/worker/gpu/warmup.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM autoregressive speculator · 冻结草稿捕获输入",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/vllm/v1/worker/gpu/spec_decode/autoregressive/speculator.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM cudagraph_utils · 冻结 DCP 捕获上下文",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/vllm/v1/worker/gpu/cudagraph_utils.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM ModelRunner · 冻结自适应验证成本采集",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/vllm/v1/worker/gpu/model_runner.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM · 冻结可扩展缓存 GPU 回归测试",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/tests/v1/worker/test_extensible_kv_cache.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM · 冻结预热请求槽位测试",
+        "url": "https://github.com/vllm-project/vllm/blob/318fca3fddcd6950eeb739737eaafb0973e5f34a/tests/v1/worker/test_gpu_warmup_blocks.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM #66197 · 作者的历史 GPU 实验与限制",
+        "url": "https://github.com/vllm-project/vllm/pull/66197",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM GitHub PR 作者",
+          "status": "attributed",
+          "note": "已读 PR 全文与合入差异。PR 于 11 月 7 日创建、11 月 12 日合入；其 RTX 5090 数字来自两份较早固定基线的单次运行，不是最终合入版本的新增实测。作者明确缺少最终分支新 GPU 回归、模型精度和高并发/TP 扩展验证。"
+        },
+        "publishedAt": "2026-11-07",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "vLLM #66523 · 作者的 H100 启动复现与测试报告",
+        "url": "https://github.com/vllm-project/vllm/pull/66523",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM GitHub PR 作者",
+          "status": "attributed",
+          "note": "已读 PR 全文，并逐文件核对最终合入实现。作者报告 H100 上 Gemma-4-31B 的启动及六个图像请求结果；正文中的 commit(1) 与四行修复描述不是最终完整实现，本文以冻结源码的 min_committed_blocks、草稿与 DCP 保护和重新计时为准。本站未运行 GPU 实验。"
+        },
+        "publishedAt": "2026-11-09",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "官方标签与本文合入点的提交关系（11月13日复核）",
+        "url": "https://github.com/vllm-project/vllm/compare/v0.33.0rc3...318fca3fddcd6950eeb739737eaafb0973e5f34a",
+        "accessedAt": "2026-11-13"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "11 月 12 日合入的冻结树同时包含调优峰值排除与捕获前 KV 最小映射；最终实现按布局保留 1 或 2 块，并在最终扩容后重测自适应验证成本。",
+        "sourceIndices": [
+          0,
+          1,
+          2,
+          4,
+          8
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本站未运行 GPU 实验，也未确认正式产物已包含；作者的单机启动结果不能外推到 H20、多卡和生产吞吐。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "被排除的到底是候选策略 scratch，还是后续服务仍要用的内存？",
+      "最小物理映射时，草稿与 DCP 捕获是否仍会沿旧块表访问？",
+      "自适应策略的成本曲线是否在最终 KV 大小下重新采集？"
+    ],
+    "related": [
+      {
+        "title": "vLLM 草稿偏移与 CUDA Graph 地址",
+        "path": "/radar/vllm-trtllm-prefill-query-offset-lifetime/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-12 核对。第一来源为当日合入提交 318fca3fddcd6950eeb739737eaafb0973e5f34a，冻结树同时含同日较早的 3319c629a148c8f7ce088445911d9db4119af134。两份 PR 分别创建于 11 月 7 日和 9 日，不把创建日、合入日和正式版发布日期混同。独立读取源码、diff 与测试；仅做公开资料原创分析，不含任何内部负载。没有执行 GPU/NPU 测试，也未确认某个正式 wheel 或镜像已包含两项修复。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：少留一次性峰值，不等于少留服务余量",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "11 月 12 日的两项可扩展 KV 修复处理了不同的启动失败：调优器曾经用过的临时内存，不应永久扣在 KV 预算里；预热已经映射的虚拟缓存物理页，也不应一直占着 CUDA Graph 捕获所需空间。前者修正账本，后者改变启动阶段的物理占用。两者都可能让原来无法启动的配置启动，但不能据此承诺吞吐提高或把显存预算直接拉满。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                3,
+                4,
+                8
+              ],
+              "text": "冻结树把 FlashInfer 调优前的瞬时峰值另行保存，调优后清理、同步并重置峰值计数，再与后续预热及原有 reserve 取最大值。随后，在非 eager 路径中把预热 KV 缩到布局要求的最小提交块数，完成图捕获后再扩为最终大小；启用 adaptive verification 时还会重新采集成本曲线。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上线前至少回答三件事：被排除的内存真的是一次性调优 scratch 吗；捕获期间所有真实读写都落在仍映射的地址内吗；服务期选择策略用的是完整缓存下的成本吗。启动成功只回答了其中一部分。",
+              "title": "最需要检查的不是一个开关"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：同一张卡上，四种显存不是同一种责任",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "权重与持久工作区在启动后仍然存活，真实前向的临时激活会反复出现，调优候选策略的 scratch 可能只出现一次，CUDA Graph 则建立自己的持续占用。若把它们揉成一个历史最大值，KV 容量可能被过度压缩；若一概忽略历史峰值，又可能把第一次真实请求所需空间吃掉。这里需要的是按生命周期记账，而不是只比较 free memory。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "measure_kv_cache_bytes 用启动时空闲量、当前空闲量与已提交 KV 字节计算非 KV 占用，再同时受请求预算与物理余量限制，扣除 transient reserve；随后还要考虑多模态 IPC 预留与物理 granule 对齐。物理映射的粒度、张量逻辑块数与虚拟地址预留不是同一个数字。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                11,
+                12
+              ],
+              "text": "作者报告的两个场景不能合成一个通用成绩：#66197 是 32 GB RTX 5090、Qwen3.8-27B-NVFP4、MTP3、并发 1、36k 最大长度的历史核算对比；#66523 是单 H100 80 GB、Gemma-4-31B-it、多模态 encoder graph 的启动问题。它们有不同模型、精度、图捕获与显存规模。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：先分开计量窗口，再改变捕获时的映射",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3,
+                4
+              ],
+              "text": "调优窗口的边界由 _outside_kv_cache_transient_window 表达。可扩展缓存未开启时它直接透传；开启时保存调优前 allocated peak 减 current 的值，并在 finally 中做 gc、设备同步及峰值计数重置。这里没有把所有持久分配清零，也没有修改显存利用率预算。调优结束后仍然存在的分配会反映在之后的当前占用中。"
+            },
+            {
+              "type": "diagram",
+              "title": "调优峰值：排除中间窗口，保留两侧责任",
+              "caption": "原创机制示意，非实测时间线。上排表示计量步骤，下排表示保留的账本与最终容量；连线仅表示来源/依赖，不表示这些内存同时达到峰值。A/B 是教学符号，不是新增监控指标。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "before",
+                  "label": "调优前测 A",
+                  "detail": "保存调优之前 peak−current 的瞬时差额。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "调优前测 A",
+                  "subtitle": "保存调优之前 peak−current 的瞬时差额。",
+                  "tone": "compute"
+                },
+                {
+                  "id": "tune",
+                  "label": "执行候选调优",
+                  "detail": "中间候选 scratch 峰值不作为长期 transient。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "执行候选调优",
+                  "subtitle": "中间候选 scratch 峰值不作为长期 transient",
+                  "tone": "compute"
+                },
+                {
+                  "id": "reset",
+                  "label": "清理并重置",
+                  "detail": "gc、同步后重置 allocator 峰值，开始后段窗口。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "清理并重置",
+                  "subtitle": "gc、同步后重置 allocator 峰值，开始后段窗口。",
+                  "tone": "control"
+                },
+                {
+                  "id": "after",
+                  "label": "后续预热测 B",
+                  "detail": "用已选策略执行预热与 sizing，保留后段 transient。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "后续预热测 B",
+                  "subtitle": "已选策略预热，测量后段瞬时占用。",
+                  "tone": "compute"
+                },
+                {
+                  "id": "baseline",
+                  "label": "已有 reserve",
+                  "detail": "先前 profiling 的保留值仍参与最大值。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "已有 reserve",
+                  "subtitle": "先前 profiling 的保留值仍参与最大值。",
+                  "tone": "kv"
+                },
+                {
+                  "id": "reserve",
+                  "label": "取三者最大",
+                  "detail": "R=max(已有 reserve,A,B)，不是把三者相加。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "取三者最大",
+                  "subtitle": "R=max(已有 reserve,A,B)，不是把三者相加。",
+                  "tone": "kv"
+                },
+                {
+                  "id": "resident",
+                  "label": "当前持久占用",
+                  "detail": "调优后仍存活的非 KV 分配继续计入实际占用。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "当前持久占用",
+                  "subtitle": "调优后仍存活的非 KV 分配继续计入实际占用。",
+                  "tone": "kv"
+                },
+                {
+                  "id": "budget",
+                  "label": "最终 KV 预算",
+                  "detail": "同时受请求预算、设备余量、margin 与 R 约束。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "最终 KV 预算",
+                  "subtitle": "同时受请求预算、设备余量、margin 与 R 约束。",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "before",
+                  "to": "tune",
+                  "label": "保存 A 后才进入调优"
+                },
+                {
+                  "from": "tune",
+                  "to": "reset",
+                  "label": "退出调优窗口"
+                },
+                {
+                  "from": "reset",
+                  "to": "after",
+                  "label": "重新统计后续峰值"
+                },
+                {
+                  "from": "before",
+                  "to": "reserve",
+                  "label": "保留 A"
+                },
+                {
+                  "from": "baseline",
+                  "to": "reserve",
+                  "label": "原有值不丢弃"
+                },
+                {
+                  "from": "after",
+                  "to": "reserve",
+                  "label": "保留 B"
+                },
+                {
+                  "from": "reserve",
+                  "to": "budget",
+                  "label": "作为服务 transient 扣减"
+                },
+                {
+                  "from": "resident",
+                  "to": "budget",
+                  "label": "继续扣除持久占用"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "启动阶段 · 瞬时占用计量窗口",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "before",
+                      "tune",
+                      "reset",
+                      "after"
+                    ]
+                  },
+                  {
+                    "title": "服务阶段 · 持久占用与预算",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "baseline",
+                      "reserve",
+                      "resident",
+                      "budget"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                4
+              ],
+              "text": "另一项修改发生在 reserve 已经测完、图捕获尚未开始之间：kv_cache.commit(min_committed_blocks, shrink=True) 会释放已有物理映射并重新映射更小前缀。虚拟预留地址保持，dummy KV 内容不保留。min_committed_blocks 通常为 1；block-outermost 布局为 2，因为视图从第 0 块内部起始，相关读取可越过它。不能把 PR 初版的“只留一块”当成通用配置建议。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                6,
+                7,
+                8
+              ],
+              "text": "地址不移动仍不足以证明捕获安全：未映射的旧块不能再被 dummy 路径访问。最终 diff 同时把自回归草稿捕获的 idx_mapping 填为 -1，避免沿遗留 request-state 行写旧 block ID；DCP 捕获的合成上下文只使用 null block，而重放时读取实际 block tables。图捕获后缓存扩容，再为 adaptive verification 重测 step cost，避免把一两块 KV 的 L2 命中成本误当成完整缓存的服务成本。"
+            },
+            {
+              "type": "diagram",
+              "title": "图捕获与服务计时需要不同的 KV 状态",
+              "caption": "原创双路径示意，非 GPU 实测。两条路径分别说明捕获正确性和运行成本代表性，不暗示最小映射阶段可以提供真实服务。最终缓存是部署结果，不能由图捕获成功代替。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "small",
+                  "label": "最小物理映射",
+                  "detail": "按布局留 1 或 2 块；预热 dummy 内容被丢弃。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "最小物理映射",
+                  "subtitle": "按布局留 1 或 2 块；预热 dummy 内容被丢弃。",
+                  "tone": "kv"
+                },
+                {
+                  "id": "capture",
+                  "label": "受限 dummy 捕获",
+                  "detail": "草稿 -1、DCP null-block；只访问允许映射。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "受限 dummy 捕获",
+                  "subtitle": "草稿 -1、DCP null-block；只访问允许映射。",
+                  "tone": "compute"
+                },
+                {
+                  "id": "final",
+                  "label": "最终 KV 映射",
+                  "detail": "图和 sampler 占用已出现后，按预算测量并扩容。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "最终 KV 映射",
+                  "subtitle": "图和 sampler 占用已出现后，按预算测量并扩容。",
+                  "tone": "kv"
+                },
+                {
+                  "id": "cost",
+                  "label": "重新计时策略",
+                  "detail": "若启用自适应验证，在最终缓存下更新成本曲线。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "重新计时策略",
+                  "subtitle": "若启用自适应验证，在最终缓存下更新成本曲线。",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "small",
+                  "to": "capture",
+                  "label": "提供捕获所需合法最小地址范围"
+                },
+                {
+                  "from": "final",
+                  "to": "cost",
+                  "label": "真实缓存规模作为成本输入"
+                }
+              ],
+              "presentation": {
+                "kind": "paths",
+                "panels": [
+                  {
+                    "title": "捕获路径 · 地址合法性",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "small",
+                      "capture"
+                    ]
+                  },
+                  {
+                    "title": "服务准备 · 成本代表性",
+                    "tone": "control",
+                    "nodeIds": [
+                      "final",
+                      "cost"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5,
+                10
+              ],
+              "text": "与减小 reserve 同时合入的 sizing warmup 还修正了请求槽位覆盖：当 decode 占掉的一个槽会挤掉本可容纳的 prefill 时，允许只做 prefills；单请求 runner 也有 prefill-only 路径。prompt_logprobs 的单 prompt 测量与填满 token budget 的测量分开，测试涵盖 max_num_reqs 为 1、2、4。不能为了减轻启动预热就把这些覆盖一起删掉。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：最终代码、测试意图和作者数字分层阅读",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "合入证据表：代码存在不等于目标镜像已经运行",
+              "columns": [
+                "事实或主张",
+                "直接证据",
+                "能证明什么",
+                "仍不能证明什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "两项修复均在 11/12 合入",
+                    "318fca3 与 3319c62 的提交及冻结树",
+                    "本文分析有固定代码身份",
+                    "任何已发布 wheel、镜像或当前部署包含它们"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "调优峰值排除",
+                    "context manager 与 Worker 的 max 合并",
+                    "中间计量窗口被排除，两侧及原 reserve 保留",
+                    "所有真实请求的瞬时峰值已经覆盖"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "捕获前最小映射",
+                    "min_committed_blocks / shrink",
+                    "1 块或 block-outermost 的 2 块，非 eager 路径执行",
+                    "任意布局、投机与 DCP 组合都无非法访问"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    4,
+                    6,
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "GPU 测试代码",
+                    "捕获时 committed 数、greedy 对照、重测成本、草稿捕获测试",
+                    "存在可执行的回归意图及断言",
+                    "本站已运行、所有测试都通过，或任意模型准确率不变"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "RTX 5090 历史单次结果",
+                    "两份早期基线的 patched/unpatched 比较",
+                    "作者定位了一次性峰值过度保留",
+                    "最终合入版新实验、吞吐显著改善或 H20 收益"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    11
+                  ]
+                },
+                {
+                  "cells": [
+                    "H100 多模态启动结果",
+                    "作者的 Gemma-4-31B 复现",
+                    "作者在两个长度设置下报告启动与六请求生成",
+                    "多模态回答正确、长压稳定、完整最终补丁矩阵已验证"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    12
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "table",
+              "caption": "作者公开数字的使用边界，均未在本站独立复现",
+              "columns": [
+                "场景",
+                "报告结果",
+                "必须随数字保留的条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#66197，基线 dd4e40142",
+                    "reserve 3.83→1.79 GiB，KV 1.51→3.56 GiB；启动失败→通过",
+                    "单 RTX 5090、并发 1、36k、MTP3，较早补丁的一次运行；不是最终分支新测"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    11
+                  ]
+                },
+                {
+                  "cells": [
+                    "#66197，基线 4fab5a074",
+                    "reserve 3.83→1.79 GiB，KV 1.46→3.51 GiB；启动失败→通过",
+                    "同类固定负载；另两种 16,384-token 配置仍因持久占用超预算而失败"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    11
+                  ]
+                },
+                {
+                  "cells": [
+                    "#66523，H100 / Gemma，长度 4096 与 8192",
+                    "作者报告分别得到 772 / 714 块，六个图像 prompt 均能生成",
+                    "gpu_memory_utilization=0.95；encoder graph 开启；不是回答准确率评测"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    12
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这些数字支持“特定启动失败被修复”的判断，不支持把省下的 GiB 与 tokens/s 直接线性换算。更多 KV 可以改变可服务长度或并发上限，也可能因为更大工作集、不同策略与排队改变延迟。最终价值必须在相同 SLO 和请求分布下重新量化。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                13
+              ],
+              "text": "11 月 13 日重新读取原始 PR、冻结源码与回归测试，并核对 v0.33.0rc3 与本文合入点的官方提交比较：两者为 diverged，合入点不是该标签的祖先。此结果只证明该合入提交未沿相同祖先链进入该标签，不排除独立回补或等价实现；正式包、镜像和本地二次构建仍须按实际代码验证。原始变更日期保留 11 月 12 日，不将补发日期伪装为新发布。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：更准确的预算会暴露新的覆盖责任",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "排除一次性峰值的收益来自不再把历史最大 scratch 当成每步都要保留的空间；代价是后续预热必须真正覆盖服务所需的大小、精度、投机和多模态路径。若某种运行期分支只在极端请求出现，账本可以在算术上完全正确，而 reserve 的输入仍然偏小。预算公式正确与 workload coverage 充分是两个验收项。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "shrinking commit 明确丢弃内容，只能用在不需要保留真实 KV 的阶段。本文讨论启动 dummy 数据，不能把它直接迁移为在线缩容或请求迁移操作。地址稳定也不等于 RDMA 注册、缓存视图、外部 connector 缓冲和持久 graph 引用在所有模式中都已通过验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "源码在最终扩容后重新计时 adaptive verification，说明“启动成功”可能仍留下策略层偏差：捕获期间过小的 KV 工作集容易表现得更快。重测是必要补偿，但这里仍是 dummy profile，不能代替真实长上下文、并发与热点分布的成本回归。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本报告不建议直接把 gpu_memory_utilization 设为 1。外部进程、后续权重更新、KV connector 的独立设备缓冲等不一定包含在当前测量窗口内。保留多少空间应由实际共享方式和后续分配验证，而不是由一次启动成功决定。",
+              "title": "不要顺手修改显存利用率"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "故障假设：按账本、地址、策略三个方向排查",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设，不对应任何内部事故",
+              "columns": [
+                "症状",
+                "可证伪假设",
+                "应收集的证据",
+                "先做的隔离"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "调优开启后仍只有很少 KV",
+                    "实际未命中修复窗口，或余量被持久分配而非 scratch 占据",
+                    "固定 commit；extensible 标志；A/B/原 reserve；调优前后 current；预算与最终块数",
+                    "同环境记录开启/关闭调优的阶段数据，不直接删 reserve"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "图捕获或随后 sampler OOM",
+                    "预热物理页没有及时缩回，或图/持久区本就超过预算",
+                    "capture 入口 committed/min 值、物理字节、图池与 sampler 时点",
+                    "比对 eager/graph 和 encoder graph，保持模型/预算固定"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "投机捕获触发非法地址",
+                    "dummy draft 使用了预热残留的 request-state block IDs",
+                    "捕获入口 idx_mapping；实际 block table；最小映射范围；设备异常栈",
+                    "分别关闭投机、DCP 定位，不把关闭后成功当最终修复"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "启动通过但真实长 prompt OOM",
+                    "sizing warmup 未覆盖该 token/槽位/logprob/多模态组合",
+                    "真实输入形状和 prompt_logprobs；reserve 与首次真实步骤峰值",
+                    "把失败形状纳入独立 replay；不要用平均长度掩盖上界"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "自适应验证选择异常乐观",
+                    "服务仍使用最小 KV 时取得的 cost curves",
+                    "profile 次数与各次 committed 数；最终曲线；实际提交 token/迭代墙钟",
+                    "固定策略作对照，分开检测曲线重测与整体收益"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议为一次启动建立阶段账本：构建身份、初始空闲量、当前 allocated 与 peak、物理 KV 提交数、图捕获占用、最终 reserve 与块数。它们必须使用同一 rank、同一时点定义；不能拿 nvidia-smi 的整卡占用直接替代 allocator 的 allocated peak−current，更不能把多 rank 的不同窗口峰值相加。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：把两项补丁和覆盖分支拆开验证",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下均是拟议实验，尚未执行。先使用隔离 GPU 和公开模型，冻结驱动、CUDA、PyTorch、FlashInfer、模型 revision、量化格式与启动参数。主对照采用修复前、仅调优账本、仅捕获回收、完整修复四组；若无法可靠拆分依赖，至少使用可审计 commit 范围并明确混杂项，不把整个 main 的差异归因于四行改动。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议实验矩阵：每次只改变一个可解释因素",
+              "columns": [
+                "实验轴",
+                "组合",
+                "主要观测",
+                "停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "调优窗口",
+                    "autotune 开/关 × extensible 开/关",
+                    "A/B/原 reserve/current 与最终 KV；确认关闭 extensible 时窗口透传",
+                    "真实请求 OOM、reserve 证据缺失或数字无法对账"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "槽位与预算",
+                    "max_num_seqs=1/2/4；token budget 大于单 prompt 上限；logprobs=0/5/-1",
+                    "warmup prefill 长度、decode 槽、实际 token 数与峰值",
+                    "为了混合 decode 而漏掉最大 prefill 的情况仍发生"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "捕获最小映射",
+                    "layer-outermost / block-outermost；graph / eager",
+                    "capture 前提交 1/2 块是否按布局决定；恢复后的 view 与内容行为",
+                    "非法地址、错误布局假设或真实 KV 被误丢弃"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "投机和 DCP",
+                    "MTP/EAGLE 路径按支持矩阵；DCP 开/关",
+                    "草稿捕获 idx=-1、DCP null-block、最终真实 block table",
+                    "任一路径访问未映射区或输出差异无法解释"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成本与服务",
+                    "自适应验证开/关；短/长 context；冷热 prefix；并发阶梯",
+                    "最终缓存后是否重测；实际提交 token 成本；TTFT/TPOT/错误率",
+                    "成本曲线不更新、服务 SLO 退化或质量失败"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "压力与外部分配",
+                    "至少三次冷启动与独立重复；真实支持范围内加入权重/connector 后续分配",
+                    "启动阶段峰值分布、首请求峰值、长压 OOM 与余量",
+                    "任何超预算、不可恢复失败或不可解释数值漂移"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "作者的 H100 和 RTX 5090 配置应当分别复现，不要把模型、硬件和补丁同时更换。若扩展到 H20，只能将其视为新的一组测试；SM90 条件匹配说明可能命中代码，不构成 H20 已经获得容量或吞吐收益的证据。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：先守正确性，再谈可用容量",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预定义验收门，以下阈值是本文拟议规则，不是项目官方保证",
+              "columns": [
+                "门禁",
+                "口径",
+                "拟议通过条件",
+                "失败处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "代码身份",
+                    "运行包与两项 merge/frozen tree 的包含关系",
+                    "可追溯到确切 commit；列出额外 patch 与依赖",
+                    "身份未知则停止归因与放量"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "预算闭合",
+                    "按 frozen 公式核对 current、reserve、KV physical 与 granule",
+                    "无重复扣减、未测长期分配有明确余量；各 rank 单独闭合",
+                    "恢复保守预算并补充测量"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "捕获地址安全",
+                    "最小提交值与所有 dummy 的读写范围",
+                    "支持组合中无越界；草稿/DCP 路径可观测且符合设计",
+                    "阻断该组合，不以重试掩盖非法地址"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "输出正确性",
+                    "固定 seed/贪心文本 token 对照；多模态任务按独立质量集",
+                    "确定性范围要求 token 一致；非确定性/量化提前登记误差与质量阈值",
+                    "任何未解释差异优先于吞吐收益"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳定性",
+                    "固定矩阵多次启动及持续负载",
+                    "全部通过，无新增 OOM/非法地址/挂起；首请求和尾部峰值都覆盖",
+                    "回滚新增路径或缩小支持范围"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能与容量",
+                    "成功且质量合格的请求；相同模型/预算/输入分布",
+                    "满足预先约定的 p99 TTFT/TPOT 与错误率，再比较容量和 tokens/s；至少重复运行并报告离散度",
+                    "SLO 不达标不得仅凭 KV 增大宣称提升"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "容量指标至少同时给逻辑块数、物理字节、最大可服务 token 和对应配置；性能指标应使用成功且质量合格的已提交输出 token，不能用投机草稿 token。启动用时单独统计，避免把 remap/重新 profile 的一次性成本和稳态 token 成本混在一起。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "未闭合项：正式产物、硬件覆盖与最终分支新测",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "尚未确认任何正式 release、wheel 或容器包含这两项 11 月 12 日 main 修复；合入提交不等于已发布产品。",
+                "未在本站执行 CUDA/NPU、pytest GPU 回归、显存测量或模型精度测试。本文的验证仅为原文、源码、schema 与站点构建范围。",
+                "作者 #66197 数字来自较早基线的单次实验，最终合入还包括槽位预热变化；不能把全部最终行为说成已由那两个历史实验覆盖。",
+                "block-outermost 两块、DCP、不同投机方法和最终缓存重测的交叉组合，需要目标部署独立回归。",
+                "高并发、多 GPU/TP、外部 connector 后续分配、模型精度与 H20 的收益均未得到本文实验支持。",
+                "若后续只补性能摘要，仍应保留本文源码顺序与所有边界；不要用新的吞吐数字覆盖未解决的安全和质量项。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "flashinfer-tgv-two-cta-exit-lifetime",
     "kind": "analysis",
     "title": "FlashInfer 2-CTA TGV：算完自己的矩阵，不等于可以退出",
