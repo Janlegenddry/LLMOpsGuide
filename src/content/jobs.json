@@ -88,7 +88,7 @@
     "summary": "建设裸金属 GPU 推理平台，优化路由、缓存、弹性及每 token 成本。",
     "url": "https://job-boards.greenhouse.io/telnyx54/jobs/7995402003",
     "sourceName": "Telnyx 官方 Greenhouse 招聘页",
-    "verifiedAt": "2026-11-10",
+    "verifiedAt": "2026-11-13",
     "postedAt": null,
     "matchReasons": [
       "中国大陆远程，覆盖 PD/KV、推理 SLO 和性能成本",
@@ -112,7 +112,7 @@
     "sourceType": "official",
     "status": "open",
     "priority": "strong",
-    "statusNote": "官方招聘页展示完整职责与 Apply；发布日期未公开。 原文明确 Remote — mainland China；中国团队创始成员岗位。",
+    "statusNote": "2026-11-13 复核官方完整岗位详情及申请入口仍可见。官方招聘页展示完整职责与 Apply；发布日期未公开。 原文明确 Remote — mainland China；中国团队创始成员岗位。",
     "gaps": [
       "高级/Staff 层级，要求端到端架构与生产 ownership",
       "需量化吞吐、时延、可靠性和成本收益",
@@ -338,7 +338,7 @@
     "summary": "从零构建生产推理层，负责模型部署、量化、批处理、缓存及路由。",
     "url": "https://www.vcluster.com/careers/bc65fb85-af90-4d2c-b62b-f730815248c7",
     "sourceName": "vCluster Labs 官方招聘",
-    "verifiedAt": "2026-11-10",
+    "verifiedAt": "2026-11-13",
     "postedAt": null,
     "matchReasons": [
       "推理框架部署和系统级优化高度相关",
@@ -361,7 +361,7 @@
     "sourceType": "official",
     "status": "open",
     "priority": "related",
-    "statusNote": "官方岗位正文及 Apply now 可见；具体地区需确认，发布日期未公开。 公司说明全球分布、remote-first；该页未明确可在中国大陆雇佣。",
+    "statusNote": "2026-11-13 复核官方完整岗位详情及申请入口仍可见。官方岗位正文及 Apply now 可见；具体地区需确认，发布日期未公开。 公司说明全球分布、remote-first；该页未明确可在中国大陆雇佣。",
     "gaps": [
       "明确要求编程而非仅配置",
       "首位推理工程师角色，技术 ownership 较高；雇佣地区待确认",
@@ -612,6 +612,87 @@
       "本科及以上；要求优秀编码能力及训练或推理框架二次开发经验",
       "同时涉及训练、算子与内核调优，不仅是部署运维；具体芯片和分工需确认",
       "明确包含客户项目交付及驻厂支持，地点安排和出差频率需确认"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "drw-8230509",
+    "company": "DRW",
+    "title": "AI Inference Platform Engineer",
+    "locations": [
+      "Chicago, United States"
+    ],
+    "category": "inference",
+    "level": "原页未明确固定年限；要求生产推理平台与系统性能经验",
+    "summary": "负责模型上线、推理配置质量回归、KV 与 PD 架构、多租户 GPU 调度及生产发布生命周期。",
+    "skills": [
+      "vLLM",
+      "SGLang",
+      "TensorRT-LLM",
+      "KV Cache",
+      "PD 分离",
+      "GPU",
+      "可观测性"
+    ],
+    "url": "https://job-boards.greenhouse.io/drweng/jobs/8230509",
+    "sourceName": "DRW 官方 Greenhouse 招聘页",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-13 核验官方完整 JD、Apply 和申请表可见。地点 Chicago，未明确远程；工作许可与签证需确认。发布日期未公开，本次为新收录而非今日发布。未提交申请。",
+    "verifiedAt": "2026-11-13",
+    "postedAt": null,
+    "priority": "related",
+    "matchReasons": [
+      "模型交付、性能与质量回归、灰度回滚均是核心职责",
+      "覆盖 KV、PD、多租户 GPU 调度和生产可靠性"
+    ],
+    "gaps": [
+      "需深入至少一种推理引擎与 NVIDIA GPU 系统性能分析",
+      "要求能建立质量等价评估及可复现的性能基准",
+      "地点为美国芝加哥，不能视为中国远程岗位"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "togetherai-5069532007",
+    "company": "Together AI",
+    "title": "Technical Support Engineer (Inference) - India Weekends",
+    "locations": [
+      "Pune, India",
+      "Bangalore, India"
+    ],
+    "category": "sre",
+    "level": "6 年以上相关经验，其中至少 1 年 AI 服务支持",
+    "summary": "面向客户保障 K8s 推理端点健康，处理性能退化、迁移、容量和模型部署问题，并将引擎问题转化为可复现证据。",
+    "skills": [
+      "SRE",
+      "Kubernetes",
+      "GPU",
+      "Prometheus",
+      "IaC",
+      "推理服务",
+      "Python"
+    ],
+    "url": "https://job-boards.greenhouse.io/togetherai/jobs/5069532007",
+    "sourceName": "Together AI 官方 Greenhouse 招聘页",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-13 核验完整官方 JD、Apply 和申请表。印度白天班，成熟期每周四天、每天十小时，含周六日和两个工作日；周六日各另有两小时 on-call。初期周一至周五。发布日期未公开；新收录非今日发布，未提交申请。",
+    "verifiedAt": "2026-11-13",
+    "postedAt": null,
+    "priority": "related",
+    "matchReasons": [
+      "职责明确包含客户侧推理 SRE、端点稳定性与生产故障处理",
+      "K8s、容量调整、可观测性及引擎故障复现相互衔接"
+    ],
+    "gaps": [
+      "要求六年以上相关经验及至少一年 AI 服务支持",
+      "需熟练网络排障、生产基础设施和编程调试",
+      "印度地点及固定周末班是重要限制，不能视为全球远程"
     ],
     "publicationApproved": true,
     "containsPrivateData": false
