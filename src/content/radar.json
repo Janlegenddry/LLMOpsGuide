@@ -1,6 +1,910 @@
 [
   {
     "schemaVersion": 1,
+    "id": "vllm-ascend-heartbeat-lease-data-boundary",
+    "kind": "analysis",
+    "title": "Ascend V2 心跳租约：延长 KV 保留，不等于证明迟到读取仍然有效",
+    "summary": "11 月 12 日合入的 MooncakeConnectorV2 租约把固定等待改为默认 120/20/80 秒的保留与续租机制。完整解释 admission 盲区、通用 ACK、配置错配的 EngineCore 故障半径、取消后的在途读与实际回收边界；不把控制面续租写成数据面防陈旧保证。",
+    "publishedAt": "2026-11-12",
+    "reviewedAt": "2026-11-13",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "KV Cache",
+      "PD 分离",
+      "服务调度",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Ascend · MooncakeConnectorV2 心跳租约合入",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/451b02ce1372d32aa03633303f694ad17b13ecc2",
+        "publishedAt": "2026-11-12",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "Ascend V2 · 冻结 scheduler 与租约状态机",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/451b02ce1372d32aa03633303f694ad17b13ecc2/vllm_ascend/distributed/kv_transfer/kv_p2p/mooncake/pull_scheduler.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "Ascend V2 · 冻结独立心跳线程",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/451b02ce1372d32aa03633303f694ad17b13ecc2/vllm_ascend/distributed/kv_transfer/kv_p2p/mooncake/heartbeat.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "Ascend V2 · 冻结升级与配置教程",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/451b02ce1372d32aa03633303f694ad17b13ecc2/docs/source/tutorials/features/pd_disaggregation_mooncake_multi_node.md",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "Ascend V2 · 冻结租约与控制面测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/451b02ce1372d32aa03633303f694ad17b13ecc2/tests/ut/kv_offload/mooncake_v2/test_pull_scheduler.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "Ascend V2 · 冻结共享元数据协议测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/451b02ce1372d32aa03633303f694ad17b13ecc2/tests/ut/kv_offload/mooncake_v2/test_push_scheduler.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "Ascend #21425 · 作者说明、测试边界与缺口",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/21425",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM Ascend GitHub PR 作者",
+          "status": "attributed",
+          "note": "已读 PR 全文、11 月 12 日合并元数据与固定 merge 的五个改动文件。CPU CI 数字属于前一 revision，作者明确最新 revision 修正旧测试调用后重新运行 CI；没有新 NPU 推理或性能实测。无 stale-read fencing、跨机器 PP 与多独立 consumer 的限制按作者原文保留。"
+        },
+        "publishedAt": "2026-11-10",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "官方标签与本文合入点的提交关系（11月13日复核）",
+        "url": "https://github.com/vllm-project/vllm-ascend/compare/v0.32.0rc1...451b02ce1372d32aa03633303f694ad17b13ecc2",
+        "accessedAt": "2026-11-13"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "V2 心跳租约无条件启用；默认初始 120 秒、间隔 20 秒、续租窗口 80 秒，P/D 必须一致；旧 timeout env 不再控制 V2。",
+        "sourceIndices": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "心跳跟踪从 scheduler admission 开始；通用 ACK 不逐请求区分 unknown、expired 与成功续租，完成入队也不等于物理 KV 已释放。",
+        "sourceIndices": [
+          1,
+          3
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "未验证正式产物包含、NPU硬件性能和数据面防陈旧；跨机 PP 与多独立 consumer 不能据此推导为已支持。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "还在 EngineCore 输入队列里的请求，谁负责保护其源 KV？",
+      "ACK 是否能区分续租成功、未知 request 与已经过期？",
+      "READ 卡住而心跳活跃时，如何在不提前释放源块的前提下治理容量？"
+    ],
+    "related": [
+      {
+        "title": "Ascend 请求取消与接收完成登记",
+        "path": "/radar/vllm-ascend-receive-registration-lifetime/"
+      },
+      {
+        "title": "没有传输也可能需要完成通知",
+        "path": "/radar/ascend-mooncake-unallocated-ack-hash/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-12 核对 #21425，固定 merge 为 451b02ce1372d32aa03633303f694ad17b13ecc2。PR 11 月 10 日创建，11 月 12 日 01:12 UTC 合入，本文发布日期使用合入提交日期。已逐文件读取官方 scheduler、heartbeat、教程及测试；没有运行 NPU、网络故障或模型实验。仅解释主线实现，不声称任何正式 tag、wheel 或部署已包含。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：心跳保护等待时间，不替代数据身份与完成同步",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这项变化值得关注，因为它改变了 P/D 分离的 KV 保留契约：已经进入 D scheduler 的请求，可以在等待调度或传输完成期间续租 P 上的源块，不再只能赌一个固定超时足够长。但“D 还在发心跳”“P 回了 ACK”“传输 API 返回成功”，分别回答不同问题。它们不能自动证明被读取的仍是原请求的 KV。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "text": "主线 V2 无条件启用心跳租约，默认初始时长 120 秒、心跳间隔 20 秒、续租窗口 80 秒，配置必须 P/D 一致。旧 VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT 不再控制 V2，也没有回到原 480 秒超时的开关；V1 行为保持。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "先证明租约控制面能覆盖目标排队、取消和故障场景，再证明数据面在过期、源块复用和迟到 READ 时不会被误判。若后者没有证据，应明确限制支持范围并采用经验证的失败处理，不把通用 ACK 当成继续读取的许可证。",
+              "title": "上线决策的两道独立门"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6
+              ],
+              "text": "作者直接注明：未增加 stale-read fencing 或逐请求数据面租约有效性检查，延迟 D 读取已经过期或复用的 KV，仍可能在传输层成功；没有新远程/NPU 推理与性能实验。本文据此不写“彻底解决过期读”或任何吞吐提升承诺。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：固定超时、可续租与真实进度是三件事",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "P 完成 prefill 后返回源 KV 位置，D 并不一定马上开始 READ。排队、KV 分配、worker 调度和网络传输都可能延后消费。如果 P 只按固定时间释放，D 仍然合法等待时源块就可能失效；如果 P 永远不释放，失联请求又会持续占据容量。租约用“最近收到的保留意愿”调和这两个风险，但保留意愿不等于请求取得了进展。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                3
+              ],
+              "text": "登记从 D 的 on_new_request 开始，早于本地 KV 分配；仍在 EngineCore 输入队列、尚未进入 scheduler admission 的请求没有被心跳跟踪。P 在暴露 transfer params 前登记初始租约，并在返回参数中带 remote_kv_lease_duration。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "独立线程让模型或 scheduler 等待时仍能续租，这是本次改善的核心，也形成一个新的运维问题：worker 永久卡住而心跳线程仍工作时，P 的租约可以一直延长。因此应分别观察 admission 前等待、admission 后等待、实际 READ 进度和心跳线程健康，而不是只监控进程存活。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：本地时钟、双到期队列与取消后的在途读",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "P 使用自己的 monotonic 时钟决定有效期，不比较跨机器壁钟。设 duration 为 D，初始 expiry=now+D；正常续租只在尚未过期时将 expiry 延到 max(旧 expiry, now+floor(2D/3))。now>=expiry 视为到期，迟到心跳不复活旧记录。初始租约和续租租约使用两个按期限排列的队列，避免较长初始期限挡住另一队列更早到期的项。"
+            },
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "假设 P 在 t=0 登记，且所有心跳刚好在 P 的 t=20、40、60 到达：初始期限为 120；前两次分别取 max(120,100) 与 max(120,120)，不缩短期限；t=60 才延到 140。若下一条在 t=140 恰好到达，则已到期，不允许复活。这是按源码公式推导的理想例子，不是网络交付保证或实测时序。",
+              "title": "120 / 20 / 80 的教学算例"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "D 按 P 的 host/port 分组并去重 remote request ID，每批最多 512 个，一个 peer 同时最多保留一条待 ACK 消息。ACK 时限为 1 秒，失败 peer 的连接在后续 interval 再尝试；慢 peer 不要求其他 peer 同步等待。旧 snapshot 的尾批要先 drain，再采新 snapshot，避免每到刷新周期就丢掉尚未发送的尾部。"
+            },
+            {
+              "type": "diagram",
+              "title": "P 保留账与 D 消费账，通过控制消息衔接",
+              "caption": "原创职责与状态示意，非实测序列。两组分别为 P 的源块保留和 D 的消费跟踪；跨组只画 metadata、heartbeat、DONE，KV 数据不经过心跳线程。到期/DONE 进入 finished 队列后，仍需标准 scheduler delayed-free 路径消费，图中没有把日志或 ACK 画成物理释放。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "p-register",
+                  "label": "P 初始租约",
+                  "detail": "暴露源块参数前登记本地 monotonic 期限。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "P 初始租约",
+                  "subtitle": "暴露源块参数前登记本地 monotonic 期限。",
+                  "tone": "kv"
+                },
+                {
+                  "id": "p-renew",
+                  "label": "P 条件续租",
+                  "detail": "仅未到期请求可延长；未知 ID 不建立新租约。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "P 条件续租",
+                  "subtitle": "仅未到期请求可延长；未知 ID 不建立新租约。",
+                  "tone": "control"
+                },
+                {
+                  "id": "p-terminal",
+                  "label": "P 到期或 DONE",
+                  "detail": "移除租约记录并登记完成，不代表模型成功。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "P 到期或 DONE",
+                  "subtitle": "移除租约记录并登记完成，不代表模型成功。",
+                  "tone": "control"
+                },
+                {
+                  "id": "p-finished",
+                  "label": "P 完成队列",
+                  "detail": "等待 scheduler 消费 finished_sending 后走标准释放。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "P 完成队列",
+                  "subtitle": "调度器消费发送完成事件，再释放源块。",
+                  "tone": "kv"
+                },
+                {
+                  "id": "d-admit",
+                  "label": "D 请求准入",
+                  "detail": "检查 P/D duration 并登记；之前的输入队列不覆盖。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "D 请求准入",
+                  "subtitle": "校验两端租期；输入队列等待不覆盖。",
+                  "tone": "control"
+                },
+                {
+                  "id": "d-heartbeat",
+                  "label": "D 独立心跳",
+                  "detail": "按 peer 批量续租，与模型 forward 进度独立。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "D 独立心跳",
+                  "subtitle": "按 peer 批量续租，与模型 forward 进度独立。",
+                  "tone": "communication"
+                },
+                {
+                  "id": "d-complete",
+                  "label": "D 聚合接收完成",
+                  "detail": "所有 worker 的接收完成报告；可包含失败接收。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "D 聚合接收完成",
+                  "subtitle": "所有 worker 的接收完成报告；可包含失败接收。",
+                  "tone": "communication"
+                },
+                {
+                  "id": "d-done",
+                  "label": "D 停续租发 DONE",
+                  "detail": "停止该请求心跳并排通知，失败时依赖到期兜底。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "D 停续租发 DONE",
+                  "subtitle": "停止该请求心跳并排通知，失败时依赖到期兜底。",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "p-register",
+                  "to": "d-admit",
+                  "label": "随 transfer params 声明源块与 duration"
+                },
+                {
+                  "from": "d-admit",
+                  "to": "d-heartbeat",
+                  "label": "完成 admission 后开始跟踪"
+                },
+                {
+                  "from": "d-heartbeat",
+                  "to": "p-renew",
+                  "label": "发送 request IDs，不传 KV 数据"
+                },
+                {
+                  "from": "p-register",
+                  "to": "p-terminal",
+                  "label": "初始租约到期"
+                },
+                {
+                  "from": "p-renew",
+                  "to": "p-terminal",
+                  "label": "续租后期限到期"
+                },
+                {
+                  "from": "d-complete",
+                  "to": "d-done",
+                  "label": "聚合完成允许结束源块保留"
+                },
+                {
+                  "from": "d-done",
+                  "to": "p-terminal",
+                  "label": "DONE 到达后结算该 request ID"
+                },
+                {
+                  "from": "p-terminal",
+                  "to": "p-finished",
+                  "label": "入队等待 scheduler 释放流程"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "P · 源块保留生命周期",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "p-register",
+                      "p-renew",
+                      "p-terminal",
+                      "p-finished"
+                    ]
+                  },
+                  {
+                    "title": "D · 消费跟踪生命周期",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "d-admit",
+                      "d-heartbeat",
+                      "d-complete",
+                      "d-done"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                4
+              ],
+              "text": "取消路径必须区分是否已经交给 worker。分配前取消会移除心跳，并通过尚未清掉的 do_remote_prefill 路径发送一次 DONE，随后清标志使重复 finish 幂等；已有在途 READ 的请求即使用户取消也继续续租，直到 worker 聚合完成。若本地 prefix hit 使 external token 为零，也会停止续租并通知 P。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "D 收到聚合 finished_recving 后先删除心跳登记，再排队通知 P；failed_recving 也走释放通知，因此 DONE 不是“推理成功”的标志。P 的到期处理只是把 ID 放入 finished_requests，之后 update_connector_output 填入 finished_sending，交给正常 delayed-free 流程。P scheduler 停顿时，不能把到期时间写成物理显存保证回收的时间。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                3,
+                4
+              ],
+              "text": "配置缓存是另一条独立路径：D 按 endpoint 缓存已通过的 engine_id/duration，TTL 600 秒、最多 1024 个 endpoint、LRU 淘汰，命中不延长 TTL；过期或淘汰后下次请求重新校验。缓存的是两端配置一致性，不是每个 request 的租约状态，更不是进程 incarnation 或 block generation。"
+            },
+            {
+              "type": "table",
+              "caption": "四种概念不要合并成一个“健康”标志",
+              "columns": [
+                "观察",
+                "直接含义",
+                "不成立的推论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "remote_kv_lease_duration 匹配",
+                    "本次准入看到的配置通过一致性校验",
+                    "源 request 仍有效、源块从未被复用"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "收到通用 heartbeat ACK",
+                    "控制消息格式/处理完成且返回 ACK；unknown、expired 也可收到同类 ACK",
+                    "批内每个 request 都续租成功"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "worker 聚合 receive 完成",
+                    "可以结束该请求的源块保留；包含失败分支",
+                    "用户结果成功或答案正确"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "P finished_sending 已输出",
+                    "标准 scheduler 释放流程可消费该完成事件",
+                    "到期日志时刻即物理释放、所有 rank 已立即恢复容量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：主线协议已变，硬件正确性仍未闭合",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "逐项证据与边界",
+              "columns": [
+                "改动",
+                "固定来源",
+                "已确认",
+                "尚未证明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "主线合入",
+                    "merge 451b02c，11/12 01:12 UTC",
+                    "可固定到本文读取的源码",
+                    "正式 release 或当前部署包含"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "无条件租约与升级",
+                    "教程与 scheduler 构造",
+                    "duration int≥6；V2 无旧 timeout 回退；P/D 一致",
+                    "原有滚动升级自动兼容"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "请求准入与失败半径",
+                    "on_new_request / validation",
+                    "缺失、类型错、错配会抛 ValueError；官方教程指出可终止 D EngineCore",
+                    "错误只影响一条请求或能自动恢复"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "独立心跳与分批",
+                    "heartbeat.py 与 localhost ZMQ 测试",
+                    "按 peer/512 分批；有不运行模型的独立续租与坏 peer 隔离测试",
+                    "真实网络与 NPU 饱和场景的尾部续租时限"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "过期与取消",
+                    "mock monotonic、cancel、completion 测试",
+                    "精确到期边界和在途取消逻辑有定向断言",
+                    "过期后迟到 READ 可被数据面拒绝"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者测试状态",
+                    "PR #21425",
+                    "作者说明前一 revision CPU CI 有一处旧 API 调用失败，最新已调整测试",
+                    "最终 merge 全矩阵通过；本站独立复现或 NPU 性能改善"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    6
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "特别需要避免把“依赖 vLLM v0.33.0 的 CPU CI 矩阵”写成“Ascend v0.33.0 正式发布了该能力”。一个是测试所用依赖，一个是用户可安装产品身份；本文没有取得后者的包含证据。前一 revision 的通过数量也不能充当最终合入版本的完整运行记录。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "测试源码包含真实 localhost ZMQ 控制消息但明确不调度或运行模型；另有 1025 个请求、每批 512 的慢 ACK snapshot 测试，以及 duration 默认值、TTL/LRU、失败不缓存和配置变化重校验。它们很好地定位了协议意图，却不等于跨机大规模 heartbeat 的吞吐上限，更不覆盖 NPU KV 数据内容。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7
+              ],
+              "text": "11 月 13 日重新读取原始 PR、冻结源码与回归测试，并核对 v0.32.0rc1 与本文合入点的官方提交比较：两者为 diverged，合入点不是该标签的祖先。此结果只证明该合入提交未沿相同祖先链进入该标签，不排除独立回补或等价实现；正式包、镜像和本地二次构建仍须按实际代码验证。原始变更日期保留 11 月 12 日，不将补发日期伪装为新发布。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：续租更可靠，卡住的消费者也更能保活",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "初始租期从旧固定等待改为可续租机制，既能保护长等待，也可能让 admission 前的盲区更显著。调整 duration 需要连带观察“P 导出到 D admission”的尾部分布、heartbeat 批量发送耗时与 peer 故障重试。只看默认 120 秒是否大于平均排队时长不足以判断安全。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "独立线程避免 scheduler 卡顿直接停止续租，但请求完全无进展时也可能继续保留 P 容量。这里不应简单停心跳强制回收，因为 in-flight READ 可能仍在访问源块；要先具备可验证的 transport 取消/完成同步或数据面防陈旧机制，再设计业务层超时处理。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "DONE 通知失败时，通知线程记录错误并结束该队列项，不无限重排；P 端将依赖租约到期，之后仍需 scheduler 消费完成队列。故不能承诺每个完成请求都即时释放，也不能用 DONE 队列为空说明源块已归还。"
+            },
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "P 必须先升级，代理要透传新字段，D 再升级并保持 duration 一致。缺失/不匹配错误发生在请求 admission，而不是服务 startup；“两个服务都能启动”不能替代真实 remote-KV 请求的兼容性探针。",
+              "title": "滚动升级比一个参数更重要"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                6
+              ],
+              "text": "跨机 PP 与一个 P request 的多个独立 consumer 未经作者验证。当前保留与 DONE 按 request ID 处理，不能据此推导 consumer 引用计数安全；一个消费者 DONE 与另一个消费者仍在 READ 的组合，需要独立协议与回收证据。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "故障假设：先判断丢的是进度、控制链路还是块身份",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设与诊断证据，不引用任何内部现场",
+              "columns": [
+                "现象",
+                "待验证假设",
+                "关键证据",
+                "不能采取的捷径"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "ACK 正常但输出异常",
+                    "租约已过期或未知 ID 收到通用 ACK，迟到 READ 指向复用块",
+                    "P request expiry/finished；实际源块 generation；D admission/read 时间；固定 token 对照",
+                    "把 ACK 当逐请求有效性验证"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "P KV 长时间不释放",
+                    "D worker 卡死，但独立心跳还在为 in-flight 请求续租",
+                    "每请求最后进展、最后续租、在途 READ、聚合完成是否到达",
+                    "未确认读者停止就强制回收页"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "到期日志出现，容量未恢复",
+                    "P scheduler 没有消费 finished 队列，或释放链路滞后",
+                    "到期、入队、finished_sending、真正 free 的分阶段时间",
+                    "将日志文字 Force freed 当物理释放证据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "升级后一条请求导致 D 退出",
+                    "代理丢字段、老 P 或 duration 错配在 admission 抛错",
+                    "完整版本链与公开配置；该请求 transfer params 字段存在性；EngineCore 异常",
+                    "只靠服务启动存活判兼容"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "只有大批量请求过期",
+                    "同一 peer 分批与慢 ACK 使尾部/新增请求续租不及时",
+                    "snapshot 规模、每批 ACK 延迟、每个 request 实际续租间隔",
+                    "用 20 秒配置值代替尾请求到达间隔"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "进程在线但续租全面停止",
+                    "heartbeat 顶层异常退出或线程长时间未推进",
+                    "线程存活、最后循环/发送时间、异常日志与 peer 状态",
+                    "只监控 PID 或 API 健康检查"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "诊断时把时钟分开：P 的 expiry 判断只用 P monotonic，D 的 admission/READ 只在本地可直接排序；跨机展示时需要校准或请求事件关联，不能把两台机器的 monotonic 数直接相减。源 request ID、D local ID 和 endpoint/engine identity 要关联，但对公开报告只使用合成标识，避免泄露真实请求内容。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：在控制面成功之外验证数据与资源终态",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下均为拟议实验，尚未执行。使用隔离环境与公开合成 prompt，为源块写入可辨识的内容校验值，并冻结 P/D、vLLM、Mooncake、CANN 与 torch_npu 版本。故障注入中必须同时记录 transport 结果、KV 内容/输出、租约状态和最终资源；只测 ACK 或请求状态码不能验收本方案。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议故障与负载矩阵",
+              "columns": [
+                "注入位置",
+                "条件",
+                "要验证什么",
+                "关键失败判据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "admission 前",
+                    "让请求在 EngineCore 输入队列超过初始 duration，随后恢复",
+                    "D 是否能识别已经过期的源块，而不是读到别的请求内容",
+                    "transport 成功但内容与原请求不符"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "控制网独立断开",
+                    "停止 D→P 心跳，让数据通路仍可通信；期限前后恢复 READ",
+                    "失效、复用与迟到读取的边界；ACK 是否被误读",
+                    "没有有效性证据却继续使用旧 KV"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "D worker 卡住",
+                    "保持 heartbeat thread 运行，暂停 READ/worker completion",
+                    "P 保留增长、进度监控和安全取消策略",
+                    "只有无限续租而无可诊断进度状态"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "P scheduler 卡住",
+                    "控制线程能处理心跳/到期，暂停消费 finished",
+                    "到期到物理释放的差距，恢复后是否只释放一次",
+                    "提前释放、重复释放或恢复后持续漏页"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "批量和 peer 故障",
+                    "至少覆盖 512/513/1025 及更大组；慢 ACK、错误 ACK、peer 重连",
+                    "每个请求实际续租间隔，旧 snapshot 尾批与新增请求公平性",
+                    "尾批饿死、已移除 ID 被新 snapshot 复活或健康 peer 停顿"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "滚动升级与代理",
+                    "P先D后；老P新D；字段缺失/错配；endpoint/engine ID复用",
+                    "错误在 admission 的故障半径；缓存不替代有效性校验",
+                    "误认为配置缓存通过就允许陈旧数据读取"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消与通知丢失",
+                    "分配前、交 worker 后、READ中、聚合完成后分别取消；丢 DONE",
+                    "在途读保活、单次 DONE、最终回收及失败分支",
+                    "读者未停就回收，或完成路径永久保留"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "租约边界",
+                    "duration=6/120/自定义；P时钟精确 now==expiry",
+                    "floor 计算、只延长不缩短、过期不复活",
+                    "边界上把失效请求重新当有效"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "需要多独立 consumer 或跨机器 PP 时，另设专门矩阵，不混在单消费者测试的通过率中。该矩阵必须说明每个消费者的所有权、完成确认和超时责任，任一消费者失败时不能靠其他消费者的 DONE 自动推导全局安全。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：配置、活性、数据、回收四类证据各自过门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟议验收表，不是作者实测或官方 SLA",
+              "columns": [
+                "门禁",
+                "指标口径",
+                "预定义验收原则",
+                "失败处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "版本与兼容",
+                    "确切 artifact commit；P/D duration 与代理字段",
+                    "所有参与实例有可追溯身份，真实 remote-KV 探针通过",
+                    "缺失身份或配置错配时停止升级，不等请求流量触发退出"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "控制活性",
+                    "每请求续租到达间隔、剩余有效窗、批次尾延迟",
+                    "在目标规模和故障预算内，每个受保护请求均有足够余量；单独声明 admission 前盲区",
+                    "降低接纳范围或调整经测试的租期，不盲目忽略超时"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据正确性",
+                    "固定内容/生成结果与有效源块身份",
+                    "任何过期/复用情形都不得静默使用错误 KV；不接受 transport 成功作为替代",
+                    "阻断相关部署模式，补足数据面保护或可证明安全的失败策略"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消与回收",
+                    "read 完成/取消同步、DONE、finished队列、实际free",
+                    "无早释放/重复释放/永久漏页；回收耗时按真实阶段定义并纳入容量预算",
+                    "保留资源保护并定位卡住阶段，不以强制释放掩盖问题"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "线程与故障隔离",
+                    "heartbeat线程状态、异常退出、各peer推进",
+                    "能检测线程死亡；坏peer不阻塞已验证的健康peer进展",
+                    "报警并进入明确失败策略，不能伪装健康"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务收益",
+                    "成功且正确请求的TTFT/TPOT、错误率、P pinned blocks",
+                    "先达到预先登记 SLO；再比较长等待成功率、保留成本和峰值容量",
+                    "不符合 SLO 则不以续租次数或ACK率宣称优化成功"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "把“租期到期后多久回收”拆成到期检测、完成队列消费和物理释放三段；把“长请求被保护”拆成 admission 前等待与之后实际续租覆盖。这样的口径才能发现一个实现同时改善平均等待成功率，却在输入队列或永久卡住的 worker 上留下另一种风险。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "未验证项：没有硬件成绩，也没有数据面有效性保证",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "尚未核实正式 release/tag/wheel/容器包含 451b02c；不能用依赖 vLLM v0.33.0 的 CPU CI 信息代替产品发布证据。",
+                "本站没有运行单元测试、localhost ZMQ 测试、NPU 推理或故障注入；引用测试源码只说明断言与范围。",
+                "前一 revision CPU CI 数字不能写成最终 merge 全部通过；最终产物 CI 需另行按 exact SHA 核对。",
+                "作者明确没有新远程/NPU 性能或准确性结果，本文不提供吞吐、延迟或显存改善百分比。",
+                "没有新增逐请求 stale-read fencing；ACK、配置缓存和租约续期都不能证明迟到 READ 的数据身份。",
+                "跨机 PP、多独立 consumer、超大 peer/request 批量、heartbeat线程异常恢复和长期无进展请求的治理仍需专项验证。",
+                "P scheduler 停顿、DONE失败与输入队列拥塞下的真实物理回收时限未得到本文测量支持。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-extensible-kv-startup-memory-lifetimes",
     "kind": "analysis",
     "title": "vLLM 启动显存的两条边界：调优峰值不能常驻，捕获空间不能被预热占满",
