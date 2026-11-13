@@ -1,6 +1,743 @@
 [
   {
     "schemaVersion": 1,
+    "id": "sglang-pp-release-memory-verdict",
+    "kind": "analysis",
+    "title": "SGLang PP 显存释放：首阶段答应了，不代表所有卡都交出来了",
+    "summary": "主干修复把显存释放回复延后到 PP 判定回环，并先在 TP 内统一空闲决策。它消除过早成功和不一致拒绝的两类风险，但不提供跨阶段事务回滚，也不能把 H100 作者测试直接当作 H20 或 NPU 保证。",
+    "publishedAt": "2026-11-12",
+    "reviewedAt": "2026-11-13",
+    "topics": [
+      "SGLang",
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang · PP 释放回复修复合入",
+        "url": "https://github.com/sgl-project/sglang/commit/30593f940be2fa9d2b4468606007930374f71e36",
+        "publishedAt": "2026-11-12",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang · 冻结权重与显存释放控制",
+        "url": "https://github.com/sgl-project/sglang/blob/30593f940be2fa9d2b4468606007930374f71e36/python/sglang/srt/managers/scheduler_components/weight_updater.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang · 冻结 PP 判定回环",
+        "url": "https://github.com/sgl-project/sglang/blob/30593f940be2fa9d2b4468606007930374f71e36/python/sglang/srt/managers/scheduler_pp_mixin.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang · 冻结控制请求分发与空闲判定",
+        "url": "https://github.com/sgl-project/sglang/blob/30593f940be2fa9d2b4468606007930374f71e36/python/sglang/srt/managers/scheduler.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang · 冻结 CPU 组带标签对象通信",
+        "url": "https://github.com/sgl-project/sglang/blob/30593f940be2fa9d2b4468606007930374f71e36/python/sglang/srt/utils/process_group.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang · PP 判定回环单元测试",
+        "url": "https://github.com/sgl-project/sglang/blob/30593f940be2fa9d2b4468606007930374f71e36/test/registered/unit/managers/test_pp_cp_rank_offsets.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang · TP 同意或拒绝单元测试",
+        "url": "https://github.com/sgl-project/sglang/blob/30593f940be2fa9d2b4468606007930374f71e36/test/registered/unit/managers/test_scheduler_weight_version_tracking.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang #49798 · 作者复现与测试报告",
+        "url": "https://github.com/sgl-project/sglang/pull/49798",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang v0.5.23 · 正式发行",
+        "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.23",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "SGLang v0.5.23 · PP 实现对照",
+        "url": "https://github.com/sgl-project/sglang/blob/v0.5.23/python/sglang/srt/managers/scheduler_pp_mixin.py",
+        "accessedAt": "2026-11-13"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "30593f9 已合入主干；PP 首阶段释放后等待末阶段最终判定，TP 释放前先汇总 busy，释放后增加组内 barrier。",
+        "sourceIndices": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "尚未在本站执行多卡、跨节点、H20 或 NPU 验证；正式安装产物是否包含该修复需追到其代码身份。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "成功响应是否晚于所有目标 rank 的释放完成？",
+      "拒绝后有哪些 stage 已经释放，恢复如何追踪？",
+      "控制链路异常时是否有可观察的超时与恢复策略？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验至 2026-11-13，主干固定提交 30593f940be2fa9d2b4468606007930374f71e36；读取改动、冻结实现、单元测试源码、作者 PR 与 v0.5.23 对照。未执行真实 GPU/NPU、故障注入或性能实验；作者结果、源码事实、原创推导和拟议实验分列。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：交接承诺必须覆盖真正占用资源的参与者",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "当推理与训练轮流使用同一组 GPU 时，释放接口的成功回复就是调用方可能开始下一次大分配的信号。这个信号若只代表首个 PP stage 完成，而后续 stage 还握着权重、KV 或图资源，接口层面的成功就会变成另一进程的 OOM。正确的完成点应覆盖本次请求涉及的整个流水线，而不只是最先收到请求的节点。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "11 月 12 日合入的 #49798 为这一控制边界补上两层约束：阶段内 TP 先统一决定能否释放，阶段间 PP 汇总所有判定后再由首阶段回复。主干实现有固定提交可审计，不能把合入日期当作 wheel 或镜像的发布日期。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "最重要的保留条件是：拒绝表示本次整体交接没有成立，不表示什么都没有发生。该补丁没有把各 stage 的释放改成先准备再提交的分布式事务；上游可能已释放，下游随后拒绝。调用方应保留阶段与 tag 状态，不能在 400 后盲目切换训练或假定推理可立即无条件继续。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：空闲、释放、回复与可复用是四个事实",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "推理实例的资源不止模型权重。KV cache、CUDA Graph 以及尚未完成的批次和控制请求分别有自己的生命周期。释放接口按 tags 选择资源类型；未指定时处理默认全部类型。释放指定资源并不等价于销毁进程、释放驱动上下文，也不保证操作系统报告的整卡空闲。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "冻结 scheduler 的普通空闲检查包括 running/last batch、overlap 结果队列、PP microbatch 排空及请求列表等。暂停时可忽略部分等待请求，但仍显式检查等待请求是否持有 KV。健康探针使用的判断范围不同，所以“健康”或“GPU 利用率低”不是本接口能成功释放的证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这篇报告面向需要训练/推理资源交接、权重更新或受控回收的运维流程，不建议把释放接口当作一般 OOM 的自动修复按钮。没有记录哪些资源已释放、哪些请求仍在等待时，反复重试可能只会把故障从显存不足换成状态不一致。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：TP 先达成同一决定，PP 再形成最终答复",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "每个 TP rank 将本地非空闲状态编码为 busy，使用 TP CPU group 的 MAX 归约。任何成员忙，所有成员都返回拒绝；否则才进入释放。这样避免一个 rank 提前返回，而其它 rank 随后在组内 barrier 等待不存在的参与者。资源处理后先设备同步，再做 TP barrier，才返回本地成功。"
+            },
+            {
+              "type": "diagram",
+              "title": "原创示意：局部释放与全流水线回复是不同完成点",
+              "caption": "非实测、非等比例时间。上组是每阶段内部的 TP 决策与资源释放，下组是 PP 回环及调用方验收。首阶段忙碌立即拒绝；后续阶段拒绝不撤销已发生的释放。图不表达事务原子性或故障时限保证。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "nodes": [
+                {
+                  "id": "request",
+                  "label": "释放请求",
+                  "detail": "进入首阶段；本图只有首阶段已通过本地门的请求才沿等待回环前进。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "释放请求",
+                  "tone": "control"
+                },
+                {
+                  "id": "tp-gate",
+                  "label": "TP 一致判定",
+                  "detail": "每个 TP rank 提交 busy；MAX 使任一忙碌成为全组拒绝。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "TP 一致判定",
+                  "tone": "control"
+                },
+                {
+                  "id": "release",
+                  "label": "本地释放",
+                  "detail": "按 tags 释放，设备同步后 TP barrier；不是任意外部进程显存都归零。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "本地释放",
+                  "tone": "kv"
+                },
+                {
+                  "id": "relay",
+                  "label": "请求与判定",
+                  "detail": "判定以独立 tag 发送，其发送完成句柄与请求转发一起等待。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "请求与判定",
+                  "tone": "communication"
+                },
+                {
+                  "id": "next",
+                  "label": "后续阶段",
+                  "detail": "各阶段完成自己的本地处理，再与上游判定合并；任一拒绝保留。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "后续阶段",
+                  "tone": "control"
+                },
+                {
+                  "id": "last",
+                  "label": "末阶段汇总",
+                  "detail": "仅当首阶段已释放并等待时，向首阶段返回最终结果。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "末阶段汇总",
+                  "tone": "communication"
+                },
+                {
+                  "id": "answer",
+                  "label": "首阶段回复",
+                  "detail": "在迭代发送后接收结果，回复原请求；首阶段忙时则走即时拒绝旁路。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "首阶段回复",
+                  "tone": "control"
+                },
+                {
+                  "id": "consumer",
+                  "label": "交接验收",
+                  "detail": "调用方仅在成功后进入下一资源阶段，仍核对每卡余量与恢复；此为拟议验收。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "交接验收",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "request",
+                  "to": "tp-gate",
+                  "label": "先核对当前阶段所有 TP 成员"
+                },
+                {
+                  "from": "tp-gate",
+                  "to": "release",
+                  "label": "仅全组空闲时释放"
+                },
+                {
+                  "from": "release",
+                  "to": "relay",
+                  "label": "同步及 barrier 完成后输出本地判定"
+                },
+                {
+                  "from": "relay",
+                  "to": "next",
+                  "label": "先收到请求才能接收独立判定"
+                },
+                {
+                  "from": "next",
+                  "to": "last",
+                  "label": "沿流水线折叠，任一拒绝胜出"
+                },
+                {
+                  "from": "last",
+                  "to": "answer",
+                  "label": "仅首阶段已释放时回传"
+                },
+                {
+                  "from": "answer",
+                  "to": "consumer",
+                  "label": "成功回复是交接前提，余量及恢复另验"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "阶段内：计算状态与显存释放",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "request",
+                      "tp-gate",
+                      "release",
+                      "relay"
+                    ]
+                  },
+                  {
+                    "title": "阶段间：通信结果与外部交接",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "next",
+                      "last",
+                      "answer",
+                      "consumer"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                3
+              ],
+              "text": "首阶段本地成功时保存原请求，不立即答复。后续阶段先完成本地处理，再接收上游判定；若上游已经拒绝就继续传播拒绝。末阶段只在首阶段确实进入等待时回传。首阶段在迭代的发送工作之后接收最终结果，再走原控制输出通路。普通 PP、PD prefill PP 与 PD decode PP 三个循环均加入这一回复步骤。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "首阶段忙时必须立即拒绝，而不是等待“所有 stage 拒绝”。此时流水线可能还需要首阶段继续迭代，后续阶段才能收到控制请求。首阶段若阻塞等尾部，可能亲手停止尾部取得进展的条件。修复把 first_stage_released 一起向下传，使末阶段知道有没有等待自己的接收者。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                4
+              ],
+              "text": "控制判定单独使用 tag=1，普通对象传输保持默认 tag=0。序列化对象的长度和数据都使用对应 tag。判定异步发送的完成句柄合并到请求转发的等待列表，而不在两个请求处理之间单独等待；原因是下游要先收到请求列表，才知道该收哪个判定。独立标签防消息配对混淆，正确等待顺序防“先等别人消费、却还没给消费入口”。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这里的 tag 是 CPU 对象控制通信的消息标签，不是 GPU 内存类型 tags。把两者混为一谈会误读并发调用：一个用于分流控制消息，另一个选择 KV/权重/图等释放对象。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码、单元断言、作者运行与发行分别看",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "核验表：一个成功证据不替代另一层证据",
+              "columns": [
+                "证据",
+                "可确认内容",
+                "边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "merge 30593f9",
+                    "主干合入于 2026-11-12 13:34:47 UTC",
+                    "合入不是正式发布"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "weight_updater 冻结实现",
+                    "busy MAX 在释放之前；设备同步与 TP barrier 在返回之前",
+                    "不证明异常断链时可有限时间退出"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "PP 冻结实现及分发",
+                    "保存首阶段请求、逐阶段折叠、尾部回传、迭代末回复",
+                    "未引入跨 stage prepare/commit 或回滚协议"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "PP 回环单元测试源码",
+                    "覆盖晚到拒绝、首阶段忙、早期拒绝传播、请求先行、尾部条件回传",
+                    "mock 断言不等于真实多机消息调度"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "TP 拒绝单元测试源码",
+                    "本地空闲而模拟 peer 忙时也拒绝，并且不调用 pause",
+                    "未在本文运行真实分布式 collective"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.5.23 标签对照",
+                    "当前 Latest 为11月2日正式版，冻结 PP 文件不含该判定回环 helper",
+                    "不能仅根据 main 已修复而建议任意已安装包安全"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    8,
+                    9
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                7
+              ],
+              "text": "作者报告使用 Qwen2.5-0.5B、H100 和 memory saver，覆盖 PP2 跨两节点、PP3 单节点，以及 PP3×TP2、PP1×TP2。空闲释放返回 200；生成并发时返回 400 且生成完成。还报告 PP3 双 tokenizer 的并发空闲调用及 pause/retract→release→resume 流程。本文未独立复现这些结果，不将其作为 H20、NPU 或大模型负载的性能成绩。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                7
+              ],
+              "text": "核验时 PR 描述中的 Base CI 成功，Extra 与 AMD ROCm CI 标为失败；未进一步确认失败根因或是否相关。因此本报告不宣称最终全部 CI 通过，也不将失败直接定性为本修复引入的缺陷。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：成功更可信，但等待和部分完成必须可见",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "成功回复等待更多参与者，会增加控制操作的尾部延迟。这不是一般 decode 热路径的吞吐改进。应比较“真正所有 stage 释放完成的时间”与“调用方收到成功的时间”，而不是把旧版更快回复当作更高性能。旧版抢先给出的时间可能根本不是相同语义。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "TP MAX 消除了已到达调用路径的成员间忙闲分歧，却不保证一个已经失联的 rank 能参与 collective。最终 barrier 和 PP 回环都需要通信与执行进展。新增等待点意味着故障恢复方案更应明确超时、进程健康和整组重建边界，而不是期望该补丁本身提供故障容错。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "后续 stage 在接收上游判定前已经完成本地处理，因此最终拒绝不自动回滚先前释放。对需要原子资源交换的训练编排器来说，补丁改善的是成功应答的真实性，而不是完整事务协议。拒绝后先观察各阶段资源状态，再执行经验证的恢复，不能拿返回码替代状态账本。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "源码接入了 PD 两类 PP 循环，但作者已报告的硬件矩阵不能替代 Mooncake/NIXL 正在传输、取消潮、长上下文和多节点网络故障验证。尤其不能把 API 完成语义扩展成所有外部 DMA 已可靠退休的保证。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：先定位哪个完成点被误认",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设，不对应任何内部日志或真实现场",
+              "columns": [
+                "症状",
+                "可证伪假设",
+                "应记录的证据",
+                "安全处置原则"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "释放成功后训练分配 OOM",
+                    "回复早于某些stage释放，或有其它进程/非目标资源占用",
+                    "每stage/rank/tag完成时间、API返回时间、每GPU allocated/reserved及外部占用",
+                    "先确认代码身份和资源时间线，不盲调利用率"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "只有部分rank卡在释放",
+                    "TP gate 到达次序不一致、成员失联或版本混用",
+                    "busy输入/归约结果、barrier入口/出口、rank健康、collective日志",
+                    "停止继续交接，按整组恢复策略处理"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "收到拒绝后推理仍不能恢复",
+                    "已有部分stage释放，调用方错误假定零副作用",
+                    "每stage offload tags、资源状态、resume结果",
+                    "不开始训练；按已释放集合核对恢复"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "并发控制调用挂起或答复错配",
+                    "请求转发和判定等待顺序异常、不同版本控制协议不一致",
+                    "请求ID、入口worker、PP rank、控制tag及发送/接收顺序",
+                    "隔离并发维度，保存证据后回退一致版本"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "仅PD场景长时间等待",
+                    "持KV请求、传输队列或microbatch尚未达到空闲条件",
+                    "队列类别、KV持有、请求状态、传输完成与pause状态",
+                    "不要仅因无GPU计算而强制释放"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：用资源时间线验证控制承诺",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下都是拟议实验，未执行。先在隔离硬件上使用公开小模型，固定 commit、镜像digest、依赖、GPU拓扑、模型revision和tags。修复前后同配置重复运行。每一控制请求分配关联ID，把API、PP、TP和显存采样时间统一到可比较时间轴；多机时保留单调时间与时钟误差，不能用未校准墙钟得出毫秒先后。"
+            },
+            {
+              "type": "table",
+              "caption": "拟议矩阵：不把作者 H100 结果外推为本站实测",
+              "columns": [
+                "维度",
+                "对照/注入",
+                "观测",
+                "目标"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "PP与TP布局",
+                    "PP1×TP2、PP2×TP1、PP3×TP2；单/跨节点",
+                    "所有rank gate、释放完成、最终回复",
+                    "区分TP一致决策与PP最终结果"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源类型",
+                    "KV、权重、CUDA Graph分别及默认集合",
+                    "释放字节/残留类别、resume、首个真实请求",
+                    "确认tags选择且不误承诺整卡归零"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "忙闲分歧",
+                    "一TP peer忙；首stage忙；后stage忙",
+                    "是否全TP拒绝、首stage是否继续推进、部分释放集合",
+                    "拒绝路径不死锁且副作用可追踪"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "并发入口",
+                    "单/多tokenizer，多个控制请求交错",
+                    "回复对应ID、tag分流、发送等待次序",
+                    "无串答、丢答、循环等待"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "暂停与PD",
+                    "retract暂停、持KV等待、正常/停滞传输",
+                    "队列状态、KV归属、释放/恢复终态",
+                    "未就绪不假成功，不破坏传输所有权"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障注入",
+                    "末stage暂停/退出、控制链路延迟",
+                    "超时可见性、失败终态、资源残留",
+                    "证明恢复预算，而不只证明正常成功"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "硬件与业务",
+                    "先小模型验证，再目标H20/其它后端独立回归",
+                    "输出正确性、交接时长、恢复首请求和长尾",
+                    "不跨硬件、模型或后端外推"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：成功要有全体完成证据，失败也要有终态",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预定义验收口径：阈值由环境预算先确定",
+              "columns": [
+                "门禁",
+                "指标定义",
+                "通过原则",
+                "失败处理"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物包含",
+                    "实际包的commit与30593f9及额外patch",
+                    "可重建到固定实现，不只比版本字符串",
+                    "停止将现象归因于已修复"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成功时序",
+                    "t_reply 与所有目标rank t_release_done",
+                    "成功不得早于最晚完成；保留采样及跨机时钟误差",
+                    "拒绝资源交接并保存时间线"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "一致拒绝",
+                    "TP成员的busy归约与pause调用记录",
+                    "任一peer忙时本TP组不进入释放",
+                    "停止放量检查分支及成员集合"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "部分完成恢复",
+                    "失败后每stage/tag状态、resume及真实推理",
+                    "无未知释放状态，恢复后输出和资源一致",
+                    "按整组可恢复策略处置，不盲目重试"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "活性",
+                    "每个请求终态/等待耗时及故障恢复耗时",
+                    "正常与注入均在预先定义预算内可判定",
+                    "超预算即告警，不把挂起当成功"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "业务交接",
+                    "释放后训练分配、恢复后推理质量及SLO",
+                    "资源够用且无错误输出、OOM或隐性泄漏",
+                    "正确性失败先回退，不以速度抵消"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：这不是事务协议，也不是通用硬件保证",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "本报告未运行真实PP/TP、GPU/NPU、分布式单元测试或故障注入；代码与测试源码阅读不等于复现。",
+                "最新正式v0.5.23对照未包含该回环；其它镜像、nightly和后续release须在使用前另查。",
+                "PR的非Base失败CI根因未核实，不能宣布完整回归全绿，也不能直接指控补丁导致失败。",
+                "跨节点故障、末stage失联、混合版本和并发控制请求的有界退出仍需实测。",
+                "API拒绝后的部分释放与resume策略需由调用方明确，不能从一个400推断全部资源未变。",
+                "真正手机视觉、本站发布产物以及目标部署的资源可用性，应分别验收，不能由本篇源码报告替代。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-ascend-heartbeat-lease-data-boundary",
     "kind": "analysis",
     "title": "Ascend V2 心跳租约：延长 KV 保留，不等于证明迟到读取仍然有效",
