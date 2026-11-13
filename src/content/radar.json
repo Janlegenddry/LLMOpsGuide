@@ -1844,9 +1844,9 @@
     "id": "flashinfer-tgv-two-cta-exit-lifetime",
     "kind": "analysis",
     "title": "FlashInfer 2-CTA TGV：算完自己的矩阵，不等于可以退出",
-    "summary": "主干为 BF16 TGV 的 2-CTA 路径补上退出 cluster barrier，保护对端仍需访问的 CTA 生命周期。正式 v0.7.4 标签仍未含该栅栏；作者单 B300 数值与微基准不能替代多卡 Graph+PDL 故障复现。",
+    "summary": "2-CTA TGV 退出栅栏现已进入 11 月 12 日发布的 v0.7.5rc1 预发布标签；正式 v0.7.4 仍不含它。保留完整生命周期机制与实验矩阵，区分源码已交付、实际 kernel 命中及多卡 Graph+PDL 稳定性验证。",
     "publishedAt": "2026-11-11",
-    "reviewedAt": "2026-11-11",
+    "reviewedAt": "2026-11-13",
     "topics": [
       "推理编译",
       "GPU 通信",
@@ -1890,6 +1890,22 @@
         "title": "FlashInfer · 冻结的 TGV 正确性测试",
         "url": "https://github.com/flashinfer-ai/flashinfer/blob/24630ce2404ebcd2b8d2f65720709362e25e3305/tests/gemm/test_tgv_gemm.py",
         "accessedAt": "2026-11-11"
+      },
+      {
+        "title": "FlashInfer v0.7.5rc1 · 预发布清单",
+        "url": "https://github.com/flashinfer-ai/flashinfer/releases/tag/v0.7.5rc1",
+        "publishedAt": "2026-11-12",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "FlashInfer v0.7.5rc1 · 标签源码的退出栅栏",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/v0.7.5rc1/flashinfer/gemm/kernels/tgv_gemm_cute_ext.py",
+        "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "修复提交与 v0.7.5rc1 的祖先关系",
+        "url": "https://github.com/flashinfer-ai/flashinfer/compare/24630ce2404ebcd2b8d2f65720709362e25e3305...v0.7.5rc1",
+        "accessedAt": "2026-11-13"
       }
     ],
     "claims": [
@@ -1906,6 +1922,15 @@
         "status": "pending",
         "text": "本站未在 B200/B300、CUDA Graph 或 PDL 环境复现故障或测量开销。",
         "sourceIndices": []
+      },
+      {
+        "status": "confirmed",
+        "text": "11 月 13 日复核：v0.7.5rc1 是 11 月 12 日发布的预发布，清单包含 #9146，标签源码包含尾部 cluster arrive/wait，修复提交为该标签祖先；不能把 RC 当正式稳定版。",
+        "sourceIndices": [
+          7,
+          8,
+          9
+        ]
       }
     ],
     "questions": [
@@ -1922,6 +1947,17 @@
           "id": "conclusion",
           "title": "结论：协作对象的寿命也是正确性条件",
           "blocks": [
+            {
+              "type": "callout",
+              "basis": "official",
+              "sourceIndices": [
+                7,
+                8,
+                9
+              ],
+              "text": "退出栅栏已进入 v0.7.5rc1（GitHub 标记 prerelease，发布时间 2026-11-12 22:21:33 UTC）。已核对发布清单、标签源码和提交祖先关系；此前正式 v0.7.4 不含修复的结论仍成立。RC 源码包含修复并不等于目标 wheel、框架镜像或缓存编译产物已经运行它，也不构成生产升级推荐。",
+              "title": "11 月 13 日版本更新"
+            },
             {
               "type": "paragraph",
               "basis": "inference",
@@ -2222,6 +2258,16 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "对罕见调度错误，无法复现既不是修复无效的证据，也不是修复完成验证的证据。源码分析说明修复针对哪一条寿命缺口；针对真实部署的压力试验还需回答覆盖是否足够。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                7,
+                8,
+                9
+              ],
+              "text": "本次版本补充使用三项相互支持的证据：v0.7.5rc1 发布说明列出 #9146；该标签 tgv_gemm_cute_ext.py 在 use_2cta 分支的退出处包含 cluster_arrive_relaxed 与 cluster_wait；官方 compare 返回修复到标签 ahead 29、behind 0。这里确认的是标签源码的包含关系，不是现场运行身份或所有二进制渠道的内容。原文日期仍保留 11 月 11 日，核验日期更新为 11 月 13 日。"
             }
           ]
         },
@@ -2461,7 +2507,7 @@
               "items": [
                 "本站未进行任何 B200/B300 GPU、CUDA Graph、PDL 或业务验证。",
                 "作者没有确定性复现器；单卡测试通过不证明原多卡压力条件下的竞态已被覆盖。",
-                "v0.7.4 正式标签未含该退出栅栏；后续正式版本、wheel、框架依赖 pin 与缓存产物需继续核对。",
+                "v0.7.5rc1 预发布标签已核对含退出栅栏，v0.7.4 正式标签仍不含；正式稳定版、实际 wheel、框架依赖 pin 与缓存产物仍须逐一验证。",
                 "relaxed arrive 的使用依赖既有数据阶段协议；此修复不能替代对任意新跨 CTA 访问的独立顺序证明。",
                 "未测不同 tactic、形状、拓扑与实际服务负载下的长尾和成本。"
               ]
