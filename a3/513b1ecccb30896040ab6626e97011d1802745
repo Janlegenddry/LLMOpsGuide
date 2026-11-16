@@ -1,0 +1,46 @@
+.github/workflows/deploy.yml
+  h_97a4e319890cc7 41-42
+docs/events-publishing.md
+  h_97a4e319890cc7 1-31
+package.json
+  h_97a4e319890cc7 16-17
+scripts/verify-events.mjs
+  h_97a4e319890cc7 1-16
+src/components/Footer.astro
+  h_97a4e319890cc7 16
+src/components/Sidebar.astro
+  h_97a4e319890cc7 39
+src/content/events.json
+  h_97a4e319890cc7 1-69
+src/events.ts
+  h_97a4e319890cc7 1-5
+src/lib/events-filter.ts
+  h_97a4e319890cc7 1-15
+src/lib/events-store.mjs
+  h_97a4e319890cc7 1-74
+src/lib/events-time.ts
+  h_97a4e319890cc7 1-39
+src/pages/api/events.json.ts
+  h_97a4e319890cc7 1-4
+src/pages/events/index.astro
+  h_97a4e319890cc7 1-61
+src/pages/index.astro
+  h_97a4e319890cc7 19
+src/scripts/events-index.ts
+  h_97a4e319890cc7 1-32
+src/styles/events.css
+  h_97a4e319890cc7 1-19
+tests/events.test.mjs
+  h_97a4e319890cc7 1-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a3513b1ecccb30896040ab6626e97011d1802745",
+  "prompts": {},
+  "humans": {
+    "h_97a4e319890cc7": {
+      "author": "观至 <liguanzhi.lgz@antgroup.com>"
+    }
+  }
+}
