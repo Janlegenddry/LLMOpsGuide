@@ -5,10 +5,15 @@ import { validateEvents, publicEventURL } from '../src/lib/events-store.mjs';
 import { eventCountdown, eventPhase, localEventDate, registrationCountdown } from '../src/lib/events-time.ts';
 import { emptyEventsFilter, matchesEvent, readEventsFilter, writeEventsFilter } from '../src/lib/events-filter.ts';
 import { mountEventsIndex } from '../src/scripts/events-index.ts';
-const source=JSON.parse(readFileSync(new URL('../src/content/events.json',import.meta.url),'utf8'));
-const fixture=()=>({...structuredClone(source[0]),verifiedAt:'2026-11-01'});
+const catalog=JSON.parse(readFileSync(new URL('../src/content/events.json',import.meta.url),'utf8'));
+// Stable unit fixtures are independent of the mutable public activity catalog.
+const local={schemaVersion:1,id:'fixture-local',title:'Example event',organizer:'Example',scope:'local',region:'hangzhou',scopeNote:'杭州测试样例，非真实活动。',archiveExceptionApproved:false,status:'scheduled',startDate:'2026-11-28',endDate:'2026-11-28',startAt:'2026-11-28T09:00:00+08:00',endAt:'2026-11-28T18:00:00+08:00',timeZone:'Asia/Shanghai',format:'in-person',city:'杭州',venue:'测试会场',address:null,summary:'仅用于自动化测试。',topics:['SGLang'],officialUrl:'https://example.com/local',agendaUrl:'https://example.com/agenda?format=Embed_Styled_Html&isDark=False&title=Example',registration:{status:'link',url:'https://example.com/local',deadline:null,note:'测试入口。'},livestream:{status:'unconfirmed',url:null,publicAccess:false,note:'未确认。'},replay:{status:'unconfirmed',url:null,publicAccess:false,note:'未确认。'},sources:[{title:'测试来源',url:'https://example.com/local'}],verifiedAt:'2026-11-01',publicationApproved:true,containsPrivateData:false};
+const source=[local,{...structuredClone(local),id:'fixture-archive',scope:'archive',region:null,archiveExceptionApproved:true,startDate:'2026-11-12',endDate:'2026-11-13',startAt:null,endAt:null,timeZone:'America/Los_Angeles',city:'旧金山',officialUrl:'https://example.com/archive',sources:[{title:'测试来源',url:'https://example.com/archive'}],registration:{status:'closed',url:'https://example.com/archive',deadline:null,note:'已结束测试样例。'}}];
+const fixtureById=id=>{const record=source.find(event=>event.id===id);assert.ok(record,`Missing fixture: ${id}`);return structuredClone(record);};
+const fixture=()=>({...fixtureById('fixture-local'),verifiedAt:'2026-11-01'});
 const at=value=>new Date(value);
 test('event input keeps unknown times explicit and rejects broken dates, private data, unknown fields and duplicate events',()=>{
+  assert.equal(validateEvents(catalog).length,catalog.length);
   assert.equal(validateEvents(source).length,2);
   assert.equal(validateEvents([{...fixture(),startAt:null,endAt:null}])[0].startAt,null);
   for(const edit of [r=>r.schemaVersion=2,r=>r.id='../bad',r=>r.publicationApproved=false,r=>r.containsPrivateData=true,r=>r.privateNotes='not public',r=>r.startDate='2026-02-30',r=>r.endDate='2026-11-01',r=>r.startAt='2026-11-28T09:00:00',r=>r.startAt='2026-11-28T09:00:00-08:00',r=>r.startAt='2026-11-28T25:00:00+08:00',r=>r.endAt=r.startAt,r=>r.timeZone='CST',r=>r.timeZone='Mars/Olympus',r=>r.verifiedAt='2099-01-01',r=>r.topics=[],r=>r.sources=[],r=>r.summary='<script>bad</script>',r=>delete r.registration.deadline,r=>r.registration.deadline='2026-02-30',r=>r.livestream.url='https://example.com/watch',r=>r.replay.status='available']){const r=fixture();edit(r);assert.throws(()=>validateEvents([r]));}
@@ -21,13 +26,13 @@ test('local, publicly watchable and approved ended exceptions are separate admis
   assert.throws(()=>validateEvents([online]));
   online.livestream={status:'available',url:'https://example.com/live',publicAccess:true,note:'已核验的公开直播入口。'};
   assert.equal(validateEvents([online])[0].scope,'online');
-  const archive={...structuredClone(source[1]),verifiedAt:'2026-11-01'};
+  const archive={...fixtureById('fixture-archive'),verifiedAt:'2026-11-01'};
   assert.throws(()=>validateEvents([{...archive,archiveExceptionApproved:false}]));
   assert.throws(()=>validateEvents([archive],at('2026-11-14T04:00:00Z')),/按当地时间结束/);
   assert.equal(validateEvents([archive],at('2026-11-14T08:00:00Z'))[0].scope,'archive');
 });
 test('event URLs accept official presentation links but reject credential, internal, tracking and redirect URLs',()=>{
-  assert.equal(publicEventURL(source[0].agendaUrl),source[0].agendaUrl);
+  const agendaUrl=fixtureById('fixture-local').agendaUrl;assert.equal(publicEventURL(agendaUrl),agendaUrl);
   assert.equal(publicEventURL('https://www.sglang.io/summit#agenda'),'https://www.sglang.io/summit#agenda');
   for(const value of ['http://example.com/event','javascript:alert(1)','https://user:pass@example.com/event','https://127.0.0.1/event','https://[::1]/event','https://localhost/event','https://a.internal/event','https://127.0.0.1.nip.io/event','https://example.com:8080/event','https://example.com/event?token=secret','https://example.com/event?redirect=private','https://example.com/event?id=1&id=2','https://example.com/event#token=secret'])assert.throws(()=>publicEventURL(value),value);
 });

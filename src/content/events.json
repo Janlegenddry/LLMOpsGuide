@@ -65,5 +65,61 @@
     "verifiedAt": "2026-11-16",
     "publicationApproved": true,
     "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "tencent-cloud-agent-runtime-shenzhen-2026-11-21",
+    "title": "生产可用的 Agent：从工程架构到生命周期管理 · 腾讯云架构师城市沙龙深圳站",
+    "organizer": "腾讯云架构师技术同盟",
+    "scope": "local",
+    "region": "shenzhen",
+    "scopeNote": "深圳本地线下 Agent 平台工程活动，关注运行时、治理与生命周期管理；不是推理引擎专场。",
+    "archiveExceptionApproved": false,
+    "status": "scheduled",
+    "startDate": "2026-11-21",
+    "endDate": "2026-11-21",
+    "startAt": "2026-11-21T14:00:00+08:00",
+    "endAt": "2026-11-21T18:00:00+08:00",
+    "timeZone": "Asia/Shanghai",
+    "format": "in-person",
+    "city": "深圳",
+    "venue": "腾讯大厦 411 会议室",
+    "address": "深圳市南山区深南大道 10000 号",
+    "summary": "面向生产落地的 Agent 平台工程交流，讨论架构、工作负载运行时、治理和生命周期管理。官方议程在15:25安排运行时与治理分享。",
+    "topics": [
+      "Agent Infra",
+      "平台工程",
+      "运行时与治理",
+      "生命周期管理"
+    ],
+    "officialUrl": "https://developer.cloud.tencent.com/salon/salon-2568",
+    "agendaUrl": "https://developer.cloud.tencent.com/salon/salon-2568",
+    "registration": {
+      "status": "link",
+      "url": "https://developer.cloud.tencent.com/salon/salon-2568",
+      "deadline": null,
+      "note": "2026-11-16 官方活动页提供现场报名入口；截止时间和余位待确认。未提交报名。"
+    },
+    "livestream": {
+      "status": "unconfirmed",
+      "url": null,
+      "publicAccess": false,
+      "note": "尚未核验到官方公开直播入口。"
+    },
+    "replay": {
+      "status": "unconfirmed",
+      "url": null,
+      "publicAccess": false,
+      "note": "尚未核验到官方公开回放。"
+    },
+    "sources": [
+      {
+        "title": "腾讯云官方活动、议程与现场报名页",
+        "url": "https://developer.cloud.tencent.com/salon/salon-2568"
+      }
+    ],
+    "verifiedAt": "2026-11-16",
+    "publicationApproved": true,
+    "containsPrivateData": false
   }
 ]
