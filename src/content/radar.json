@@ -3981,6 +3981,561 @@
   },
   {
     "schemaVersion": 1,
+    "id": "vllm-epd-multimodal-handoff-cost",
+    "kind": "analysis",
+    "title": "vLLM 多模态 EPD：三段交付契约与每卡成本",
+    "summary": "把布局元数据、E→P 编码张量和 P→D KV 拆开验收。重算 GB200 作者数据后，低并发更快不等于更省卡；H20 的共享复用结果也只回答复用问题。",
+    "publishedAt": "2026-11-11",
+    "reviewedAt": "2026-11-15",
+    "topics": [
+      "vLLM",
+      "PD 分离",
+      "KV Cache",
+      "NPU/昇腾"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM 官方博客：多模态 Encoder 分离",
+        "url": "https://vllm.ai/blog/2026-11-11-encoder-disaggregation-epd",
+        "publishedAt": "2026-11-11",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "vLLM：跨 Encoder 输出复用指南",
+        "url": "https://docs.vllm.ai/en/latest/features/cross_encoder_cache",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "vLLM：Mooncake EC 连接器指南",
+        "url": "https://docs.vllm.ai/en/latest/features/mooncake_ec_connector_usage",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "vLLM #55290：远端编码结果不可用时隔离请求",
+        "url": "https://github.com/vllm-project/vllm/pull/55290",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "vLLM #62802：DeepSeek-V4.1 图片仅元数据输入",
+        "url": "https://github.com/vllm-project/vllm/pull/62802",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "vLLM Ascend：EPD 分离与跨 Encoder 缓存核对",
+        "url": "https://docs.vllm.ai/projects/ascend/en/main/user_guide/feature_guide/epd_disaggregation.html",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "vLLM 博客仓库：Figure 5 原始 CSV",
+        "url": "https://github.com/vllm-project/vllm-project.github.io/blob/main/assets/figures/2026-10-18-encoder-disaggregation-epd/05-deepseek-v41-epd.csv",
+        "review": {
+          "category": "blog",
+          "publisher": "vLLM 博客项目",
+          "status": "attributed",
+          "note": "从官方文章源码追到同仓原始 CSV，核对了部署、并发、GPU 数与 TTFT/吞吐数据列；仅核对作者数据，未复现实验。"
+        },
+        "accessedAt": "2026-11-15"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "官方文章区分仅元数据请求与编码张量传输，并单列跨 Encoder 输出复用。",
+        "sourceIndices": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本文未在目标 H20 或昇腾环境运行；真实成本和兼容性待验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "能否分别证明布局重建、嵌入交付和 P→D KV 交付？",
+      "固定设备预算下，满足 SLO 的请求数是否增加？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验于 2026-11-15。11 月 11 日官方技术文章、配套主线文档和公开作者数据，不是新版本发布。GPU 作者实验使用 main 5314c58281 加模型扩展，昇腾引用在线主线文档；本文未做硬件复现。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先证明交接正确，再为 E 池付卡费",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "值得设计的是两张独立的账：布局契约能否避免 P 重复处理媒体，以及增加 E 池后，满足首 token 与流式 SLO 的请求数能否覆盖全部部署成本。对已经做 P/D 分离的服务，E→P 的编码张量不是 P→D 的语言模型 KV；Mooncake Store 的共享命中也不是交付给 P 成功。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                6
+              ],
+              "text": "作者在短答案、多页文档负载上比较 8 卡 PD 与 12 卡 EPD；在并发 16 时后者的首 token 尾延迟较低、整体 token 吞吐较高，但按全部 GPU 折算的吞吐反而下降。这个组合不支持“拆了 E 就一定更省卡”。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：从媒体文件到语言模型输入之间发生了什么",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                4
+              ],
+              "text": "预填充前还有媒体读取、预处理和模态编码。远置编码得到嵌入后，如果 P 仍收到原图，就可能再次做布局所需的预处理；这不等于执行第二次 encoder forward。仅元数据路径让 P 按模型要求重建位置，并通过独立连接器获取编码张量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可把一次多图请求视为两种对象加一份索引：布局告诉 P 第几张图占哪些位置，张量给出该位置的向量，索引用于把两者拼回同一请求。批处理、切换副本或重试后，只检查形状相等不足以证明内容属于这些位置。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：布局、嵌入和 KV 分账",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "三条不同的交付契约",
+              "caption": "原创语义数据流，非实测时间轴。共享 Store 是可选旁路；连线表示数据依赖，不承诺每条消息先后或同步完成。E+PD 将 P 与 D 合在一处。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "nodes": [
+                {
+                  "id": "ingress",
+                  "label": "多模态入口",
+                  "detail": "路由器把需要编码的媒体交给 E。保留文本、生成参数与请求关联，不把编码张量当 JSON 元数据转发。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "多模态入口",
+                  "subtitle": "原媒体与文本",
+                  "tone": "control"
+                },
+                {
+                  "id": "encoder",
+                  "label": "编码实例 E",
+                  "detail": "E 确认输入与模型身份；命中共享 Store 时取回匹配的编码结果，否则执行编码并按条件异步发布。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "编码实例 E",
+                  "subtitle": "预处理与编码",
+                  "tone": "compute"
+                },
+                {
+                  "id": "store",
+                  "label": "共享 Store",
+                  "detail": "可选分支。共享的是 encoder output，不是语言模型 KV；本地未命中才查共享 Store。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "共享 Store",
+                  "subtitle": "跨 E 复用",
+                  "tone": "kv"
+                },
+                {
+                  "id": "layout",
+                  "label": "布局契约",
+                  "detail": "E 将布局元数据经路由交给 P，例如模型所需网格；P 据此重建占位与顺序。它不是向量数据本身。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "布局契约",
+                  "subtitle": "占位与形状",
+                  "tone": "control"
+                },
+                {
+                  "id": "ec",
+                  "label": "EC 交接",
+                  "detail": "E 到所选 P/PD 的编码向量数据路径。即使共享 Store 命中，此交付仍要完成。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "EC 交接",
+                  "subtitle": "嵌入独立传输",
+                  "tone": "communication"
+                },
+                {
+                  "id": "prefill",
+                  "label": "预填充 P",
+                  "detail": "按契约将嵌入合并到对应占位，再由语言模型完成预填充。元数据型请求没有原媒体时，不能假设本地重编码。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "预填充 P",
+                  "subtitle": "合并并生成 KV",
+                  "tone": "compute"
+                },
+                {
+                  "id": "kv",
+                  "label": "KV 交接",
+                  "detail": "只有 P/D 拆分时才是独立传输边；承载的是语言模型注意力 KV，不是 E 到 P 的嵌入。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "KV 交接",
+                  "subtitle": "P 到 D 的状态",
+                  "tone": "kv"
+                },
+                {
+                  "id": "decode",
+                  "label": "解码 D",
+                  "detail": "D 从正确请求的 KV 开始生成，观测首 token、流式间隔和正常或失败终态。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "解码 D",
+                  "subtitle": "生成与返回",
+                  "tone": "compute"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "ingress",
+                  "to": "encoder",
+                  "label": "原始媒体"
+                },
+                {
+                  "from": "encoder",
+                  "to": "store",
+                  "label": "异步发布输出"
+                },
+                {
+                  "from": "store",
+                  "to": "encoder",
+                  "label": "共享命中交回嵌入"
+                },
+                {
+                  "from": "encoder",
+                  "to": "layout",
+                  "label": "通过路由转交布局"
+                },
+                {
+                  "from": "encoder",
+                  "to": "ec",
+                  "label": "提供实际编码张量"
+                },
+                {
+                  "from": "layout",
+                  "to": "prefill",
+                  "label": "匹配占位和顺序"
+                },
+                {
+                  "from": "ec",
+                  "to": "prefill",
+                  "label": "交付实际嵌入"
+                },
+                {
+                  "from": "prefill",
+                  "to": "kv",
+                  "label": "生成 LM KV"
+                },
+                {
+                  "from": "kv",
+                  "to": "decode",
+                  "label": "交付对应请求 KV"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "媒体准备与编码复用",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "ingress",
+                      "encoder",
+                      "store",
+                      "layout"
+                    ]
+                  },
+                  {
+                    "title": "两段数据交付与消费",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "ec",
+                      "prefill",
+                      "kv",
+                      "decode"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "Mooncake EC 的 TCP/RDMA 选择对应嵌入交付。共享输出复用是不同功能：E 可以从 Store 取出可复用张量，而交付到消费侧仍由连接器完成。当前公开指南的初始共享组合对模态、执行器、TP 和 LoRA 有明确限制；异步写入也不是跨实例的去重锁。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "拆开观测三类完成事件：E 计算结束、张量交接完成、P 已消费正确张量。RPC 返回或缓存标志不足以证明后一个事件。若负载经 P/D 拆分，还要再观测独立的 KV 交付；不要拿 E 层的命中率解释 D 层的所有长尾。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：两个实验回答不同问题",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "作者公开结果及源码边界；没有本站复现",
+              "columns": [
+                "证据",
+                "环境和结果",
+                "不能据此推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "GB200 · 低并发",
+                    "DeepSeek V4.1 Flash，多页文档 512 问、三轮；平均输入约 4.9k、输出约 5 个 token。C16 的 P90 TTFT 2.78→2.01 s。总吞吐 +25.4%，按 8→12 张部署卡归一后 −16.4%。",
+                    "不是等卡比较，不是长输出或 H20 数据。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "GB200 · 较高并发",
+                    "相同实验，C64/96/128 的输入与输出合计 token/s/GPU 分别约 +9.5%/+8.8%/+6.6%。P/D 配置不变；E→P 为 Mooncake RDMA，两组 P→D 都是 NIXL。",
+                    "只能说明该模型、请求集与并发点的作者结果。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "H20 · 共享复用",
+                    "同节点 TCP，InternVL3_5-38B-HF，2E+4PD。预填充共享缓存后刻意改派图片到本地不命中的 E；128 个请求、512 张图，作者报告 P90 TTFT 由 1.656 降至 0.891 s。",
+                    "比较的是共享复用开关，不是 PD 对 EPD，也不是自然命中率或跨节点 RDMA。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "源码变更说明",
+                    "PR 分别描述丢失编码结果时的请求级错误处理、DeepSeek 模型的图片元数据接口。",
+                    "文章使用 main 5314c58281 加扩展；不能据 PR 或文章承诺现有发行镜像。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3,
+                    4
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                6
+              ],
+              "text": "低并发算账示例：每卡吞吐比等于 49135/39168 再乘 8/12，约 0.836。分母取全部部署卡，而不是只取忙卡或只取 P/D 卡。短输出的总 token/s 主要反映输入，不能替代生成吞吐或每请求成本。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：何时先做 E+PD，何时保留共置",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "优先试验 E+PD 的条件是媒体阶段确实占据首 token 或挤占语言模型资源，且负载有足够视觉计算支撑独立副本。小流量、以文本为主或高局部命中时，额外排队、传输、跨服务失败点和空闲 GPU 开销未必划算。应使用相同硬件预算给共置基线同样的优化机会，再另做加卡后可达能力对比。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "昇腾主线文档提供 EPD 与跨 E 复用验证，但它不是 CUDA 图或 GPU RDMA 性能证明。核查 NPU 文档描述的模型、连接器、镜像和传输路径；在自己的版本上不能把同名选项视为同一实现。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产：故障要停在出错请求，不能污染邻居",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                3
+              ],
+              "text": "作者与对应 PR 描述了仅元数据请求遇到远程编码缺失而无法本地补算时的隔离处理。带原媒体与只有元数据的两类请求，具备不同回退前提。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "按独立证据归因：只在跨 E 后失败先看命中/身份/异步发布；E 已产出但 P 等待长先看连接器与消费侧队列；向量已交付但首 token 慢再看 P 的占位、预填充、KV 交接和 D 排队。不要用 HTTP 200 证明多图顺序正确，也不要把连接器成功直接当作用户观察到首 token。灰度以完整 E+P 配套单元切换为宜，回滚要能让后续请求转回可用入口，并明确飞行中请求的终态。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：从交付正确性到同成本对照",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议的隔离实验矩阵，未执行",
+              "columns": [
+                "试验",
+                "固定项与变量",
+                "采集证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "A · 接口基线",
+                    "同模型、固定请求集与解码设置；先比共置与 E+PD。覆盖不同页数、重复图片、图片换序与文本旁路。",
+                    "对照答案与结构；记录请求 ID、媒体序号、输出宽度、来源实例及 P 占位。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "B · 复用隔离",
+                    "同一 E+PD 结构；对比本地冷、共享将暖未暖、E0 发布后将同项改派到冷 E1，以及重复访问原 E。",
+                    "记录共享命中与 encoder forward 次数，并独立验证 P 收张量；在 Ascend 不要跳过异步写证据。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "C · 交付故障",
+                    "测试环境按预定策略模拟一个请求的 E 不可用或传输超时，同时保持邻居与新请求正常运行。分开检验仅元数据、允许原媒体回退两类。",
+                    "记录失败层、终态、资源清理、邻居正确性和实例存活；比较清理前后待交付对象。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "D · 性能与资源",
+                    "以同等卡预算对比，再单列加卡试验；媒体与纯文本混跑，分冷暖与短长输出，做流量斜坡和尖峰。",
+                    "E/EC/P/KV/D 分段延迟，队列与分卡利用率；端到端 P90/P99 TTFT、ITL、生成吞吐与 SLO goodput。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：四道门互不抵扣",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "阈值由同一业务 SLO 和基线提前给出；以下不是实测成绩",
+              "columns": [
+                "门槛",
+                "测量口径",
+                "停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正确性",
+                    "固定可重复样本，检查媒体序号、嵌入契约和结构化结果；灰度前设定质量差异容限。",
+                    "出现媒体交叉、布局错配或不可解释的答案退化即停止。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "故障隔离",
+                    "在测试窗口计数仅一个预定请求的可解释终态、其他请求成功率与资源回落；观察恢复后新请求。",
+                    "单请求异常触发引擎退出、邻居异常或资源持续攀升即停止。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "延迟与容量",
+                    "客户端首 token 与真实流式间隔分开看；以全部发送请求为分母看达标率。",
+                    "只提高总 token/s 而恶化约定的长尾或成功率，不放量。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成本",
+                    "同计量周期内，汇总所有部署 GPU/NPU 的设备秒与必要存储/网络开销，除以 SLO 达标完成量。",
+                    "同预算无收益则不启用；加卡仅在独立批准的容量目标下比较。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：不是版本兼容表",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "未在目标 H20 或昇腾 NPU 镜像执行。本地应固化模型修订、驱动与依赖、E/P/D 配额、EC/KV 后端、请求混合比、跨节点条件；公开文档主线的支持范围不作为发布保证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                0
+              ],
+              "text": "待测真实共享命中的冷热转换、Store 内存和网络开销、版本不匹配时的安全回退，以及 E 侧工作能否被 P 侧复用判定省去。文章中这是设计方向，不把它当成已经具备的功能。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "pytorch-nccl-ep-handle-window-boundaries",
     "kind": "analysis",
     "title": "PyTorch NCCL EP：句柄复用要保活计数器，零拷贝要对齐窗口原点",
