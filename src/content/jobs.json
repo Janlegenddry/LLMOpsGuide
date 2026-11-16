@@ -941,5 +941,83 @@
     ],
     "publicationApproved": true,
     "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "aliyun-100053520006",
+    "company": "阿里云",
+    "title": "大模型推理存储研发工程师（稳定性、可观测方向）",
+    "locations": [
+      "杭州"
+    ],
+    "category": "inference",
+    "level": "本科，5 年以上工作经验（官网基础信息）",
+    "summary": "为 KVCacheStore 研发跨推理引擎、缓存服务和分层存储的诊断与恢复能力，把慢读、传输阻塞和回退等问题变成可复现、可定位、可回归验证的工程问题。",
+    "skills": [
+      "KV Cache",
+      "分布式存储",
+      "可观测性",
+      "故障恢复",
+      "Linux",
+      "C++ / Go / Python"
+    ],
+    "url": "https://careers.aliyun.com/off-campus/position-detail?positionId=100053520006",
+    "sourceName": "阿里云官方招聘",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-15 浏览器核对杭州岗位完整职责、要求与“投递简历”入口。官网标注更新于 2026-10-29，未披露发布日期。未接受条款或提交申请。",
+    "verifiedAt": "2026-11-15",
+    "postedAt": null,
+    "priority": "related",
+    "matchReasons": [
+      "贴近推理稳态运维与 KV 存储交界，覆盖缓存访问对请求时延的影响",
+      "将故障分析、监控、恢复演练转化为可维护工具，适合关注推理稳定性工程化的读者"
+    ],
+    "gaps": [
+      "需要存储、分布式缓存、KV 或数据库存储方向的研发或稳定性建设经验",
+      "至少熟练掌握 C++、Go、Python 之一，并能独立维护工具或恢复机制"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "tencent-2100902021447200768",
+    "company": "腾讯",
+    "title": "腾讯云 MaaS SRE 工程师",
+    "locations": [
+      "深圳"
+    ],
+    "category": "sre",
+    "level": "本科及以上，3 年以上工作经验；其中至少 1 年大型在线服务 SRE 或平台运维经验",
+    "summary": "负责腾讯云 MaaS 从网关到推理引擎的可靠性与容量治理，优化尾延迟和单卡产出，并建设高并发反压、多可用区容灾和排障自动化。",
+    "skills": [
+      "MaaS",
+      "SRE",
+      "TTFT / TPOT",
+      "SGLang / vLLM",
+      "KV Cache",
+      "Kubernetes",
+      "CUDA",
+      "RDMA / NCCL"
+    ],
+    "url": "https://careers.tencent.com/jobdesc.html?postId=2100902021447200768",
+    "sourceName": "腾讯官方招聘",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-15 浏览器核对 CSIG 深圳职位完整职责、要求及“申请岗位”入口。官网标注更新于 2026-09-20，未披露发布日期。与已收录的其他腾讯推理 SRE 职位是不同编号；未提交申请。",
+    "verifiedAt": "2026-11-15",
+    "postedAt": null,
+    "priority": "related",
+    "matchReasons": [
+      "明确覆盖推理 SLO、容量与反压、KV Cache 与时延吞吐调优",
+      "关注多可用区故障切换和压测驱动的容量与成本规划"
+    ],
+    "gaps": [
+      "职位要求 CUDA 编程实践，并能独立排查 RDMA/NCCL 通信卡死、降级或带宽异常",
+      "需要熟悉推理引擎内部机制及 GPU 容器化，并能交付生产自动化工具"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
   }
 ]
