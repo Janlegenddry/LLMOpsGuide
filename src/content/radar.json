@@ -3380,6 +3380,607 @@
   },
   {
     "schemaVersion": 1,
+    "id": "sglang-unified-memory-capacity-completion",
+    "kind": "analysis",
+    "title": "SGLang Unified Memory：统一容量，不等于统一完成证明",
+    "summary": "从混合模型的容量错配出发，区分可迁移字节、逻辑释放与物理复用；重点分析 PD 失败传输的证据缺口和配置组合门禁。收益来自单 H200 作者实验，不是 H20 上线承诺。",
+    "publishedAt": "2026-11-11",
+    "reviewedAt": "2026-11-14",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "PD 分离",
+      "服务调度"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "LMSYS · Unified Memory: One Arena for Every Token Lifetime",
+        "url": "https://www.lmsys.org/blog/2026-11-11-unified-memory",
+        "publishedAt": "2026-11-11",
+        "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "SGLang · Unified Memory 使用与兼容性矩阵",
+        "url": "https://docs.sglang.io/docs/advanced_features/unified_memory",
+        "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "SGLang · Unified Memory 设计与已知限制",
+        "url": "https://docs.sglang.io/docs/advanced_features/unified_memory_design",
+        "accessedAt": "2026-11-14"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "官方将此功能标为实验性、面向混合模型；PD 与投机、PP、DCP 的组合仍受限制。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "confirmed",
+        "text": "设计文档明确列出 PD 失败传输与 checkpoint 停滞的未闭合边界，不能以统一内存设计替代恢复安全证明。",
+        "sourceIndices": [
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本文未执行硬件实验，未确认正式发布产物和 H20 性能。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "统一容量后，是哪种资源或完成条件成为下一道瓶颈？",
+      "负载切换时减少的等待，是否由搬移延迟重新出现在尾部？",
+      "失败传输的页复用，能否取得与旧操作同一代次的停止证明？"
+    ],
+    "related": [
+      {
+        "title": "页复用与 forward fence",
+        "path": "/radar/sglang-lazy-page-reuse-forward-fence/"
+      },
+      {
+        "title": "H20 服务 SLO",
+        "path": "/radar/h20-serving-slo/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "核验日期 2026-11-14。阅读 11 月 11 日 LMSYS 原文及当前官方 usage/design 全文，区分静态文章实验与滚动文档兼容性；文档主分支不代表某个正式版本。未执行 CUDA、H20、NPU 实验，未运行作者 stress harness。本文是公开资料原创机制与运维分析，不复制原图。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：减少容量错配，但别合并两类许可",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "我的判断是先在有真实混合状态容量错配的隔离环境评估，而不是把它当成所有模型的显存加速开关。这里的“统一”首先解决一种资源有空闲而另一种资源不能借用的问题；它不会自动消除复制成本、请求槽位上限或远端传输失败。若目标已经由算力、网络或 tokenizer 限制，重新分配字节可能只改变排队位置。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "官方标为实验性；文章的对比基于单 H200、指定提交与两个混合模型。当前使用矩阵把纯 full-attention、DeepSeek-V4 等排除在外。不要将实验性开关理解为 H20 通用推荐。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上线判断应保留两张检查表：容量检查证明一个请求有机会被容纳；完成检查证明给新请求的字节不会继续被旧操作触碰。两张表可以共用账本，却不能互相代替。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：利用率很高，也可能是错误的容量边界",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学例：假设两类状态分别被分配 60 和 40 个抽象容量单位，当前需求为 70 和 20。总量只要 90，但第一类已无空位。把 GPU 总显存利用率当唯一准入指标，会把“总量够”误判成“请求可以继续”。单位故意不是 GB，也不是模型实测，避免将形状、页取整和权重余量隐藏在漂亮百分比后。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "官方设计让不同状态共享 arena，并以虚拟 token 身份间接定位物理页；搬移不必等同于重写所有请求表。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这与 Unified Radix 不是同一个问题：前者改变字节的归属与迁移，后者关注缓存身份、命中和生命周期。两者都可能涉及 eviction，但“找到相同前缀”不会凭空改变某种状态的可用容量。与旧页 fence 专题相比，本文新增联合准入与组合配置的运维判断。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：先做可行性判断，再完成安全交接",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "原创双泳道：容量许可与写入许可必须分别验收",
+              "caption": "教学示意，非源码完整状态机、非实测时间线。上行表示能否容纳，下行表示何时可写；红线式故障结论未被假定。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "demand",
+                  "label": "请求需求",
+                  "detail": "上下文、窗口、状态槽形成联合需求",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "fit",
+                  "label": "容量判断",
+                  "detail": "先回答字节与布局是否能容纳",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "move",
+                  "label": "搬移计划",
+                  "detail": "确定哪些页可移动，哪些旧使用必须等待",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "admit",
+                  "label": "准入执行",
+                  "detail": "满足布局后进入执行，不等于失败恢复已闭合",
+                  "column": 3,
+                  "row": 0
+                },
+                {
+                  "id": "old",
+                  "label": "旧使用者",
+                  "detail": "forward、主机复制和网络传输",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "proof",
+                  "label": "完成证据",
+                  "detail": "本地事件和远端结束不是同一种证据",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "reuse",
+                  "label": "物理复用",
+                  "detail": "新写入前检查旧使用与源页保护",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "fail",
+                  "label": "失败旁路",
+                  "detail": "超时后释放仍需独立验证远端停止",
+                  "column": 3,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "demand",
+                  "to": "fit",
+                  "label": "联合需求"
+                },
+                {
+                  "from": "fit",
+                  "to": "move",
+                  "label": "需要调整布局"
+                },
+                {
+                  "from": "move",
+                  "to": "admit",
+                  "label": "实现可行布局"
+                },
+                {
+                  "from": "old",
+                  "to": "proof",
+                  "label": "登记结束条件"
+                },
+                {
+                  "from": "proof",
+                  "to": "reuse",
+                  "label": "完成后允许写"
+                },
+                {
+                  "from": "move",
+                  "to": "reuse",
+                  "label": "迁移后保护旧源"
+                },
+                {
+                  "from": "fail",
+                  "to": "proof",
+                  "label": "远端停止待证"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "容量与调度",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "demand",
+                      "fit",
+                      "move",
+                      "admit"
+                    ]
+                  },
+                  {
+                    "title": "使用者与完成证明",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "old",
+                      "proof",
+                      "reuse",
+                      "fail"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以把一次请求拆成需求向量 D=(全历史页、窗口页、状态槽)，而非一个 token 数。原创推导：对于不同 entry 大小，D 的各项必须先乘本地布局的字节系数再取整；即便总和在预算内，连续 band 的边界与固定页仍可能让当前布局不可用。因此需要区分“存在可行布局”与“现在能无等待地实现布局”。这不是对实现复杂度的证明，而是测试中必须分别观测的两个量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "设计说明中，决策依据逻辑进度而非各 rank 事件恰好完成的墙钟时刻；已发起读操作的旧源保护和待写入的目标排序分开处理。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创时间线：t0 旧 forward 获取物理位置 A；t1 调度器得出逻辑上可以释放；t2 新请求取得逻辑额度；t3 才能证明旧使用结束。若在 t2 直接覆盖 A，会把容量许可误当写许可。搬移时也应区分复制完成、映射更新、旧源复用三件事：新读转向 B，不代表旧读已离开 A。图只表达这种责任划分，不声称每一步对应独立 kernel。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "网络场景增加一个不同的观察主体：本地 stream event 说明本地设备队列的顺序，不能单独说明远端 DMA 已停止。原创检查建议是记录传输代次、buffer 身份、取消/超时发生点及最终释放证据；只看请求终态会漏掉资源的尾部使用。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：功能存在、作者成绩与已知缺口分开",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "资料核对，不是本站复现",
+              "columns": [
+                "证据",
+                "可以确认什么",
+                "不能推出什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "11 月 11 日 LMSYS 技术文章",
+                    "给出统一分配设计与单 H200 作者对比，功能仍为实验性",
+                    "H20、任意混合模型或任意参数都会更快"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "当前官方 usage 矩阵",
+                    "PD 仅 Mooncake；PD 不叠加 PP、投机或 DCP；P/D 需匹配模型、attention TP 与 page size",
+                    "文章列出多个支持特性就能同时开启所有特性"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "当前官方 design 已知限制",
+                    "PD 失败释放路径未证明远端停止触页；checkpoint 停滞可能超出准入预计窗口需求",
+                    "这是已独立复现的现网事故，或所有 PD 请求都不安全"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "证据等级的重要点不在于给每段贴标签，而在于让结论只走到证据允许的终点。本篇没有把作者的 benchmark 数字重绘成本站性能图；统一内存是否为当前部署带来收益，仍应由下面同轨迹、同 SLO 的对照决定。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：节约的容量会把压力转移到哪里",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "首先可能增加搬移与同步成本。测试不要只记录平均吞吐；某次负载从长上下文转向短并发时，布局调整可能恰好集中发生，p99 会比稳态均值更敏感。其次，更多可并发请求会带来更大的计算批次、调度成本与网络压力。容量不再限制时，原来被容量“替你限流”的队列可能开始增长。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "优先级抢占在统一内存下受到限制；运行请求不会仅因更高优先级请求抵达而被该机制撤回。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此有实时高优先级业务时，要测试可等待多久，而不是只测试能否启动。对长时间生成任务，低优先级在途批次可能成为尾延迟来源。服务策略、隔离队列或容量预留可以是候选方案，但本文没有替用户改线上配置。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "PD 与投机等组合受限意味着一个局部显存收益不能直接替换已有服务组合。原创评估应比较完整配置方案，而不是只比较 on/off：若当前收益依赖投机加 PD，新方案在开关前已不满足可比前提。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：用资源生命周期证据定位故障",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设与排除路径，不是已确认缺陷",
+              "columns": [
+                "观察到的症状",
+                "先保留的证据",
+                "容易误判的方向"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "总空闲仍有但请求排队",
+                    "各子池需求、布局、请求槽与准入拒绝原因",
+                    "直接归因为显存泄漏"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "长短请求切换时 p99 上升",
+                    "搬移字节、等待事件、队列驻留时间、相同负载基线",
+                    "把所有延迟算成计算变慢"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "断链后重试出现输出异常",
+                    "请求/传输代次、旧页与新页身份、远端完成或停止证明",
+                    "把超时当作远端写入结束"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "混合模型长生成后预算异常",
+                    "checkpoint 进度、窗口实际保留行、状态槽失败计数",
+                    "只调整全 KV 比例掩盖超额需求"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "在隔离故障注入中，必须把失败请求恢复与不相关请求完整性放在同一个验收窗口。一个请求最终返回错误不意味着恢复成功；还要确认后续新租用该页的请求、其它 rank 的账本及缓存 flush 都符合预期。为避免仅依赖可读文本，保留 deterministic reference 的 token/logit 比对或可接受数值误差规则。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先确认路径，再交叉验证容量与完成",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "待执行实验矩阵，本站未运行",
+              "columns": [
+                "组别",
+                "控制变量与变更",
+                "观察目标"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份门禁",
+                    "固定源码 commit、镜像 digest、CUDA/驱动、模型 revision、dtype、后端；记录全部有效参数",
+                    "启动确认实际启用与拒绝组合，禁止静默退回其它路径"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "基础对照",
+                    "同一受支持混合模型与同一 GPU，固定到达轨迹；仅改变统一内存开关",
+                    "质量一致、稳态吞吐、TTFT/ITL 尾部、准入与撤回"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "容量错配",
+                    "长上下文→短并发→长输出三阶段回放，保留到达时间与初始 cache 状态",
+                    "资源需求拐点、可用/已持有状态、搬移与等待"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期",
+                    "隔离环境注入慢 forward、HiCache 延迟、传输超时，捕捉页代次",
+                    "逻辑释放之后是否仍有人触页，后续复用数据是否正确"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "目标硬件迁移",
+                    "先在选定 H20 配置重新做身份和基础门禁，不使用 H200 比例预测",
+                    "硬件可运行与收益分别验收；NPU 需另行证据"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议保留三次以上独立冷启动与多次稳态回放，并对顺序做交错，降低缓存温度和热编译对结论的影响。具体次数由成本决定，不能把三次视为统计显著性的证明。生成长度由 stop token 变化时，除输入/输出计数外要保留真实完成请求数，否则 tok/s 的差异可能只是工作量不同。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：质量、安全、SLO、效率依次过门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创预定义验收模板；阈值须由服务 SLO 填入，不能冒用作者基准",
+              "columns": [
+                "门禁",
+                "口径",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正确性",
+                    "固定样本 token/logit 差异与容许数值误差",
+                    "预先约定一致性规则全部满足，失败样本可复现"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源安全",
+                    "旧使用完成→页复用，故障后所有权和账本",
+                    "零已知越界/迟到覆盖证据；不能证明远端停止的路径不得宣称闭合"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复",
+                    "故障解除后在途与新增请求",
+                    "无无限等待、无残留泄漏，恢复时长不超事先设定上限"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务质量",
+                    "TTFT、逐 token 延迟分位数与 SLO 内完成请求率",
+                    "同一到达轨迹下不违反既有 SLO；报告统计窗口与拒绝率"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "效率",
+                    "同一 SLO 下有效输出 tokens/s/GPU，含失败重试成本",
+                    "以质量和恢复已过门为前提，收益稳定且超过测量波动"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "GPU 利用率只是解释指标，不能充当验收结果。至少注明采样窗口、P/D 角色与具体 exporter 字段，分别看 SM busy、Tensor 活动、DRAM 和链路流量。如果只看到显存占用更高，而 SLO 内完成请求数没提高，应把它记成容量分配变化，不记成生产收益。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：正式交付与失败结束证明仍单列",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "尚未确认本篇当前滚动文档对应的首个完整正式版本、wheel 和镜像；文章实验提交不能代替生产产物身份。待目标配置确定后再固定源码版本核对，避免文档与实际启动检查漂移。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "尚未独立复现作者 H200 结果、H20 收益、checkpoint 停滞案例或 PD 失败后的页安全。文档明确列出的已知限制是评估边界，不是本站声称发生过的事故。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文没有新增图型或关闭校验器；机制图是现有 lifecycle 语义图型。后续若补实验，应保留本篇失败路径和兼容性限制，只在对应证据处增加测试环境、数据和误差，不用吞吐数字覆盖安全缺口。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "pytorch-nccl-ep-handle-window-boundaries",
     "kind": "analysis",
     "title": "PyTorch NCCL EP：句柄复用要保活计数器，零拷贝要对齐窗口原点",
