@@ -1,0 +1,16 @@
+src/content/events.json
+  h_97a4e319890cc7 68-123
+tests/events.test.mjs
+  h_97a4e319890cc7 8-13,16,29,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "83fc4eeb3c4fa38bf6bd4e151fd9851c51bf87c6",
+  "prompts": {},
+  "humans": {
+    "h_97a4e319890cc7": {
+      "author": "观至 <liguanzhi.lgz@antgroup.com>"
+    }
+  }
+}
