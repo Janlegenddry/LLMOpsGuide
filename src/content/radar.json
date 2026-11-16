@@ -6921,6 +6921,629 @@
   },
   {
     "schemaVersion": 1,
+    "id": "nccl-2-32-6-rank-readiness",
+    "kind": "analysis",
+    "title": "NCCL 2.32.6：数据归属与缓冲就绪，是两道独立的正确性门",
+    "summary": "补录正式版本的 NVLS rank 排列与注册接收 gate 修复：从最终标签源码区分空间归属、访问许可和传输完成，给出不涉及线上故障触发的隔离验收方案。",
+    "publishedAt": "2026-11-09",
+    "reviewedAt": "2026-11-15",
+    "topics": [
+      "GPU 通信",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "NCCL 2.32.6-1 正式发行说明",
+        "url": "https://github.com/NVIDIA/nccl/releases/tag/v2.32.6-1",
+        "publishedAt": "2026-11-09",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "NVIDIA NCCL 2.32.6 release notes",
+        "url": "https://docs.nvidia.com/deeplearning/nccl/release-notes/rel_2-32-6.html",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "2.32.6-1 AllGather 最终源码",
+        "url": "https://github.com/NVIDIA/nccl/blob/v2.32.6-1/src/device/all_gather.h",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "2.32.6-1 ReduceScatter 最终源码",
+        "url": "https://github.com/NVIDIA/nccl/blob/v2.32.6-1/src/device/reduce_scatter.h",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "2.32.6-1 Simple primitives 最终源码",
+        "url": "https://github.com/NVIDIA/nccl/blob/v2.32.6-1/src/device/prims_simple.h",
+        "accessedAt": "2026-11-15"
+      },
+      {
+        "title": "2.32.6-1 网络接收 proxy 最终源码",
+        "url": "https://github.com/NVIDIA/nccl/blob/v2.32.6-1/src/transport/net.cc",
+        "accessedAt": "2026-11-15"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "NCCL v2.32.6-1 为正式发行；报告以最终标签源码确认 rank 映射和接收 gate 变化。",
+        "sourceIndices": [
+          0,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "尚未进行 H20、CUDA Graph、注册通信及模型服务回归。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际执行的是哪套通信库和哪条算法路径？",
+      "输出排列与缓冲访问的完成证据能否分别验收？"
+    ],
+    "related": [
+      {
+        "title": "H20 服务 SLO",
+        "path": "/radar/h20-serving-slo/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-15 核验。阅读正式发行说明、NVIDIA notes、v2.32.6-1 的 AllGather/ReduceScatter/primitives/net.cc 相关完整代码路径；社区 PR 只作线索。未取得11-13修订前文本，未运行硬件或故障注入实验。本文为原创中文机制、诊断与验收分析。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先验数据归属，再验通信进展",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这次版本更值得当作通信正确性候选，而不是一次为 H20 量身定制的性能升级。最需要分开验收的是两件事：collective 返回的数据是否仍属于正确的用户 rank，以及网络接收是否只在对应缓冲已就绪时开始。第一类错误可能没有超时，第二类问题可能没有错误返回；“进程还活着”和“通信跑得很快”都不能代替这两项证据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "NCCL v2.32.6-1 已正式发布。GitHub 元数据给出 2026-11-09 发布、11-13 更新说明；本报告 11-15 补录，不称今日新版本。没有取得更新前文本，不能断言哪段是 11-13 新增。官方发行说明列出单机 NVLS 排列修复及注册缓冲 rendezvous 挂起修复。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议先审计实际加载库，再做隔离回归。不要仅因镜像里安装了这个包就宣布部署覆盖；框架、通信插件和容器搜索路径都可能使另一个库成为实际执行者。本文没有运行 NCCL、SGLang 或硬件实验。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：通信接口的正确性不止是字节相等",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "AllGather 把多个 rank 的片段组织为一个有顺序的结果。即使所有数字都到了，片段排列错了也会改变上层张量含义。ReduceScatter 则把规约结果的对应片段交给各 rank。AllReduce 的总和检查不能替代前两者的逐片段检查：一种检查可能对排列不敏感，另一种恰好依赖排列。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创教学例：四个参与者携带标记 A、B、C、D；内部为了通信而采用 C、A、D、B 次序并非错误，错误是把这个内部顺序直接暴露为 API 规定的输出顺序。这与 GPU 型号无关，是内部编号与用户编号之间的契约问题。真实张量与此符号例不同，不能把例子当复现。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "就绪问题属于另一条维度：缓冲有地址、已经注册、当前操作允许访问、传输已完成，四个条件不是同义词。网络 proxy 与 GPU 可能以不同节奏推进，因此某个操作的收尾不能被理解为可以任意修改后来操作的状态。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：映射方向与通知消费点",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                3,
+                4
+              ],
+              "text": "在最终标签的 AllGather 单机 NVLS 的非注册缓冲分支中，调用 gatherRemap 并传入 denseToUserRank；ReduceScatter 对应分支使用 scatterRemap。primitives 的偏移选择以 remap[i] 作为槽位，而不是直接使用内部循环编号。这里核对的是发行标签，不以 PR 是否显示合并作为交付依据。"
+            },
+            {
+              "type": "diagram",
+              "title": "两种独立的通信契约",
+              "caption": "原创教学机制图，非测量轨迹。左侧表示 AllGather 的空间归属检查；右侧表示注册缓冲接收的就绪消费顺序。两侧没有因果连接，不代表同一请求同时命中两条路径。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "ag-data",
+                  "label": "内部 head 次序",
+                  "detail": "内部编号只代表通信遍历位置",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "内部 head 次序",
+                  "subtitle": "空间归属",
+                  "tone": "compute"
+                },
+                {
+                  "id": "ready",
+                  "label": "设备发布就绪",
+                  "detail": "设备声明本次用户缓冲已可访问",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "设备发布就绪",
+                  "subtitle": "时间归属",
+                  "tone": "control"
+                },
+                {
+                  "id": "ag-map",
+                  "label": "映射到用户 rank",
+                  "detail": "通过 denseToUserRank 找到语义归属",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "映射到用户 rank",
+                  "subtitle": "空间归属",
+                  "tone": "control"
+                },
+                {
+                  "id": "gate",
+                  "label": "proxy 消费就绪",
+                  "detail": "同一操作的 gate 消费一次就绪状态",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "proxy 消费就绪",
+                  "subtitle": "时间归属",
+                  "tone": "control"
+                },
+                {
+                  "id": "ag-slot",
+                  "label": "落到正确槽位",
+                  "detail": "按用户 rank 计算输出偏移",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "落到正确槽位",
+                  "subtitle": "空间归属",
+                  "tone": "kv"
+                },
+                {
+                  "id": "consume",
+                  "label": "完成本次登记",
+                  "detail": "gate 记录已就绪并复位通知槽",
+                  "column": 2,
+                  "row": 2,
+                  "shortLabel": "完成本次登记",
+                  "subtitle": "时间归属",
+                  "tone": "control"
+                },
+                {
+                  "id": "ag-check",
+                  "label": "内容验证",
+                  "detail": "不是看总和，而是核每段归属",
+                  "column": 0,
+                  "row": 3,
+                  "shortLabel": "内容验证",
+                  "subtitle": "空间归属",
+                  "tone": "compute"
+                },
+                {
+                  "id": "recv",
+                  "label": "网络收取",
+                  "detail": "随后提交接收，另验数据到达",
+                  "column": 2,
+                  "row": 3,
+                  "shortLabel": "网络收取",
+                  "subtitle": "时间归属",
+                  "tone": "communication"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "ag-data",
+                  "to": "ag-map",
+                  "label": "内部编号不能直接作用户编号"
+                },
+                {
+                  "from": "ag-map",
+                  "to": "ag-slot",
+                  "label": "沿正确方向映射"
+                },
+                {
+                  "from": "ag-slot",
+                  "to": "ag-check",
+                  "label": "检查 rank 对应内容"
+                },
+                {
+                  "from": "ready",
+                  "to": "gate",
+                  "label": "本次就绪通知"
+                },
+                {
+                  "from": "gate",
+                  "to": "consume",
+                  "label": "只消费一次"
+                },
+                {
+                  "from": "consume",
+                  "to": "recv",
+                  "label": "满足访问前置条件"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "空间：数据属于谁",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "ag-data",
+                      "ag-map",
+                      "ag-slot",
+                      "ag-check"
+                    ]
+                  },
+                  {
+                    "title": "时间：什么时候可以访问",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "ready",
+                      "gate",
+                      "consume",
+                      "recv"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "用映射 m 表示内部位置到用户 rank，教学表达式是 offset(i)=m(i)×每段长度。应核对映射的方向，而不是看到有张“rank 表”就认为正确。将逆映射用于正向落位，仍可能在默认顺序下通过测试，因为恒等排列会掩盖方向差错。验证应选择能区分正逆映射的非自逆排列，同时用 rank 标记检查每个结果段。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "最终 net.cc 在两个注册缓冲 gate 内检查 regBufferReady：尚未消费时等待通知，满足条件后记录已就绪并清理通知槽。收到数据后的 bookkeeping 不再承担同一个通知槽的通用清理。本报告不提供故障触发脚本或针对运行中服务的干扰步骤。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对运维而言，关键不是记住标志的数值，而是知道谁产生、谁消费，以及消费属于哪个操作。验收应保留操作身份、buffer 生命周期和接收完成之间的关系；通过一次状态检查只证明前置条件，不证明网络数据已到达，也不证明最终模型输出正确。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：发行承诺、最终代码与实验缺口",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "本次实际核验范围",
+              "columns": [
+                "依据",
+                "直接支持什么",
+                "不支持什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正式 release 与 NVIDIA notes",
+                    "版本已发行，列有两类修复",
+                    "不能据此确定用户镜像包含此库"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "AllGather / ReduceScatter 标签源码",
+                    "目标分支消费 denseToUserRank",
+                    "不证明全部硬件/算法路径都执行此分支"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "Simple primitives 标签源码",
+                    "偏移计算包含显式 remap",
+                    "不证明任意拓扑映射表都正确生成"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "net.cc 标签源码",
+                    "注册接收 gate 的一次性消费",
+                    "不证明其他 transport、所有注册策略均覆盖"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "本站工作",
+                    "独立阅读并组织防御性验收方案",
+                    "未运行 nccl-tests、模型压测或恢复测试"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "相关社区 PR #2377 与 #2390 仅作为发现线索阅读，不把评论身份、作者环境或提交状态当作硬件认证。报告中的正式归属由 release 与标签代码交叉确认。没有独立复现的数据，不将作者成功案例写成我们已经验证的结果。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：正确性修复不等于免费升级",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "修复空间归属可能使过去看起来“正常”的排列相关输出发生改变，这是恢复契约的预期结果，不应简单用新旧输出完全相等作唯一标准。应先定义独立参考，再比较旧库、新库和参考，而不是把旧库当永远正确的金标准。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "注册与 CUDA Graph 的组合既可能影响执行路径，也可能影响启动时间和资源保留。测试时不能一次同时修改库版本、注册策略、图捕获和拓扑，再把任何变化归给版本。先做单因素判断，再对实际准备上线的组合验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "官方还列有源构建 PTX 链接问题，以及特定 sm_120、FP8 对称 kernel 与 CUDA 工具链组合的已知问题。它们不是 H20 的同一硬件条件；反过来，H20 不属于 sm_120 也不能证明整个新版本在 H20 上无回归。实验性 Flow/GENK 不应与此次稳定性回归捆绑启用。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：用证据拆开相似症状",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若升级或资源重排后模型出现数值异常，优先记录设备可见次序、用户 rank、实际 collective 及选择的算法，再核对输入输出分段。只查卡有没有掉、链路是否可达，会遗漏逻辑排列错误；只查模型权重，也会把通信层错误误归因于量化。此处是排查假设，不是对任何现网故障的诊断。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若设备忙而请求不完成，先区分 GPU 执行、host proxy 推进和远端接收三个时间线。保留请求级超时与受控终止边界，不在生产里修改标志、注入竞争或反复重放可疑序列。必要时在隔离环境由通信组件维护者检查注册生命周期；不能凭利用率单一指标认定通信死锁。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "升级前把实际加载的库版本、容器 digest、驱动、CUDA、插件、拓扑和图设置绑定成一份清单。SGLang 可能同时使用多种通信实现；NCCL 修复只覆盖真正走 NCCL 的部分，不能宣称修复 Mooncake PD 或 NPU/HCCL。回滚也应回到整套已验证组合，而不是只替换一个动态库文件。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：隔离验证，不做线上故障触发",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议实验，全部尚未执行",
+              "columns": [
+                "分组",
+                "固定与变化",
+                "观测",
+                "判据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "库身份",
+                    "固定镜像其余组件，仅切换可支持的 NCCL 组合",
+                    "加载路径、运行时版本、产物哈希",
+                    "身份一致才能比较"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "单机语义",
+                    "固定张量尺寸，比较正常与受支持的非平凡设备排列",
+                    "逐 rank 片段标签与参考结果",
+                    "AllGather/ReduceScatter 各自正确"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "路径覆盖",
+                    "记录实际 NVLS/其他算法与注册状态，不仅看配置意图",
+                    "算法选择证据、正确性错误计数",
+                    "未命中路径不计为通过"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "注册接收",
+                    "隔离两节点常规回归，分别验证注册/非注册和图开/关",
+                    "完成率、进度、超时与资源释放",
+                    "正常负载持续完成且资源无趋势泄漏"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务回归",
+                    "固定模型、请求分布与并发，比较已验库组合",
+                    "TTFT、ITL、错误率、输出一致性",
+                    "质量与服务 SLO 同时通过"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "运维回归",
+                    "隔离环境正常启动、停止和已支持的恢复流程",
+                    "退出耗时、遗留资源、重新 ready",
+                    "没有新增无法解释的等待"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "测试清单需注明 GPU 型号、拓扑、NIC/transport、驱动、CUDA、框架版本、NCCL 和插件版本、张量类型/大小分布及图捕获方式。H20、H100 与 Blackwell 各自成组；没有对应设备就保留待验证，不借另一组结果填空。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：身份、语义、进展和 SLO 分开过门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "预先约定验收条件",
+              "columns": [
+                "层次",
+                "指标定义",
+                "门槛"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份",
+                    "实际加载库和产物清单对应关系",
+                    "缺失任一关键身份即不放行"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "语义",
+                    "逐 rank 输出与独立参考的差异",
+                    "整数标记精确一致；浮点容差实验前冻结"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "活性",
+                    "在预定负载下按时完成的操作/发起操作",
+                    "不允许未解释的挂起；超时按失败计"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务",
+                    "同时满足 TTFT/ITL/错误率限制的请求比例",
+                    "沿用既有 SLO，不能事后放宽阈值"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成本",
+                    "同硬件、同成功负载下有效吞吐与资源用量",
+                    "变化超预算即停，预算在实验前写明"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回滚",
+                    "恢复已验组合后的启动与参考检查",
+                    "回滚必须能真实执行并留下证据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要只用总体平均延迟验收。将首次启动、稳定阶段和停止阶段分别统计；ITL 关注流式停顿，不以平均 TPOT 替代。吞吐必须说明是请求/s、生成 token/s 还是总 token/s，失败和超时不能被排除后仍称成功率提高。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：发布日期清楚，现场覆盖仍待证明",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "待核实的关键点包括：用户目标构建是否加载此版本；具体 H20 拓扑是否选择相关 NVLS 路径；网络注册和 CUDA Graph 组合是否命中对应 gate；非 IB transport 的行为；模型输出与服务 SLO 的回归结果。本文不对这些项目作已通过判断。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "没有更新前发行说明的可靠快照，因此仅保留 published_at 与 updated_at，不能把 API 更新时间当作某项修复的首次披露日。报告作为漏收信号补充，不重复制造“今日重大更新”。实验与上线结果应追加证据再修订，而不是把当前教学示意转成实测结论。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "triton-mmav5-tmem-verifier-boundaries",
     "kind": "analysis",
     "title": "Triton MMAv5 与 TMEM：把结构错误挡在打印和布局计算之前",
