@@ -1645,9 +1645,9 @@
     "id": "vllm-extensible-kv-startup-memory-lifetimes",
     "kind": "analysis",
     "title": "vLLM 启动显存的两条边界：调优峰值不能常驻，捕获空间不能被预热占满",
-    "summary": "11 月 12 日两项 main 修复分别处理 FlashInfer 一次性调优峰值与 CUDA Graph 捕获前的 KV 物理映射。按冻结代码解释 1/2 块最小映射、草稿与 DCP 地址保护、最终缓存下的自适应成本重测，并保留作者实验与生产验收边界。",
+    "summary": "完整报告区分一次性调优、服务瞬态和 CUDA Graph 常驻显存。11 月 14 日补充：v0.34.0rc2 候选标签源码含两项机制；未将候选标签、正式 Release 和实际部署产物混同。",
     "publishedAt": "2026-11-12",
-    "reviewedAt": "2026-11-13",
+    "reviewedAt": "2026-11-14",
     "topics": [
       "vLLM",
       "KV Cache",
@@ -1743,6 +1743,41 @@
         "title": "官方标签与本文合入点的提交关系（11月13日复核）",
         "url": "https://github.com/vllm-project/vllm/compare/v0.33.0rc3...318fca3fddcd6950eeb739737eaafb0973e5f34a",
         "accessedAt": "2026-11-13"
+      },
+      {
+        "title": "v0.34.0rc2 标签对应冻结 Worker 源码",
+        "url": "https://github.com/vllm-project/vllm/blob/8eda4909229a66d23afd9102911bacdc2411143c/vllm/v1/worker/gpu_worker.py",
+        "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "v0.34.0rc2 标签对应冻结调优窗口源码",
+        "url": "https://github.com/vllm-project/vllm/blob/8eda4909229a66d23afd9102911bacdc2411143c/vllm/model_executor/warmup/kernel_warmup.py",
+        "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "v0.33.0 Worker 对照源码",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/v1/worker/gpu_worker.py",
+        "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "v0.34.0rc1 Worker 对照源码",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.34.0rc1/vllm/v1/worker/gpu_worker.py",
+        "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "v0.33.0 调优窗口对照源码",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/model_executor/warmup/kernel_warmup.py",
+        "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "v0.34.0rc1 调优窗口对照源码",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.34.0rc1/vllm/model_executor/warmup/kernel_warmup.py",
+        "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "vLLM v0.34.0rc2 标签页面（不是正式发布验收）",
+        "url": "https://github.com/vllm-project/vllm/releases/tag/v0.34.0rc2",
+        "accessedAt": "2026-11-14"
       }
     ],
     "claims": [
@@ -1761,6 +1796,14 @@
         "status": "pending",
         "text": "本站未运行 GPU 实验，也未确认正式产物已包含；作者的单机启动结果不能外推到 H20、多卡和生产吞吐。",
         "sourceIndices": []
+      },
+      {
+        "status": "confirmed",
+        "text": "2026-11-14 核对 v0.34.0rc2 候选标签源码：包含调优前瞬态峰值保留与非 eager 图捕获前最小 KV 映射；不代表正式二进制或 H20 验收完成。",
+        "sourceIndices": [
+          14,
+          15
+        ]
       }
     ],
     "questions": [
@@ -1776,12 +1819,25 @@
     ],
     "report": {
       "version": 1,
-      "scope": "2026-11-12 核对。第一来源为当日合入提交 318fca3fddcd6950eeb739737eaafb0973e5f34a，冻结树同时含同日较早的 3319c629a148c8f7ce088445911d9db4119af134。两份 PR 分别创建于 11 月 7 日和 9 日，不把创建日、合入日和正式版发布日期混同。独立读取源码、diff 与测试；仅做公开资料原创分析，不含任何内部负载。没有执行 GPU/NPU 测试，也未确认某个正式 wheel 或镜像已包含两项修复。",
+      "scope": "2026-11-12 核对。第一来源为当日合入提交 318fca3fddcd6950eeb739737eaafb0973e5f34a，冻结树同时含同日较早的 3319c629a148c8f7ce088445911d9db4119af134。两份 PR 分别创建于 11 月 7 日和 9 日，不把创建日、合入日和正式版发布日期混同。独立读取源码、diff 与测试；仅做公开资料原创分析，不含任何内部负载。没有执行 GPU/NPU 测试，也未确认某个正式 wheel 或镜像已包含两项修复。 2026-11-14 增量核验：v0.34.0rc2 标签解析为 8eda4909229a66d23afd9102911bacdc2411143c，读取标签源码及 v0.33.0 / v0.34.0rc1 对照。GitHub Releases API 对 rc2 返回 404，网页显示 tagged this，仅证明候选标签存在，不宣称正式 Release 或轮子已交付。保持原文完整内容及原始发布日期。",
       "sections": [
         {
           "id": "conclusion",
           "title": "结论：少留一次性峰值，不等于少留服务余量",
           "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                14,
+                15,
+                16,
+                17,
+                18,
+                19
+              ],
+              "text": "11 月 14 日版本边界更新：v0.34.0rc2 候选标签的 Worker 已在调优前后分开记录瞬态峰值，并在图捕获前将 extensible KV 收缩至 min_committed_blocks。相同两处具体实现不在本次读取的 v0.33.0 和 v0.34.0rc1 对照源码中。这把结论从“main 已合入”推进到“候选标签源码已包含”，没有推进到“正式产物已验证”或“H20 可直接升级”。"
+            },
             {
               "type": "paragraph",
               "basis": "inference",
@@ -2270,6 +2326,54 @@
                 13
               ],
               "text": "11 月 13 日重新读取原始 PR、冻结源码与回归测试，并核对 v0.33.0rc3 与本文合入点的官方提交比较：两者为 diverged，合入点不是该标签的祖先。此结果只证明该合入提交未沿相同祖先链进入该标签，不排除独立回补或等价实现；正式包、镜像和本地二次构建仍须按实际代码验证。原始变更日期保留 11 月 12 日，不将补发日期伪装为新发布。"
+            },
+            {
+              "type": "table",
+              "caption": "11 月 14 日增量：按代码行为核验候选标签，不只检查提交祖先",
+              "columns": [
+                "对象",
+                "直接观察",
+                "允许的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "v0.34.0rc2 / 8eda4909229a",
+                    "kernel_warmup 保存调优前 peak-current，并在调优后重置峰值；Worker 合并该峰值，非 eager 路径捕获前收缩到最小映射",
+                    "该候选标签源码包含两条关键机制；不是 GPU 回归结果"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    14,
+                    15
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.33.0 与 v0.34.0rc1",
+                    "两文件中未见对应调优前峰值保存字段及捕获前 min_committed_blocks 收缩语句",
+                    "仅针对本次比对的具体实现，不推断旧版任意模型均启动失败"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    16,
+                    17,
+                    18,
+                    19
+                  ]
+                },
+                {
+                  "cells": [
+                    "发布状态",
+                    "rc2 网页为标签展示；本次 Release API 查询返回 404",
+                    "正式 Release、wheel、镜像以及部署 digest 仍需单独核对"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": [
+                    20
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -2377,6 +2481,12 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "建议为一次启动建立阶段账本：构建身份、初始空闲量、当前 allocated 与 peak、物理 KV 提交数、图捕获占用、最终 reserve 与块数。它们必须使用同一 rank、同一时点定义；不能拿 nvidia-smi 的整卡占用直接替代 allocator 的 allocated peak−current，更不能把多 rank 的不同窗口峰值相加。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创部署推导：把升级清单拆成源码身份、二进制身份、运行路径三个门。标签源码相同但镜像重打包时，补丁仍可能缺席；补丁存在但 extensible KV 关闭时，两条分支也不会提供预期行为。先记录镜像 digest、框架 commit、有效启动参数，再比较同一模型相同请求轨迹下的启动峰值与服务余量。不要把调优峰值下降解释成可无条件提高 gpu_memory_utilization。"
             }
           ]
         },
@@ -2570,6 +2680,14 @@
                 "高并发、多 GPU/TP、外部 connector 后续分配、模型精度与 H20 的收益均未得到本文实验支持。",
                 "若后续只补性能摘要，仍应保留本文源码顺序与所有边界；不要用新的吞吐数字覆盖未解决的安全和质量项。"
               ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                20
+              ],
+              "text": "本次没有核实 rc2 wheel、容器构建来源和签名，也没有运行 CUDA 实验。Release API 的 404 仅表示这次调用没有取得 release 对象，不证明标签无效。后续正式版仍需重查标签到实际产物的对应关系，不把 rc2 名称自动等同于正式发布。"
             }
           ]
         }
