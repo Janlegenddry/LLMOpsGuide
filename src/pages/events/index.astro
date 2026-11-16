@@ -1,0 +1,61 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { events, eventFormatNames, eventScopeNames, registrationNames } from '../../events';
+import { eventPhaseNames } from '../../lib/events-time';
+import { withBase } from '../../paths';
+import '../../styles/jobs.css';
+import '../../styles/events.css';
+const ordered=[...events].sort((a,b)=>Number(a.scope==='archive')-Number(b.scope==='archive')||a.startDate.localeCompare(b.startDate));
+const day=(value:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'UTC',year:'numeric',month:'long',day:'numeric',weekday:'short'}).format(new Date(value+'T00:00:00Z'));
+const clock=(value:string,zone:string)=>new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value));
+const latest=events.map(e=>e.verifiedAt).sort().at(-1);
+---
+<BaseLayout title="AI Infra 活动 · Guanzhi Library" description="AI Infra 会议与 meetup：杭州及周边、深圳、上海线下活动，公开线上直播与已结束归档。保留官方议程、报名、直播、回放与核验边界。">
+  <div class="library-shell events-shell" data-events-index>
+    <header class="library-page-heading jobs-heading">
+      <p class="library-eyebrow">GUANZHI LIBRARY / EVENTS</p>
+      <h1>AI Infra 活动</h1>
+      <p>从技术阅读走向社区交流。关注推理引擎、GPU 调度、KV 缓存与可观测性，分清现场参与、线上观看和历史资料。</p>
+      <div class="jobs-overview"><span><strong>{events.length}</strong> 个公开活动</span><span>最近核验 <time datetime={latest}>{latest||'暂无数据'}</time></span></div>
+      <div class="library-heading-links"><a href="#events-results">查看活动 ↓</a><a href="#events-method">收录范围与核验说明</a><a href={withBase('/api/events.json')}>公开数据 JSON ↗</a><a href={withBase('/jobs/')}>社招岗位 ↗</a></div>
+    </header>
+    <section aria-label="筛选 AI Infra 活动">
+      <form class="library-filter events-filter" role="search" method="get" action={withBase('/events/')}>
+        <div class="library-filter__query"><label for="events-query">搜索活动、城市和主题</label><input id="events-query" name="query" type="search" placeholder="例如：杭州、SGLang、KV Cache" autocomplete="off" /></div>
+        <div><label for="events-view">参与与资料</label><select id="events-view" name="view"><option value="all">全部活动</option><option value="local">本地线下</option><option value="watch">可线上观看</option><option value="archive">已结束归档</option></select></div>
+        <div><label for="events-phase">活动状态</label><select id="events-phase" name="phase"><option value="all">全部状态</option><option value="upcoming">即将举行</option><option value="ongoing">当天 / 进行中</option><option value="ended">已结束</option><option value="cancelled">已取消</option></select></div>
+      </form>
+      <noscript><p class="jobs-note">下方保留全部活动、日期和官方链接。筛选与倒计时刷新需要 JavaScript，请以活动日期和主办方页面为准。</p></noscript>
+      <div class="library-result-bar"><p id="events-count" role="status" aria-live="polite" aria-atomic="true">{events.length} 个活动</p><button type="button" class="library-reset" id="events-reset" hidden>清除筛选</button></div>
+      <p class="library-scope">线下聚焦杭州、杭州周边、深圳、上海；公开线上直播不限地区。报名入口可见不保证有名额，核验日不等于活动日。</p>
+    </section>
+    <div class="jobs-results" id="events-results">
+      {ordered.map(event=>{
+        const timing={startDate:event.startDate,endDate:event.endDate,startAt:event.startAt,endAt:event.endAt,timeZone:event.timeZone,status:event.status};
+        const phase=event.status==='cancelled'?'cancelled':event.scope==='archive'?'ended':null;
+        return <article class="job-card event-card" id={event.id} data-event-record data-scope={event.scope} data-phase={phase} data-timing={JSON.stringify(timing)} data-registration={JSON.stringify({status:event.registration.status,deadline:event.registration.deadline})} data-watchable={String(event.livestream.publicAccess||event.replay.publicAccess)} data-search={[event.title,event.organizer,event.city,event.venue,event.summary,...event.topics].join(' ')}>
+          <header><div class="job-card__company"><span>{eventScopeNames[event.scope]}</span><span class="event-phase" data-event-phase>{phase?eventPhaseNames[phase]:'按当地时间更新'}</span></div><h2><a href={event.officialUrl} target="_blank" rel="noopener noreferrer">{event.title} ↗</a></h2><p class="event-countdown" data-event-countdown>{phase==='cancelled'?'活动已取消':phase==='ended'?'活动已结束':'倒计时按当地时间更新'}</p></header>
+          <dl class="job-card__facts event-facts">
+            <div><dt>活动日期</dt><dd><time datetime={event.startDate}>{day(event.startDate)}</time>{event.endDate!==event.startDate&&<> — <time datetime={event.endDate}>{day(event.endDate)}</time></>}</dd></div>
+            <div><dt>当地时间</dt><dd>{event.startAt||event.endAt?`${event.startAt?clock(event.startAt,event.timeZone):'开始时刻待确认'}–${event.endAt?clock(event.endAt,event.timeZone):'结束时刻待确认'}`:'具体小时未确认'}<span class="event-zone">{event.timeZone}</span></dd></div>
+            <div><dt>参与方式</dt><dd>{eventFormatNames[event.format]}</dd></div>
+            <div><dt>地点</dt><dd>{event.city} · {event.venue}{event.address&&<span class="event-address">{event.address}</span>}</dd></div>
+            <div><dt>主办方</dt><dd>{event.organizer}</dd></div>
+          </dl>
+          <p class="job-card__summary">{event.summary}</p><div class="library-tags job-skills">{event.topics.map(topic=><span>{topic}</span>)}</div>
+          <section class="event-registration" aria-label="报名信息"><h3>{registrationNames[event.registration.status]}</h3><p class="event-deadline" data-registration-countdown>{event.registration.status==='closed'?'报名已结束':event.registration.deadline?'报名倒计时按当地时间更新':'报名截止未确认'}</p>{event.registration.deadline&&<p>报名截止：<time datetime={event.registration.deadline}>{event.registration.deadline.length===10?day(event.registration.deadline):new Intl.DateTimeFormat('zh-CN',{timeZone:event.timeZone,dateStyle:'medium',timeStyle:'short'}).format(new Date(event.registration.deadline))}</time> · {event.timeZone}</p>}<p>{event.registration.note}</p>{event.registration.url&&<a href={event.registration.url} target="_blank" rel="noopener noreferrer">{event.registration.status==='closed'?'历史报名入口':'查看官方报名说明'} ↗</a>}</section>
+          <div class="event-media">{[['直播',event.livestream],['回放',event.replay]].map(([label,media])=><section><h3>{label}</h3><p class="event-media__status">{media.status==='available'?'已核验公开入口':media.status==='pending'?`${label}待发布／待核验`:`${label}待确认`}</p><p>{media.note}</p>{media.url&&<a href={media.url} target="_blank" rel="noopener noreferrer">查看官方{label} ↗</a>}</section>)}</div>
+          <div class="event-official-links">{event.agendaUrl?<a href={event.agendaUrl} target="_blank" rel="noopener noreferrer">官方议程 ↗</a>:<span>官方议程待确认</span>}<a href={event.officialUrl} target="_blank" rel="noopener noreferrer">官方活动页 ↗</a></div>
+          <details class="job-assessment"><summary>核验来源与收录说明<span aria-hidden="true">＋</span></summary><div class="job-assessment__body"><p class="job-verification">{event.scopeNote}</p><ul>{event.sources.map(source=><li><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a></li>)}</ul></div></details>
+          <footer><div><span>核验 <time datetime={event.verifiedAt}>{event.verifiedAt}</time></span><span>日期和状态以主办方最新说明为准。</span></div></footer>
+        </article>;
+      })}
+    </div>
+    <div class="library-empty" id="events-empty" hidden={events.length>0}><h2>暂无符合条件的活动</h2><p>可以清除筛选或换一个城市、主题。线上观看只展示已核验的公开直播或回放入口。</p></div>
+    <aside class="jobs-method" id="events-method"><h2>收录与核验边界</h2><div><section><h3>本地与线上分开</h3><p>本地线下收录杭州及周边、深圳、上海。公开线上直播不限地区；其他地区的已结束活动仅作为明确批准的归档例外。</p></section><section><h3>时间不补造</h3><p>倒计时按活动时区更新；只有日期时按当地日历计天。未确认的报名截止、直播与回放分别标注，不把会场屏幕转播当作公开线上直播。</p></section><section><h3>入口不等于名额</h3><p>本页整理公开活动，不代报名、不联系主办方。报名、审核和余票以官方为准；二维码请到官方活动页核对，本站不复制二维码。</p></section></div></aside>
+  </div>
+</BaseLayout>
+<script>
+  import { mountEventsIndex } from '../../scripts/events-index';
+  const root=document.querySelector<HTMLElement>('[data-events-index]');if(root)mountEventsIndex(root);
+</script>

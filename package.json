@@ -13,7 +13,8 @@
     "content:verify": "node scripts/verify-reports.mjs",
     "knowledge:verify": "node scripts/verify-knowledge.mjs",
     "library:verify": "node scripts/verify-library.mjs",
-    "jobs:verify": "node scripts/verify-jobs.mjs"
+    "jobs:verify": "node scripts/verify-jobs.mjs",
+    "events:verify": "node scripts/verify-events.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.3",
