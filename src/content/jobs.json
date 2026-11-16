@@ -503,7 +503,7 @@
     "summary": "保障多推理供应商端点健康，建设故障转移、质量回归检测与容量压测。",
     "url": "https://jobs.ashbyhq.com/openrouter/78fc4670-5ba0-4146-b8b1-1ef4d91b96f1",
     "sourceName": "OpenRouter 官方 Ashby 招聘页",
-    "verifiedAt": "2026-11-11",
+    "verifiedAt": "2026-11-14",
     "postedAt": null,
     "matchReasons": [
       "SRE 经验可衔接推理 API 可靠性",
@@ -525,7 +525,7 @@
     "sourceType": "official",
     "status": "review",
     "priority": "stretch",
-    "statusNote": "2026-11-11 官方原岗位入口仍返回 404。2026-11-10 详情显示 Job not found，且当日官方公开岗位列表未显示同名岗位。无法确认是撤回、换号或招聘结束，继续待复核。历史地点为 Remote (US)，不代表全球远程。",
+    "statusNote": "2026-11-14 官方原岗位详情显示 Job not found；官方当前 26 个公开岗位列表不含同名职位。无法确定撤回、换号或招聘结束，继续待复核，不标记为已关闭。不同 UUID 的 AI Provider Operations & Support Engineer 不是此岗位的已确认替代；历史美国远程限制不代表全球远程。",
     "gaps": [
       "美国远程地区限制",
       "偏供应商与 API 层，不等同 GPU 推理引擎研发",
@@ -693,6 +693,251 @@
       "要求六年以上相关经验及至少一年 AI 服务支持",
       "需熟练网络排障、生产基础设施和编程调试",
       "印度地点及固定周末班是重要限制，不能视为全球远程"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "tencent-2120809479330246656",
+    "company": "腾讯",
+    "title": "大模型推理SRE工程师（深圳/北京）",
+    "locations": [
+      "深圳",
+      "北京"
+    ],
+    "category": "sre",
+    "level": "3 年以上运维/SRE/基础架构；其中 1 年以上推理生产运维或支持",
+    "summary": "TEG 推理生产保障岗位，覆盖引擎发布、性能容量、GPU 故障、模型生命周期与弹性治理。",
+    "skills": [
+      "SGLang",
+      "vLLM",
+      "MindIE",
+      "KV Cache",
+      "PD 分离",
+      "TTFT/TPOT",
+      "Kubernetes",
+      "GPU",
+      "Python/Shell"
+    ],
+    "url": "https://careers.tencent.com/zh-cn/jobdesc.html?postId=2120809479330246656",
+    "sourceName": "腾讯官方招聘",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-14 官方完整职责、要求与申请岗位入口可见，页面更新于 2026-11-13，非初始发布日期。属于 TEG，与现有 CSIG 岗位 2113089272218300416 不同；两条不合并。标题含深圳/北京，地点字段为深圳；未声明远程。",
+    "verifiedAt": "2026-11-14",
+    "postedAt": null,
+    "priority": "strong",
+    "matchReasons": [
+      "直接连接推理稳定性、KV/PD 优化和 GPU 利用效率",
+      "侧重生产交付与故障闭环，不只要求引擎研发"
+    ],
+    "gaps": [
+      "本科及相应学位；需实际推理生产支持经验",
+      "明确要求 7×24 稳定性保障并参与 Oncall",
+      "准备量化优化、GPU/NCCL 排障、灰度回滚与自动化案例"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "tencent-2120809482392092672",
+    "company": "腾讯",
+    "title": "混元AI平台SRE工程师（深圳/北京）",
+    "locations": [
+      "深圳",
+      "北京"
+    ],
+    "category": "sre",
+    "level": "3 年以上运维/SRE/基础架构；其中 1 年以上 AI 产品或 MaaS 生产支持",
+    "summary": "TEG 的 AI 平台可靠性岗位，围绕模型 API、Agent 工具链和版本变更建设观测、诊断与恢复能力。",
+    "skills": [
+      "LLMOps",
+      "MaaS",
+      "Kubernetes",
+      "Python/Go",
+      "可观测性",
+      "Agent",
+      "灰度回滚"
+    ],
+    "url": "https://careers.tencent.com/zh-cn/jobdesc.html?postId=2120809482392092672",
+    "sourceName": "腾讯官方招聘",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-14 官方完整 JD 与申请岗位入口可见；页面更新于 2026-11-13，非初始发布日期。标题含深圳/北京，地点字段为深圳；未声明远程。与 TEG 推理 SRE 为独立岗位。",
+    "verifiedAt": "2026-11-14",
+    "postedAt": null,
+    "priority": "related",
+    "matchReasons": [
+      "SRE 能力可迁移到模型调用和 Agent 平台可靠性",
+      "强调版本可追溯、容量和自动化，贴近 LLMOps"
+    ],
+    "gaps": [
+      "本科及相应学位；需 AI 产品或 MaaS 生产经历",
+      "偏应用平台链路，不等同底层 GPU/推理内核调优",
+      "需 Python/Go 等编程、容器平台和跨团队故障治理能力"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "alibaba-100022940008",
+    "company": "阿里巴巴",
+    "title": "AI推理平台-大模型推理效能与稳定性专家-效能提升",
+    "locations": [
+      "北京",
+      "杭州"
+    ],
+    "category": "inference",
+    "level": "顶部 4 年、硕士；正文 5 年以上、本科及以上，口径须确认",
+    "summary": "通过引擎源码定位、故障注入与长稳压测，推动在线推理的性能、容灾和资源效率改进。",
+    "skills": [
+      "vLLM",
+      "SGLang",
+      "TensorRT-LLM",
+      "KV Cache",
+      "PD 分离",
+      "性能分析",
+      "故障注入",
+      "Python/Go"
+    ],
+    "url": "https://talent-holding.alibaba.com/off-campus/position-detail?positionId=100022940008",
+    "sourceName": "阿里巴巴控股集团官方招聘",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-14 官方完整 JD 与投递简历入口可见。页面标注更新于 2026-10-11，不是新发布日；顶部学历/年限与正文不一致，未擅自选择一种口径。官方自动追加语言参数；此处保留公开原始岗位入口。",
+    "verifiedAt": "2026-11-14",
+    "postedAt": null,
+    "priority": "strong",
+    "matchReasons": [
+      "推理性能与稳定性共同负责，适合从运维排障向效能工程拓展",
+      "将 KV、PD、投机解码等机制与生产压测和收益验证连接"
+    ],
+    "gaps": [
+      "须具备主流推理引擎源码级分析能力，不止部署使用",
+      "需要 Linux/GPU Profiling、分布式追踪和复杂工具开发",
+      "学历与经验口径冲突，应申请前向招聘方确认"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "alibaba-100053500016",
+    "company": "阿里巴巴",
+    "title": "AI推理平台-AI 推理系统工程师（数据化与可观测性方向）-杭州",
+    "locations": [
+      "杭州"
+    ],
+    "category": "platform",
+    "level": "顶部要求 1 年；本科及以上",
+    "summary": "建设推理数据与诊断平台，把请求、引擎执行和资源消耗关联，用自动基准与回归分析支持效能改进。",
+    "skills": [
+      "OpenTelemetry",
+      "Prometheus",
+      "ClickHouse",
+      "Grafana",
+      "SQL",
+      "Python",
+      "KV Cache",
+      "Prefill/Decode"
+    ],
+    "url": "https://talent-holding.alibaba.com/off-campus/position-detail?positionId=100053500016",
+    "sourceName": "阿里巴巴控股集团官方招聘",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-14 官方完整 JD 与投递简历入口可见；页面更新于 2026-11-03，非初始发布日期。地点杭州，未声明远程。官方自动追加语言参数；此处保留公开原始岗位入口。",
+    "verifiedAt": "2026-11-14",
+    "postedAt": null,
+    "priority": "related",
+    "matchReasons": [
+      "推理性能与稳定性经验可转化为观测数据产品和诊断能力",
+      "强调真实负载、容量成本和实验验证，与生产效能分析相接"
+    ],
+    "gaps": [
+      "偏平台研发而非值班运维，要求分布式数据或可观测系统开发",
+      "需掌握数据采集、存储查询与 SQL/Python 定量分析",
+      "vLLM/SGLang 优化和 GPU Profiling 为加分项，不应当作必选条件"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "bitdeer-665b5fad2014",
+    "company": "Bitdeer",
+    "title": "Sr. Inference Service SRE & Automation Engineer",
+    "locations": [
+      "新加坡",
+      "马来西亚槟城"
+    ],
+    "category": "sre",
+    "level": "5 年以上 SRE/生产平台经验，含 2 年以上对外 API SLA 服务经验",
+    "summary": "负责推理 API 到 GPU 副本的可靠性，覆盖调度、KV、发布回滚、容量及故障恢复。",
+    "skills": [
+      "SGLang/vLLM",
+      "Kubernetes",
+      "TTFT/TPOT",
+      "KV Cache",
+      "Go/Python",
+      "SLO/SLA"
+    ],
+    "url": "https://bitdeer.breezy.hr/p/665b5fad2014-sr-inference-service-sre-automation-engineer",
+    "sourceName": "Bitdeer 官网链接的 Breezy 招聘页",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "官方详情与申请页已核验，申请页含岗位数据和申请字段，未填写或提交。发布日期来自详情页 JobPosting 元数据；页面列新加坡/槟城，工作许可及远程政策需确认。",
+    "verifiedAt": "2026-11-15",
+    "postedAt": "2026-10-09",
+    "priority": "strong",
+    "matchReasons": [
+      "侧重生产推理端到端稳定性而非纯算子开发",
+      "包含模型发布、过载保护与恢复演练"
+    ],
+    "gaps": [
+      "需准备跨集群恢复和客户 SLA 事故沟通案例",
+      "Go/Python 自动化、K8s 与 GPU 故障定位要求较深"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "bitdeer-4fa5df6fdc87",
+    "company": "Bitdeer",
+    "title": "Inference Performance Engineer - MaaS",
+    "locations": [
+      "新加坡",
+      "马来西亚槟城"
+    ],
+    "category": "inference",
+    "level": "5 年以上性能、容量或应用 ML 系统经验，含 LLM/ML 推理工作",
+    "summary": "将真实流量分布映射到压测、容量与单位成本模型，并统一推理性能指标口径。",
+    "skills": [
+      "流量分析",
+      "Python/pandas/SQL",
+      "SGLang/vLLM",
+      "KV Cache",
+      "容量规划",
+      "Prometheus/Grafana"
+    ],
+    "url": "https://bitdeer.breezy.hr/p/4fa5df6fdc87-inference-performance-engineer-maas",
+    "sourceName": "Bitdeer 官网链接的 Breezy 招聘页",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "官方详情与申请页已核验，申请页含岗位数据和申请字段，未填写或提交。发布日期来自详情页 JobPosting 元数据；页面列新加坡/槟城，工作许可及远程政策需确认。",
+    "verifiedAt": "2026-11-15",
+    "postedAt": "2026-10-15",
+    "priority": "strong",
+    "matchReasons": [
+      "直接连接推理性能、容量和成本决策",
+      "强调压测与真实负载的一致性"
+    ],
+    "gaps": [
+      "需证明流量统计分析和压测偏差识别能力",
+      "需掌握 GPU 单位成本建模与跨团队指标治理"
     ],
     "publicationApproved": true,
     "containsPrivateData": false
