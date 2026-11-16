@@ -1,0 +1,14 @@
+src/content/jobs.json
+  h_97a4e319890cc7 944-1021
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f045e5329ef84ef9aa47d411cee06fee544f2291",
+  "prompts": {},
+  "humans": {
+    "h_97a4e319890cc7": {
+      "author": "观至 <liguanzhi.lgz@antgroup.com>"
+    }
+  }
+}
