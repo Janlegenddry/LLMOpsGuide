@@ -13,5 +13,25 @@
     "verifiedAt": "2026-11-16",
     "publicationApproved": true,
     "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "ai-fundamentals",
+    "title": "AI Fundamentals",
+    "url": "https://forceinjection.github.io/",
+    "repositoryUrl": "https://github.com/ForceInjection/AI-fundamentals",
+    "type": "中文知识库",
+    "maintainer": "ForceInjection",
+    "description": "中文 AI Infra 知识库，覆盖 GPU 架构、CUDA、NCCL / InfiniBand、Kubernetes GPU 管理与大模型推理，可查阅 vLLM、SGLang 和 KV Cache 相关章节。",
+    "topics": [
+      "GPU / CUDA",
+      "NCCL / InfiniBand",
+      "Kubernetes",
+      "大模型推理"
+    ],
+    "refreshNote": "更新随项目维护推进，具体进度见原站与仓库。",
+    "verifiedAt": "2026-11-16",
+    "publicationApproved": true,
+    "containsPrivateData": false
   }
 ]
