@@ -14603,6 +14603,695 @@
   },
   {
     "schemaVersion": 1,
+    "id": "vllm-ascend-layerwise-dcp-complete-prefix",
+    "kind": "analysis",
+    "title": "vLLM-Ascend layerwise DCP：命中一个前缀，必须拿齐所有分片",
+    "summary": "解读新合入的 Mooncake layerwise standalone DCP：键命名、保存者选择和 PP×DCP 完整性必须一致。给出拓扑边界、原始 NPU 结果限制与上线前验收矩阵，不把合入当发布。",
+    "publishedAt": "2026-11-07",
+    "reviewedAt": "2026-11-16",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "KV Cache",
+      "PD 分离"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM-Ascend #21254：Mooncake layerwise DCP（已合入）",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/21254",
+        "publishedAt": "2026-11-07",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "LayerwiseKeyBuilder：分片键和全阶段查询",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/217002b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/layerwise_keys.py",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "Mooncake backend：拓扑与准入校验",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/217002b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/mooncake_backend.py",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "Pool worker：DCP 保存者与 rank 校验",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/217002b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/layerwise/pool_worker.py",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "DCP 单元测试：缺片未命中与异址恢复",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/217002b/tests/ut/distributed/ascend_store/test_mooncake_dcp.py",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "冻结开发文档：layerwise 使用边界",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/217002b/docs/source/user_guide/feature_guide/mooncake_layerwise_adaptation_and_optimization.md",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "vLLM v0.33.0 KV cache spec",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/v1/kv_cache_interface.py",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "vLLM-Ascend Release 列表",
+        "url": "https://github.com/vllm-project/vllm-ascend/releases",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "layerwise：cache group 的 DCP 检查",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/217002b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/mooncake_layerwise.py",
+        "accessedAt": "2026-11-16"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#21254 已合入 main；本报告核对最后提交 217002b，不代表已进入正式发行镜像。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本站未做 NPU 复现；生产质量、故障恢复和成本收益待验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "命中集合是否覆盖全部 PP 阶段、DCP 分片与保存头？",
+      "运行镜像是否包含实现，且并行布局通过准入？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-16 核验。PR 原始日期 2026-11-07、合入日期 2026-11-16；源码取 217002b，兼容性参照 vLLM v0.33.0。NPU 作者结果与本站原创推导/待执行实验分开，未进行硬件复现。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先证明缓存完整，再谈 DCP 提速",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                7
+              ],
+              "text": "#21254 于 2026-11-16 合入 main；本文核对 PR 最后提交 217002b 的实现，不把它写成正式发行功能。当前 Release 列表最新可见 v0.32.0rc1（11 月 10 日预发布），不是本变更的收录证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本次最值得学习的是命中判定的单位：一个逻辑前缀块可由多个模型阶段、上下文分片和保存头分组共同组成。若只看到其中一片便减少计算工作，调度器和设备实际拥有的数据就可能不一致。DCP 支持因此不是多加一个并行参数，而是让键、保存责任、命中集合和恢复范围遵守同一份布局契约。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议先在隔离 NPU 环境验证状态完整性，再决定是否进入候选镜像。本文没有 NPU 实测、没有安装软件，也没有修改线上配置；H20 属于不同硬件和引擎适配路径，不能据此宣布收益。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：三个“并行”不代表同一种切分",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "PP 把模型层分给阶段，DCP 把解码所需上下文分给同组设备，PCP 则涉及预填充上下文切分。共享 Store 是状态复用设施，不等于请求一定采用 P/D 分离部署。讨论是否可恢复 KV，必须同时知道层范围、上下文范围、cache group 和头分组；相同 token 哈希不足以描述物理布局。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "作者给出的 NPU 数据是 PDMix：GLM-5.3-W4A4C8-MXFP4，8 卡，128k 输入、1 输出，64 请求、12 个前缀、并发 12，外部前缀比例 0.9，关闭引擎 prefix cache。TP8+DCP8 下 layerwise 开/关 TTFT 为 36.3265/36.8984 秒。本文不复述表中吞吐字段为 decode 速率：它与极短输出的口径需要进一步澄清。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这一数据更像长输入缓存恢复路径的观察，不能证明长生成、多轮会话或故障期间同样受益。公平测试至少需要相同总卡数、输入组成、Store 温度、实际可复用 token 和请求到达过程；否则缓存命中变化可能被误记成并行算子收益。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：把布局身份、写入责任和完整性连接起来",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "键构造器在 DCP>1 时追加 DCP 大小及 rank；DCP=1 不追加该后缀。查询枚举 PP、PCP（仅对应分片组）、DCP 和保存头分组，不是抽查某一个 worker。"
+            },
+            {
+              "type": "diagram",
+              "title": "PP×DCP：对象可用性必须覆盖完整集合",
+              "caption": "原创教学示意，非实测。仅取 PP=2、DCP=2、每阶段一个保存头分组；真实混合组及多个保存头还会增加键。上组将四个独立 KV 对象按阶段归组，再抽象出两个阶段级完整性条件；这只是逻辑分组，不表示实现新增聚合器或 RPC。下组必须同时满足两个条件。箭头是依赖关系，不是网络调用次数；“允许恢复”不是设备载入完成。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "p0",
+                  "label": "阶段 0 的两片 KV",
+                  "detail": "分片 0 与 1 各自保存",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "阶段 0 的两片 KV",
+                  "subtitle": "分片 0 与 1 各自保",
+                  "tone": "kv"
+                },
+                {
+                  "id": "p1",
+                  "label": "阶段 0 完整性",
+                  "detail": "两片均提交才满足",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "阶段 0 完整性",
+                  "subtitle": "两片均提交才满足",
+                  "tone": "control"
+                },
+                {
+                  "id": "p2",
+                  "label": "阶段 1 的两片 KV",
+                  "detail": "不同层的分片 0 与 1",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "阶段 1 的两片 KV",
+                  "subtitle": "不同层的分片 0 与 1",
+                  "tone": "kv"
+                },
+                {
+                  "id": "p3",
+                  "label": "阶段 1 完整性",
+                  "detail": "两片均提交才满足",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "阶段 1 完整性",
+                  "subtitle": "两片均提交才满足",
+                  "tone": "control"
+                },
+                {
+                  "id": "q",
+                  "label": "枚举完整键集合",
+                  "detail": "查询所有阶段和分片",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "枚举完整键集合",
+                  "subtitle": "查询所有阶段和分片",
+                  "tone": "control"
+                },
+                {
+                  "id": "all",
+                  "label": "全部已提交？",
+                  "detail": "不是任意一个键存在",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "全部已提交？",
+                  "subtitle": "不是任意一个键存在",
+                  "tone": "control"
+                },
+                {
+                  "id": "miss",
+                  "label": "未命中",
+                  "detail": "保留正常计算路径",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "未命中",
+                  "subtitle": "保留正常计算路径",
+                  "tone": "compute"
+                },
+                {
+                  "id": "load",
+                  "label": "允许尝试恢复",
+                  "detail": "实际载入完成另验收",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "允许尝试恢复",
+                  "subtitle": "实际载入完成另验收",
+                  "tone": "communication"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "p0",
+                  "to": "p1",
+                  "label": "两片取交集",
+                  "shortLabel": "两片取交集"
+                },
+                {
+                  "from": "p1",
+                  "to": "all",
+                  "label": "阶段 0 满足",
+                  "shortLabel": "阶段 0 满足"
+                },
+                {
+                  "from": "p2",
+                  "to": "p3",
+                  "label": "两片取交集",
+                  "shortLabel": "两片取交集"
+                },
+                {
+                  "from": "p3",
+                  "to": "all",
+                  "label": "阶段 1 满足",
+                  "shortLabel": "阶段 1 满足"
+                },
+                {
+                  "from": "q",
+                  "to": "all",
+                  "label": "完整性检查",
+                  "shortLabel": "完整性检查"
+                },
+                {
+                  "from": "all",
+                  "to": "miss",
+                  "label": "缺任一片",
+                  "shortLabel": "缺任一片"
+                },
+                {
+                  "from": "all",
+                  "to": "load",
+                  "label": "全部满足",
+                  "shortLabel": "全部满足"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "KV 分片与阶段完整性",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "p0",
+                      "p1",
+                      "p2",
+                      "p3"
+                    ]
+                  },
+                  {
+                    "title": "调度与恢复门槛",
+                    "tone": "control",
+                    "nodeIds": [
+                      "q",
+                      "all",
+                      "miss",
+                      "load"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "教学例中四个 KV 对象属于同一逻辑前缀，但不是四份可互换副本。前三片完成而第四片缺失时，返回 miss 是保守且必要的选择。把“对象数增加”理解为四倍冗余会误导容量规划；应分别计有效 KV 字节、对象元数据、分配碎片和传输会话。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "worker 对 standalone DCP 校验本地 rank 等于 tp_rank % dcp_size。保存者按 head 与 DCP rank 的组合去重，而非简单沿用 tp_rank % put_step == 0；相同头分组内不同上下文片不能被误当副本跳过。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这相当于为每个布局等价类选一名写入者，而非为全部相同头选一个写入者。头相同但上下文范围不同仍是不同数据。诊断“命中一直偏低”时，既要查 Store，也要确认是否有应保存的分片从未产生对象；盲目扩大 Store 容量不能修复缺失保存责任。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：实现存在、测试覆盖与硬件结果分层",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已阅读的证据及它能证明的边界",
+              "columns": [
+                "材料",
+                "核对结果",
+                "不能替代"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "冻结键构造源码",
+                    "按 PP、DCP、头分组枚举键",
+                    "实际 Store 对象已完整提交"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3,
+                    4,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "冻结 worker 源码",
+                    "rank 映射校验与分组保存者选择",
+                    "每种模型均受支持"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3,
+                    4,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "mock 测试源码",
+                    "逐片保存时最后一片前为 miss，恢复到不同块并比较字节",
+                    "真实 NPU 异步 DMA 和故障恢复"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3,
+                    4,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "vLLM v0.33.0 cache spec",
+                    "存在 dcp_sharded 标记及按该语义处理的代码",
+                    "任意 vLLM/Ascend 组合兼容"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3,
+                    4,
+                    6
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "测试中的异址恢复比单纯“读回成功”更有解释力：写入与恢复使用不同块位置，可以观察是否错误绑定原槽位。仍需真实设备回归，因为 CPU mock 没有证明计算流、传输流和 allocator 生命周期之间的同步。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：更严格的准入是功能的一部分",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                8
+              ],
+              "text": "backend 拒绝 PCP+DCP、与 KVPP 的不支持组合、put_step<DCP 以及 DCP 下显式 prefix_match_unit；组校验拒绝非 DCP 分片、滑窗、循环或 recurrent 状态，并要求最小块大小整除其他块大小。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "开发文档要求两端 TP/PP/DCP 及 PP 分层一致，GQA/MQA 需 TP//KV头数≥DCP；混合 cache group 的支持不能理解成任意混合注意力模型均可用。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这些拒绝比“尽力运行”更容易交付：启动阶段暴露布局冲突，避免业务请求进入后才发现缺片。不过严格相同拓扑也限制弹性：缩放 TP 或 DCP 后不能假设旧缓存自然兼容。应把缓存代际、命中恢复速度和备用容量纳入扩缩容设计。MLA 与 GQA 的物理组织不同，应分别用真实模型验证，而不是用一种 roundtrip 代替全部。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：命中率必须能解释为完整状态",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创诊断假设，不代表已发生的事故",
+              "columns": [
+                "现象",
+                "优先核对",
+                "不要直接得出的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "Store 中有对象但仍 miss",
+                    "逐组、逐 PP 阶段、逐 DCP 分片的提交状态",
+                    "不能直接归为调度器误报"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "换并行规模后命中骤降",
+                    "模型与拓扑命名空间、保存头分组",
+                    "不能把所有旧键强行复用"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "加载后输出不一致",
+                    "布局身份、恢复字节、载入完成事件与计算消费顺序",
+                    "不能仅根据 HTTP 成功认定正确"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "长输入 TTFT 改善而总体成本升高",
+                    "Store 请求数、传输量、额外 CPU 和长期占用",
+                    "缓存更快不等于服务更便宜"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "运行台账应同时保存模型 revision、量化、vLLM 与 Ascend commit、镜像 digest、驱动/CANN、Mooncake 版本及所有并行参数。对象命中、已载入 token 和可用于计算的 KV 是三个不同观测点。告警应围绕持续缺片、载入失败和无进展时间，不只看全局命中率百分比。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：固定拓扑与改变拓扑分开验证",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "以下是待执行实验，不是本站或作者已通过的结果。测试环境先固定 NPU 型号、互联、CANN/驱动、镜像、模型与数据集；设缓存冷/暖两组并做多次交错运行。用离线公开或合成请求，禁止将真实用户输入放入公开报告。"
+            },
+            {
+              "type": "table",
+              "caption": "原创隔离实验设计",
+              "columns": [
+                "组",
+                "唯一变量/操作",
+                "观测与目标"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "键和布局",
+                    "DCP=1 与候选 DCP，各自单独基线",
+                    "旧键兼容、拓扑隔离、完整键数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "完整性",
+                    "实验 Store 中分阶段提交，不引入线上扰动",
+                    "缺任一必要片时不得报告完整命中"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复正确性",
+                    "同一公开输入分别走重算和外部恢复",
+                    "逐层或最终输出误差按预设容差"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "模型类型",
+                    "分别选 MLA 与满足条件的 GQA",
+                    "不能相互替代；不支持布局需清晰拒绝"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能",
+                    "固定 TP/DCP 只切 layerwise",
+                    "TTFT 分位数、载入耗时、Store字节/请求数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "容量效率",
+                    "质量/SLO均通过后才改变最小拓扑",
+                    "总卡、Store、CPU与总服务成本"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复与回滚",
+                    "隔离环境重启消费者或丢失部分对象",
+                    "不消费不完整状态；可控回退并记录限制"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：数据门槛优先于性能门槛",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创验收表；阈值在测试前定义",
+              "columns": [
+                "维度",
+                "记录",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份",
+                    "commit、镜像和依赖锁",
+                    "实际运行产物含目标实现，不以 main 代替"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "准入",
+                    "全部并行和 cache group 配置",
+                    "非法组合启动拒绝，合法组合映射一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "完整性",
+                    "键集合和每片提交/载入事件",
+                    "任何必需片缺失均不能假命中"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "质量",
+                    "固定评测、输出和数值差",
+                    "满足该模型预先定义质量容差"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务",
+                    "TTFT/ITL/错误率与请求分布",
+                    "代表性负载满足既定 SLO"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "收益",
+                    "多次运行分布及全资源成本",
+                    "收益超过噪声且没有成本/恢复倒退"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "先选择可证明的版本和合法拓扑，再做恢复正确性，然后评估性能。即使平均 TTFT 更低，只要出现缺片误命中或质量退化，就不能用速度抵消。发布验收还需等实际发行版本、锁定镜像并检查其依赖，不应在未知依赖上直接 cherry-pick 后宣布兼容。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：发行、硬件和负载仍有边界",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "何时进入正式或预发布产物，实际镜像是否包含？",
+                "具体 NPU 型号及网络、作者测试吞吐字段定义、重复次数和尾分位数是什么？",
+                "真实设备下多 PP 阶段、异步载入及恢复失败时的数据消费门槛是否正确？",
+                "混合版本部署、拓扑变化后的缓存代际隔离和回滚容量是否充分？",
+                "长输出、连续到达、低命中与 Store 抖动时，完整性检查和对象粒度的开销有多大？"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文的产出是可核查的机制解释和验收设计，不是升级建议或实测复现。发布状态与运行时包含关系应在候选发行时再次核验。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "mooncake-rdma-fork-state-ownership",
     "kind": "analysis",
     "title": "Mooncake MR 注销回退：fork 状态应由 libibverbs 统一记账",
