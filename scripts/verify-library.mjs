@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
+import { verifyInfraSites } from './verify-infra-sites.mjs';
 const root = fileURLToPath(new URL('../',import.meta.url)), dist = join(root,'dist');
 const read = path => readFileSync(join(dist,path),'utf8');
 const home = read('index.html'), directory = read('library/index.html'), papers = read('knowledge/index.html');
@@ -43,4 +44,5 @@ function inspect(folder) {
   }
 }
 inspect(dist);
-console.log(JSON.stringify({catalog:catalog.length,whitepapers:knowledge.length,pages,localLinks:links,search:'one index',legacyAnchors:'preserved'}));
+const infraSites=verifyInfraSites();
+console.log(JSON.stringify({catalog:catalog.length,whitepapers:knowledge.length,pages,localLinks:links,infraSites,search:'one index',legacyAnchors:'preserved'}));

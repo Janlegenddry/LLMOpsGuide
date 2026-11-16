@@ -1,0 +1,17 @@
+[
+  {
+    "schemaVersion": 1,
+    "id": "ai-llm-infra-blogs",
+    "title": "AI & LLM Infra Blogs",
+    "url": "https://lun0522.github.io/ml-infra-blogs/",
+    "repositoryUrl": "https://github.com/lun0522/ml-infra-blogs",
+    "type": "社区博客聚合",
+    "maintainer": "lun0522",
+    "description": "聚合 vLLM、LMSYS / SGLang、NVIDIA、PyTorch 等公开博客，覆盖推理引擎、GPU 内核与集群调度。原站支持搜索和按来源筛选，适合作为日常 Infra 阅读入口。",
+    "topics": ["推理引擎", "GPU 内核", "集群调度"],
+    "refreshNote": "原项目设有每日自动聚合，实际更新以原站为准。",
+    "verifiedAt": "2026-11-16",
+    "publicationApproved": true,
+    "containsPrivateData": false
+  }
+]

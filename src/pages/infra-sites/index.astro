@@ -1,0 +1,28 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import sites from '../../content/infra-sites.json';
+import { withBase } from '../../paths';
+import '../../styles/infra-sites.css';
+---
+<BaseLayout title="优秀 Infra 网站 · Guanzhi Library" description="值得关注的 AI 与 ML 基础设施阅读入口：保留站点来源、用途与更新方式，前往原站阅读。">
+  <div class="library-shell infra-sites-shell">
+    <header class="library-page-heading">
+      <p class="library-eyebrow">GUANZHI LIBRARY / INFRA SITES</p>
+      <h1>优秀 Infra 网站</h1>
+      <p>把值得持续关注的基础设施阅读入口放在一起，找到资料，也找到更多资料的来处。</p>
+      <div class="library-heading-links"><a href={withBase('/library/')}>返回知识导航 ↗</a><a href="#infra-sites-list">浏览 {sites.length} 个站点 ↓</a></div>
+    </header>
+    <section class="infra-sites-list" id="infra-sites-list" aria-label="Infra 网站清单">
+      {sites.map(site=><article class="library-card infra-site-card" id={site.id} data-infra-site-record>
+        <div class="library-card__meta"><span class="library-badge">{site.type}</span><span>{site.maintainer} 维护</span></div>
+        <h2><a href={site.url} target="_blank" rel="noopener noreferrer">{site.title}<span aria-hidden="true"> ↗</span></a></h2>
+        <p>{site.description}</p>
+        <dl class="infra-site-facts"><div><dt>来源</dt><dd>{site.maintainer} 的公开社区项目</dd></div><div><dt>更新方式</dt><dd>{site.refreshNote}</dd></div></dl>
+        <div class="infra-site-links"><a href={site.url} target="_blank" rel="noopener noreferrer">前往原站阅读 <span aria-hidden="true">↗</span></a>{site.repositoryUrl&&<a href={site.repositoryUrl} target="_blank" rel="noopener noreferrer">查看项目仓库 <span aria-hidden="true">↗</span></a>}</div>
+        <footer><div class="library-tags">{site.topics.map(topic=><span>{topic}</span>)}</div><span>信息核验 <time datetime={site.verifiedAt}>{site.verifiedAt}</time></span></footer>
+      </article>)}
+      {!sites.length&&<div class="library-empty"><h2>还没有收录的网站</h2><p>这里会逐步整理有明确来源和用途的 Infra 阅读入口。</p></div>}
+    </section>
+    <aside class="library-principle infra-sites-note"><strong>从入口出发，回到原文。</strong><p>本页整理网站与用途介绍。文章、搜索和来源筛选请到原站使用；更新方式由各项目自行维护。</p></aside>
+  </div>
+</BaseLayout>
