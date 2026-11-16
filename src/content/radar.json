@@ -1,6 +1,666 @@
 [
   {
     "schemaVersion": 1,
+    "id": "sglang-dp-abort-order",
+    "kind": "analysis",
+    "title": "SGLang DP 取消顺序：HTTP 200 之后，请求为何还在生成",
+    "summary": "主干修复把取消与请求送回各 DP 组的同一工作通道。完整报告区分控制回执、调度终态和资源退休，解释双路径乱序，并给出未执行的 H20 与 PD 组合验收矩阵。",
+    "publishedAt": "2026-11-12",
+    "reviewedAt": "2026-11-16",
+    "topics": [
+      "SGLang",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang #50147：DP attention 取消顺序修复",
+        "url": "https://github.com/sgl-project/sglang/pull/50147",
+        "publishedAt": "2026-11-12",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "控制器：各 DP worker 的发送路由",
+        "url": "https://github.com/sgl-project/sglang/blob/73c0e14438cdaf5fd77c3b46aea28c9f81c6652e/python/sglang/srt/managers/data_parallel_controller.py",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "接收器：工作与控制消息分类",
+        "url": "https://github.com/sgl-project/sglang/blob/73c0e14438cdaf5fd77c3b46aea28c9f81c6652e/python/sglang/srt/managers/scheduler_components/request_receiver.py",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "调度器：取消与请求终态",
+        "url": "https://github.com/sgl-project/sglang/blob/73c0e14438cdaf5fd77c3b46aea28c9f81c6652e/python/sglang/srt/managers/scheduler.py",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "回归测试：两路消息交错",
+        "url": "https://github.com/sgl-project/sglang/blob/73c0e14438cdaf5fd77c3b46aea28c9f81c6652e/test/registered/unit/managers/test_data_parallel_controller.py",
+        "accessedAt": "2026-11-16"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "PR #50147 于 2026-11-15 合入主干，冻结源码变更分派与接收分类；未据此认定正式发布。",
+        "sourceIndices": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "目标硬件、生产拓扑、产物包含关系及性能尚未独立验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "持有请求的 rank 是否先登记请求再应用取消？",
+      "取消终态与 KV 安全退休是否分别可观测？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-16 核验；原始 PR 2026-11-12，合入 2026-11-15，冻结提交 73c0e14438cdaf5fd77c3b46aea28c9f81c6652e。独立读源码和测试，作者 GB200 结果与本站待执行 H20 实验严格区分；不包含私有日志或线上配置。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：取消接口返回成功，不等于请求已经停止",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0
+              ],
+              "text": "这次值得关注的不是吞吐优化，而是控制面顺序。SGLang #50147 于 2026-11-15 合入主干；截至核验仅确认合入，不把它称作正式版本已交付。作者在 DP attention 的特定路由下复现取消丢失，修复将取消与请求放回同一组的有序路径。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "生产判断应拆成三问：取消是否进入引擎，持有请求的调度器是否真正应用取消，资源是否走完安全退休。只看 HTTP 200 会把第一层回执误作第三层完成。应先在隔离环境证明控制顺序与终态，再决定是否升级或回补；不要因症状相似就把现网全部“幽灵请求”归因到这一个补丁。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本文独立阅读冻结提交中的控制器、接收器、调度器及回归测试。没有在 GPU、NPU 或生产系统运行实验；下文实验矩阵、验收门槛与成本口径均为原创验证方案，不是本站实测结果。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：为什么用户已离开，服务还可能继续生成",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "流式服务至少有客户端、网关、入口处理、排队、执行、输出缓冲等阶段。断开连接只描述一段链路的状态；它不天然携带模型请求 ID，也不保证后端取消已到达。显式取消则是另一条控制消息，仍有等待、路由和处理顺序。两者可能产生同样的外观：客户端不再消费，但后端继续占用计算预算。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "DP attention 下，请求由某个 DP 组持有。共享一个引擎地址，并不意味着所有请求和控制消息共用同一队列。判断“先请求、后取消”是否成立，必须看持有组实际收到的顺序，而不是两个 HTTP 调用的墙钟先后。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "作者的 GPU 对照使用两张 GB200 与 Qwen3-0.6B；默认控制路由的一组 200 次尝试中，修复前 19 次取消丢失，修复后为 0。此结果是作者在特定排队与取消时机下的报告，既非独立复现，也不证明 H20、PP 或 PD 组合已验证。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：不能只改发送端，也不能只改接收端",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "同一请求的取消：两条旧路由与一条新顺序链",
+              "caption": "原创机制示意，非时间比例和非实测。上组展示一种失败交错，下组展示源码修复后的职责链；最后的退休节点是待验证边界，不是新增释放逻辑。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                3
+              ],
+              "nodes": [
+                {
+                  "id": "request",
+                  "label": "旧：请求发往持有者",
+                  "detail": "同一 rid 的生成请求，经持有者 DP rank 的 socket 排队。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "请求发往持有者",
+                  "tone": "compute"
+                },
+                {
+                  "id": "route",
+                  "label": "旧：取消经过另一入口",
+                  "detail": "取消由全局控制路由到达；与请求不是同一有序接收流。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "取消经过另一入口",
+                  "tone": "communication"
+                },
+                {
+                  "id": "early",
+                  "label": "旧：先应用取消",
+                  "detail": "教学交错：持有者此时未登记 rid，不能匹配未来请求。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "先应用取消",
+                  "tone": "danger"
+                },
+                {
+                  "id": "late",
+                  "label": "旧：请求随后入队",
+                  "detail": "取消已处理不代表未来入队的请求被标记终止。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "请求随后入队",
+                  "tone": "compute"
+                },
+                {
+                  "id": "send",
+                  "label": "新：取消发往各组",
+                  "detail": "控制器向活跃 worker 发送 AbortReq，不只送至全局控制入口。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "取消发往各组",
+                  "tone": "communication"
+                },
+                {
+                  "id": "work",
+                  "label": "新：保留工作通道",
+                  "detail": "接收器把生成请求与 AbortReq 同归工作列表，保持本地顺序。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "保留工作通道",
+                  "tone": "control"
+                },
+                {
+                  "id": "apply",
+                  "label": "新：登记后应用取消",
+                  "detail": "同一持有组先看到请求，再看到取消。图不声称跨连接全局排序。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "登记后应用取消",
+                  "tone": "control"
+                },
+                {
+                  "id": "retire",
+                  "label": "终态与退休待观测",
+                  "detail": "取消后仍须核对请求结束、在途计算、KV 和计费；不是 HTTP 应答即释放。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "终态与退休待观测",
+                  "tone": "kv"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "request",
+                  "to": "late",
+                  "label": "请求走自己的队列"
+                },
+                {
+                  "from": "route",
+                  "to": "early",
+                  "label": "另一入口先到"
+                },
+                {
+                  "from": "early",
+                  "to": "late",
+                  "label": "未匹配时请求尚未登记"
+                },
+                {
+                  "from": "send",
+                  "to": "work",
+                  "label": "各组自己的 socket"
+                },
+                {
+                  "from": "work",
+                  "to": "apply",
+                  "label": "工作列表保序"
+                },
+                {
+                  "from": "apply",
+                  "to": "retire",
+                  "label": "进入既有结束路径，另测资源"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧路径：允许出现的交错",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "request",
+                      "route",
+                      "early",
+                      "late"
+                    ]
+                  },
+                  {
+                    "title": "修复路径：排序与完成分开",
+                    "tone": "control",
+                    "nodeIds": [
+                      "send",
+                      "work",
+                      "apply",
+                      "retire"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "控制器的 dispatcher 为 AbortReq 新增 send_to_all_workers 路由。发送函数只遍历存在且处于活动状态的 worker。修复的关键不是广播次数更多，而是让持有组从自己的消息流收到取消；不存在“发给任意 rank，最后总会一样”的可靠假设。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "接收器同时把 AbortReq 纳入 work_reqs，并从 control_reqs 排除。这保留工作消息在组内传播的顺序。若只扩大发送范围，后续仍把取消当全局控制列表处理，就可能再次丢掉本组的顺序信息。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可以用一个完全虚构的时序理解：持有者在轮次 A 取队列时，请求尚未到；另一控制流的取消却已可见。若 A 轮发现“没有这个 rid”就结束处理，B 轮后来到达的请求不会自动记住过去的取消。修复需要建立的是请求登记在先、取消应用在后的局部因果关系，不是让所有机器拥有统一时钟。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "冻结调度器的 abort_request 会遍历现存请求列表与在途请求；在途请求调用 request_finish，随后沿既有清理路径完成。代码注释明确保留一次 decode forward 的可能性。这个补丁不是新的立即释放机制，不能据此绕过在途计算或通信完成检查。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码、作者测试与交付是不同层次",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "核验日期 2026-11-16；未把测试报告升级为本站实测",
+              "columns": [
+                "证据层",
+                "观察",
+                "能证明什么",
+                "不能证明什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合入状态",
+                    "#50147 合入 73c0e14438cd",
+                    "主干包含这次修改",
+                    "发行包、镜像及现网实际采用"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "发送端",
+                    "AbortReq 单独分派到活跃 worker",
+                    "取消有本地接收路径",
+                    "接收器保序或计算已终止"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "接收端",
+                    "取消与工作请求同类",
+                    "不会继续按普通全局控制消息分类",
+                    "所有外部网关连接都保持相同顺序"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "回归测试",
+                    "驱动真实分派表与两组接收逻辑，检查请求先于取消",
+                    "覆盖所建模的交错不变量",
+                    "H20、故障重连和持续压测覆盖"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "资源终态",
+                    "在途请求设置结束状态后走既有清理",
+                    "控制应用与资源退休是两步",
+                    "每种缓存和传输后端何时安全回收"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "证据链应从“部署了什么”开始。保存镜像 digest、源码 SHA、实际导入文件、启动参数和硬件拓扑；再把同一个 rid 的入口、持有组及终态关联起来。即使镜像名字含有新日期，若覆盖文件或依赖打包发生变化，仍不能由标签推导补丁生效。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：修复排序，不承诺零延迟取消",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "为每个活跃 DP 组发送取消，会增加取消发生时的小消息扇出；它不是每个 token 都新增控制广播。低取消比例下，平均吞吐可能不敏感；但断连风暴或上游超时重试会集中触发取消，因此应单独测控制队列负载。这里没有可移植的吞吐收益数字。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "取消被归为工作消息后，与同批普通控制消息的相对先后也值得回归。暂停、恢复、批量取消和已完成请求的重复取消，都不应只用单一“取消成功率”遮盖。接口约定、日志记录和调度器执行顺序要一致，尤其不能把暂停窗口中的请求算作已经停止。"
+            },
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "适用性先核对：是否启用 DP attention、实际 attention DP/TP 组、控制广播模式及入口路由。未命中这些条件不能直接套用本案例。",
+                "不要把 GB200 的作者复现当 H20 的故障概率。不同轮询频率与排队分布会改变竞态出现率，模型更大并不自动意味着更容易复现。",
+                "本报告不改变任何线上参数。不建议未经组合测试就把 local-control-broadcast 当通用临时修复。",
+                "未知 rid 的取消、请求重试后新 rid、上游断连未生成取消，属于不同语义问题；本补丁并不建立取消墓碑或跨重启持久化。"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：把“幽灵请求”拆成可证伪假设",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创诊断表，不代表用户遇到过下列故障",
+              "columns": [
+                "假设",
+                "应收集的证据",
+                "可排除什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "上游没有发送取消",
+                    "客户端断连、网关传播、入口取消接收三事件是否齐全",
+                    "缺入口事件时，先查链路而非直接改调度器"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消先于请求登记",
+                    "同一进程单调序号：入队、登记、取消应用；记录 owner DP rank",
+                    "只有 HTTP 时间戳无法证明此竞态"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "已停止生成但输出仍在网络中",
+                    "后端最后一次生成时间与客户端收包时间分开",
+                    "取消后收到 token 不等于取消后仍计算"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "请求结束但资源未退休",
+                    "终态事件、分配引用、在途传输完成、池水位时间线",
+                    "不能仅凭 finish_reason 宣称 KV 已回收"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "上游重试形成第二请求",
+                    "父请求 ID、尝试 ID、重试原因和路由记录",
+                    "第二次请求的计算不属于第一次取消丢失"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "推荐日志只保留匿名请求关联标识、状态、rank、序号、token 数与资源计数，不记录提示词和生成内容。跨机器时间可能有偏差；同一调度器内用单调计数确定处理顺序，跨节点只以明确发送/接收关联证明因果。报警也应分别统计入口取消失败、未达终态和资源迟退，而不是把三者合成一个错误码。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：先复现顺序，再测服务代价",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下表全部待执行。环境冻结建议：同一模型与 tokenizer、同一镜像依赖、同一调度与缓存参数，只切换基线和完整补丁。先用小模型复现控制路径，再在目标 H20 拓扑重做；不要用小模型延迟阈值替代目标服务 SLO。"
+            },
+            {
+              "type": "table",
+              "caption": "隔离环境原创实验计划",
+              "columns": [
+                "组别",
+                "变化轴",
+                "注入/负载",
+                "观测与意义"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU顺序",
+                    "旧版/完整补丁/仅发送/仅接收",
+                    "人为让 owner 在转发前轮询，另一组转发后轮询",
+                    "检查同一 rid 登记序号小于取消应用序号，避免只证明 happy path"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GPU基线",
+                    "DP attention 开/关；目标 rank 0/非0",
+                    "低负载与异组短请求积压",
+                    "区分控制路由与普遍性能问题"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消窗口",
+                    "请求刚提交、排队、prefill、decode",
+                    "以服务器状态栅栏定位，不靠固定 sleep 猜状态",
+                    "统计每个阶段取消是否到达终态"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "控制组合",
+                    "pause/resume、abort_all、重复取消",
+                    "同一轮收取多个控制与工作消息",
+                    "检查未取消请求继续推进及暂停契约"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生产拓扑",
+                    "H20、PP/PD分别加回",
+                    "长输入、长输出、不同缓存命中以及断连风暴",
+                    "独立核对传输安全、显存池回落和正常请求SLO"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回滚",
+                    "补丁镜像回基线",
+                    "先停止接收新请求，再按既定流程排空",
+                    "确认没有把未结束请求或在途KV作为空闲资源"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：不要把网络尾包算成 GPU 浪费",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟议验收口径，阈值在测试前冻结，不事后挑选",
+              "columns": [
+                "指标",
+                "定义",
+                "通过门槛"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "顺序不变量",
+                    "对已进入引擎的合法请求，owner 内请求登记先于对应取消应用",
+                    "强制交错测试全部满足；单侧补丁对照应暴露缺口"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消终态",
+                    "已经接收并应用的取消，最终进入预期终态的比例",
+                    "有限回归集零丢失；仍公布样本量，不能写总体故障率为零"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消耗时",
+                    "入口接收→owner应用→终态→资源退休四段分别计时",
+                    "每段p50/p95/p99/max均记录，对照事先定义的服务预算"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "额外生成",
+                    "以owner应用取消之后的实际生成计数为主，客户端收到的尾包另记",
+                    "不承诺零token；应解释在途工作，异常长尾逐条追踪"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源与正确性",
+                    "请求终态后KV、传输与任务引用完成；未取消请求正常输出",
+                    "无悬挂、无过早复用、无持续池泄漏；达不到则不放量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "成本与SLO",
+                    "成功提交给客户端的有效token、取消浪费GPU时间、正常请求TTFT/TPOT",
+                    "以固定到达率和取消率比较，不能靠丢弃工作制造吞吐提升"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "若独立重复 N 次没有失败，只能说该样本未观察到失败。可用约 3/N 作为零失败情况下总体概率上界的粗略教学估计（近似 95% 单侧界，独立同分布假设）；真实取消风暴具有相关性，应按时间窗与批次复测，而非宣称“零风险”。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：合入之后，还有哪些证据没有闭合",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "尚未确认含该提交的正式 SGLang 发布、wheel 或部署镜像。发布任务应核对标签包含关系和产物身份，不能由发布日期推导。",
+                "本站未运行作者 CPU 回放、单测或 GPU 对照；也未独立确认 H20、NPU、PP、PD 和外部网关组合。",
+                "同批暂停控制的业务语义、未知 rid、连接重建、动态 DP worker 变化以及取消风暴中的公平性，仍需专项回归。",
+                "实际资源退休由后端实现决定。本次源码修改不等于所有传输在终态后完成，也不构成安全回收证明。",
+                "下次更新优先补正式产物与目标拓扑测试证据，保留同一报告 ID；无需因零散评论重复发布。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-pp-release-memory-verdict",
     "kind": "analysis",
     "title": "SGLang PP 显存释放：首阶段答应了，不代表所有卡都交出来了",
