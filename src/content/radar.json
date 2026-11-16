@@ -4040,6 +4040,630 @@
   },
   {
     "schemaVersion": 1,
+    "id": "parallel-prompting-shared-prefix-read-budget",
+    "kind": "analysis",
+    "title": "Parallel Prompting：命中共享前缀之后，Decode 还要付多少读取成本？",
+    "summary": "共享存储、共享计算和共享读取是三笔账。本文拆解研究原型的分支隔离与位置编号，设计不依赖宣传倍数的隔离性、长尾和每卡效率验收；不是 SGLang 新版本功能。",
+    "publishedAt": "2026-11-11",
+    "reviewedAt": "2026-11-16",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "服务调度"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Parallel Prompting v1 预印本",
+        "url": "https://arxiv.org/html/2611.15130v1",
+        "review": {
+          "category": "paper",
+          "publisher": "Zekun Zhao、Jeffrey Flanigan / UCSC jlab-nlp",
+          "status": "attributed",
+          "note": "核对第 3–7 节：机制、配置、基线、公平性、负结果与局限。仅引用少量必要事实，未独立复现作者 GPU 实验。",
+          "peerReview": "preprint"
+        },
+        "publishedAt": "2026-11-11",
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "作者实现：mask.py（固定提交）",
+        "url": "https://github.com/jlab-nlp/parallel-prompting/blob/c323bb52066db9fd7e1a19bffe03658f1d0007c5/sglang-0.5.22/overlay/sglang/srt/parallel_prompt/mask.py",
+        "review": {
+          "category": "community",
+          "publisher": "Zekun Zhao、Jeffrey Flanigan / UCSC jlab-nlp",
+          "status": "attributed",
+          "note": "读取 build_mask、prefill_layout、ParallelPromptInput；代码来自作者扩展，不是 SGLang 上游已发布功能，未运行原仓测试。"
+        },
+        "accessedAt": "2026-11-16"
+      },
+      {
+        "title": "作者实现：engine.py（固定提交）",
+        "url": "https://github.com/jlab-nlp/parallel-prompting/blob/c323bb52066db9fd7e1a19bffe03658f1d0007c5/sglang-0.5.22/overlay/sglang/srt/parallel_prompt/engine.py",
+        "review": {
+          "category": "community",
+          "publisher": "Zekun Zhao、Jeffrey Flanigan / UCSC jlab-nlp",
+          "status": "attributed",
+          "note": "核对共享缓存槽、slot_sid、positions、图捕获及 slot 回收路径。仅静态读取，不证明 GPU 数值、并发安全或实际服务兼容。"
+        },
+        "accessedAt": "2026-11-16"
+      }
+    ],
+    "claims": [
+      {
+        "status": "inference",
+        "text": "原型提示一个需要独立测量的成本项：前缀已命中，不代表不同 query 的 Decode 可以免费读取它。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "目标 H20、多租户在线调度及现有部署兼容性尚未验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "兄弟分支是否严格不可见？",
+      "节约读取是否足以抵消组批等待、掩码扫描和闲置流？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-16 核验 arXiv:2611.15130v1（11 月 11 日预印本）及作者仓库固定提交 c323bb52066db9fd7e1a19bffe03658f1d0007c5；不是 SGLang 正式发布。本文只做源码阅读及原创 CPU 逻辑教学检查，不运行作者 GPU 实验，不代表现网验收。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：按共同上下文组织读取，不等于按命中率承诺吞吐",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "真正值得验证的是：多个彼此独立的问题共享一段上下文时，能否在维持分支隔离的同时，把每步的重复内存读取摊薄。不能先拿前缀命中率算吞吐倍数，再让调度器去兑现。命中率反映复用资格，读取开销、可并行问题数、输出长度与组批等待共同决定收益。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "论文是预印本，原型覆盖 SGLang 0.5.22 与 0.4.2.post3。主实验使用 A100/A6000、BF16、CodeLlama-7B、8–16k 文档及每文档 64–256 个问题。真实任务中，Qwen2.5-7B 的短答 QuALITY 较 FlashInfer 基线约快 1.81 倍，长答 LooGLE 反而更慢。作者结果未经本文复现，不能迁移成 H20 性能承诺。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "工程建议是先离线验证重复文档、多问题、短输出的一小类任务；把在线随机到达、多租户、长回答和取消恢复单列为待验。本文的 PP 仅指 Parallel Prompting，不是 Pipeline Parallelism，也不表示启用一个上游参数即可获得这套调度。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：把“存一份”“算一次”“读得少”拆成三张账",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "第一张账是容量：相同上下文的 KV 是否占用同一批物理槽。第二张账是 Prefill：重复上下文是否跳过重新计算。第三张账是 Decode：多个 query 真正执行 attention 时，共享的 KV 数据从 HBM 搬进计算单元多少次。前两项成立，不自动推出第三项成立，因为调度批次、kernel tile、缓存层级和并发都可能改变访问模式。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个原创教学场景：同一份公开文档要回答四个独立问题，最终交付四个答案。若每个问题独立返回，优化的计量单位仍应是四个完成的问题，而不是一条内部复合请求。把四个问题装进一个内部请求而将其算作一次请求，可能让 QPS 降低，却不代表用户吞吐降低；反过来把每步的四个内部 token 都当有效输出，也可能掩盖已结束流的占位工作。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "下面的推导刻意不含模型名称或真实卡速：设共享上下文大小为 S，分支私有历史为 H_i，完成一步需要关注的逻辑数据量包含共享部分及各私有部分。最理想的融合只降低共享部分的重复搬运，不消除私有历史、权重读取、FFN、输出投影或采样。因此即使共享读取次数减少很多，端到端加速也必然受到其他阶段限制。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：物理排列不等于逻辑可见性",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "作者 mask.py 为文档槽使用特殊流标识；query 可见的 key 必须同时满足因果顺序和“文档或本流”条件。各问题的位置从文档末尾重新起算，logit 行也按流选取。物理上拼在同一序列，不意味着一个问题可以看见前一个问题。"
+            },
+            {
+              "type": "diagram",
+              "title": "同一业务输出，两种读取组织方式",
+              "caption": "原创职责对比示意，非性能实测。左右都是四个问题；边只表示数据依赖，不代表耗时、缓存命中次数或已验证线上实现。右侧的隔离门需要单独测试。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "nodes": [
+                {
+                  "id": "a",
+                  "label": "共同上下文",
+                  "detail": "四个问题获准引用同一文档；这里只画复用关系，不画物理缓存行。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "共享 KV",
+                  "tone": "kv"
+                },
+                {
+                  "id": "b",
+                  "label": "独立请求的 Query",
+                  "detail": "各问题单独执行时，是否重复命中 HBM 取决于实际内核和缓存。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "分散读取",
+                  "tone": "compute"
+                },
+                {
+                  "id": "c",
+                  "label": "四份独立答案",
+                  "detail": "正确输出仍须逐问题计数，不能把内部 request 数当业务吞吐。",
+                  "column": 0,
+                  "row": 2,
+                  "shortLabel": "独立交付",
+                  "tone": "control"
+                },
+                {
+                  "id": "d",
+                  "label": "共同上下文",
+                  "detail": "候选路径不要求复制成四份；节省读取需用 profiler 证明。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "共享 KV",
+                  "tone": "kv"
+                },
+                {
+                  "id": "e",
+                  "label": "同组 Query tile",
+                  "detail": "分支标签与因果规则决定可见范围；读取共享发生在 tile 层。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "合并读取",
+                  "tone": "compute"
+                },
+                {
+                  "id": "f",
+                  "label": "四份隔离答案",
+                  "detail": "逻辑位置和各流输出对齐；兄弟分支不得串入注意力。",
+                  "column": 1,
+                  "row": 2,
+                  "shortLabel": "逐流验收",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "a",
+                  "to": "b",
+                  "label": "共享前缀可被多个 query 访问"
+                },
+                {
+                  "from": "b",
+                  "to": "c",
+                  "label": "分别采样并归还对应问题"
+                },
+                {
+                  "from": "d",
+                  "to": "e",
+                  "label": "按 tile 复用共同输入"
+                },
+                {
+                  "from": "e",
+                  "to": "f",
+                  "label": "按 stream 与位置拆分结果"
+                }
+              ],
+              "presentation": {
+                "kind": "boundary",
+                "panels": [
+                  {
+                    "title": "独立问题路径",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "a",
+                      "b",
+                      "c"
+                    ]
+                  },
+                  {
+                    "title": "拟评估的同组路径",
+                    "tone": "kv",
+                    "nodeIds": [
+                      "d",
+                      "e",
+                      "f"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "位置编号是容易漏掉的第二道门。仅禁止问题 B 看问题 A，却继续让 B 的 RoPE 位置沿物理拼接递增，仍可能使 B 不再等价于独立请求。检查时应分别打印物理槽索引、流标识、逻辑位置三列；任何一列都不能替代另外两列。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                2
+              ],
+              "text": "作者 engine.py 通过 request-to-token 表引用共同缓存槽，并维护 slot_sid、位置和逐流 logits。计算沿 EXTEND 路径推进，图形状按请求数与流数组合管理；结束流处理和槽回收也在此引擎内，而不是仅修改一个 attention mask。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "“读一次”应理解为把多个 query 的共享读取集中到 tile 的复用机会，不是整块 GPU 在整个生成步骤只发生一次 HBM 访问。增大组内流数可能增加 query tile 数；硬件调度与缓存层级又会改变实际流量。生产判断应记录 memory bytes 和有效答案数，不从标题反推内核事务数量。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：研究演示、源码和服务验收不是同一层",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "已核对证据与尚不能支持的结论",
+              "columns": [
+                "证据",
+                "能支持",
+                "不能支持"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "论文对照",
+                    "不同负载存在正负结果",
+                    "任意模型、硬件和输出长度都加速"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "mask.py 固定提交",
+                    "有明确流隔离和位置构造逻辑",
+                    "对所有输入边界都数值正确"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "engine.py 固定提交",
+                    "有共享槽和复合请求执行路径",
+                    "兼容所有上游 HTTP、取消和 PD 生命周期"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "本文原创教学检查",
+                    "小型逻辑模型的掩码不变量",
+                    "执行过作者 CUDA/Triton 内核"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "本文将结果归属收紧到作者实验和固定源码。仓库内存在实现，不表示相关逻辑进入 SGLang 正式发行版；若未来部署选用镜像，还应证明镜像内实际导入路径与该提交一致。版本名相似或构建时间较晚都不能代替包含性验证。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "论文的 continuous batching 仍在预先组织的数据负载上评价；它不提供任意到达流下的在线 SLA 保证。主实验预热前缀和图，真实数据表则包含空缓存开始的文档处理，计时范围不同。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：省下共享搬运，也可能买来等待和空转",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "收益条件应写成一组同时成立的假设：存在足够多确实相同的上下文；问题间无依赖；隔离掩码成本低于重复读取；组批延迟可接受；组内结束时间没有严重分化。任何一项失效，都应回到独立请求基线，而不是持续增大分组。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "组内一条长答案可能拖住多个已完成流。若每步仍维持固定形状，业务有效 token 占比会随完成流增加而下降。为了及时回收而压缩组形状，又可能触发新的图形状、重建或 padding 成本。这里不能只看平均 TPOT，必须同时统计每个问题从到达到返回的时长和每组最后结束时间。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "原型必须扫描并掩掉其他流的历史；长答案使该开销扩大。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "安全上，文档相同不是跨租户可共享的充分条件。即便内容哈希相同，访问授权、adapter、tokenizer、模板、位置策略或模型权重不同，也不能任意归组。拟议实验应只用公开合成数据；真正产品化前，要把权限与执行身份一起纳入分组键。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：优先观察四类失败，不从症状猜根因",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "诊断假设，均未在真实服务验证",
+              "columns": [
+                "表现",
+                "竞争解释",
+                "最小证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "某答案带入其他问题信息",
+                    "流标签串用、掩码错误，或模型本身推断",
+                    "独立基线及逐槽 sid/position；互斥诱饵问题"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "第一批更慢",
+                    "编译、图捕获或等待凑组",
+                    "分开记录到达、入组、执行、首 token 时间"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "小任务慢、大任务快",
+                    "组批等待或 kernel 调度粒度",
+                    "P=1 与多个 P，同到达序列重放"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消后资源迟迟未回",
+                    "复合请求仍存活或回收生命周期漏洞",
+                    "取消流和同组幸存流分别核对；分配/释放槽账本"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如果一个复合请求包含多个客户端问题，服务层必须定义部分成功：一个问题断开时，其他问题能否继续；超时由组还是由流控制；重试是否重算已完成答案。没有明确契约时，优化更适合作为离线任务执行器，而不宜直接放到通用聊天入口。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "PD 分离会再引入跨进程元数据、KV 映射与结束通知。不能把单 GPU 的 sid 数组设计直接视为可传输协议。若没有一端到另一端的布局版本和身份核对，宁可把 PD 支持列为不支持，也不要仅传 token 数就宣称兼容。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：先隔离正确，再按负载寻找收益",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "全部为拟议测试；不代表已执行硬件实验",
+              "columns": [
+                "层级",
+                "变化轴",
+                "固定项 / 比较项",
+                "输出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU 语义",
+                    "文档 1/3/17 token，问题长度不齐，流数 1/2/4",
+                    "物理因果与本流规则；独立位置参考",
+                    "可见槽集合及位置一致性"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "GPU 数值",
+                    "eager / graph，P=1/2/4/8/16，边界页长度",
+                    "同权重、token、精度；dense 参考与原型",
+                    "绝对/相对误差及实际 token 序列"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "吞吐收益",
+                    "文档长短、同文问题数、短答/长答",
+                    "同硬件预算及同热身口径；原生最佳后端",
+                    "有效问题/s、有效输出 token/s、HBM 字节"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "线上压力",
+                    "均匀/突发到达、热文/冷文混合",
+                    "同质量、限流与 TTFT/TPOT 目标",
+                    "排队 p99、SLO 内完成问题数、失败率"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生命周期",
+                    "单流取消、组超时、OOM、请求重试",
+                    "唯一问题 ID，保留幸存流结果",
+                    "槽回收、重复交付、无跨问题数据污染"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议分两阶段控制变量。阶段一固定总卡数、模型、并行拓扑和请求集合，比较原生最优后端与候选路径；保持 tokenizer、输入预处理、预热及计时边界一致。阶段二才搜索不同 P、batch 形状和组批时间窗，校准集与最终报告集分离，以免把对某个数据集调出的最优值当默认参数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "冷启动应单列，不混入热态收益：清空编译缓存与保留编译缓存分别运行，记录首个可用结果、图捕获数量、编译耗时和峰值显存。每项重复并交换方案运行顺序，避免把先后顺序和缓存污染误当收益。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：最终交付的答案才是分母",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "上线前预先约定；阈值由独立基线和业务预算决定",
+              "columns": [
+                "门",
+                "指标口径",
+                "放行规则"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "隔离",
+                    "每问题可见 key 与独立语义参考",
+                    "所有构造边界一致；不允许兄弟流信息泄漏"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "质量",
+                    "按问题对齐的任务分数及失败样本",
+                    "非劣界预先登记；不能以总均值隐藏敏感子集退化"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务",
+                    "到达至首有效 token、逐问题完成延迟",
+                    "固定负载下不超既有 SLO；超时不得从分母删除"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "资源",
+                    "有效答案 / 全部 GPU 秒；峰值槽与图内存",
+                    "包含 padding、等待、失败重试及热备成本"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "恢复",
+                    "取消、超时、OOM 后槽账本与幸存流",
+                    "无残留、无重复归还、无重复业务交付"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可回退",
+                    "分组开关关闭后的基线行为",
+                    "失败时能安全回到独立路径；不复用未知状态"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要用进程显存接近就宣称 KV 不省，也不要用显存下降就宣称更快。预留池大小、有效占用、可分配余量与每步 HBM 流量需要分别观测。若模型权重占主导或者全服务瓶颈在 CPU/网络，attention 局部优化可能不改变 SLO 内完成量。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：把研究价值和交付能力分开",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "H20、FP8、GQA/MLA、投机解码、多卡与 PD 分离未由本文执行；不把 A100/A6000 结论外推。",
+                "作者代码的服务接口、请求取消、异常注入及长期槽复用需要独立验收，源码阅读不是通过证明。",
+                "实际内核读取量和 tile 数需 profiler 核对；不能把逻辑共享等同于物理内存流量同比减少。",
+                "多租户分组资格、流级限额和在线到达等待策略需明确产品契约。",
+                "后续如出现上游合入或正式版本，应核查包含关系并更新本 ID，而非再次发布同一研究。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "推荐学习顺序是先用小数组证明“看见谁、位于哪里、输出归谁”，再测 GPU 内核，最后讨论调度与成本。这能避免只学会一个倍数，却无法判断它是否适合自己的服务。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-unified-memory-capacity-completion",
     "kind": "analysis",
     "title": "SGLang Unified Memory：统一容量，不等于统一完成证明",
