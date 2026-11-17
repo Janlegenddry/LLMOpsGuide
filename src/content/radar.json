@@ -1,6 +1,1370 @@
 [
   {
     "schemaVersion": 1,
+    "id": "vllm-ascend-dspark-head-load-priority",
+    "kind": "analysis",
+    "title": "Ascend DSpark 加载优先级：请求成功，不代表草稿权重装对了",
+    "summary": "主干修复让草稿专用参数不再被迟到的目标回退值覆盖。报告区分加载正确性、作者的 910B3 退化恢复结果与正式版边界，并给出逐 rank 核验、排列不变性和冷启动实验门禁。",
+    "publishedAt": "2026-11-17",
+    "reviewedAt": "2026-11-17",
+    "topics": [
+      "vLLM",
+      "投机解码",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM-Ascend #17095：草稿专用参数优先级修复",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/17095",
+        "publishedAt": "2026-11-17",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "固定提交：DSpark 权重加载器",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/a60b62f1de3254474a3b6ad95476f0d70f1e5abe/vllm_ascend/models/deepseek_v4/dspark.py",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "固定提交：参数顺序与回退单元测试",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/a60b62f1de3254474a3b6ad95476f0d70f1e5abe/tests/ut/model_executor/test_dspark_head_loading.py",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "vLLM-Ascend v0.30.0 正式发布",
+        "url": "https://github.com/vllm-project/vllm-ascend/releases/tag/v0.30.0",
+        "publishedAt": "2026-10-29",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "v0.30.0 标签中的 DSpark 加载实现",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/v0.30.0/vllm_ascend/models/deepseek_v4/dspark.py",
+        "accessedAt": "2026-11-17"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#17095 已合入主干，按目的参数记录草稿专用来源，避免目标回退值覆盖。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本站未执行 NPU 复现，合入不等于正式发行或现网适用。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "同一 checkpoint 的不同加载排列能否得到相同参数？",
+      "逐 rank 专用参数核验是否覆盖全部目的张量？",
+      "所谓性能收益是修复退化，还是超过了正确基线？"
+    ],
+    "related": [
+      {
+        "title": "DSpark：把接受率放回成本模型",
+        "path": "/radar/dspark-verify-budget/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-17 核对 vLLM-Ascend #17095、固定提交源码/测试与 v0.30.0 标签。作者硬件结果不等于本站复现；所有实验矩阵与验收门禁是原创待执行设计。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先证明草稿装对，再讨论接受率调参",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这次应当关注的是加载正确性，而不是又一个更快的投机算法。把接受率骤降直接解释成业务变难，可能遗漏一种更靠前的原因：草稿实例里的参数不是预期的专用参数。应先审计权重来源，再决定是否调整草稿长度。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "vLLM-Ascend #17095 于 2026-11-17 合入主干 a60b62f1。修复建立草稿专用参数相对目标模型回退值的优先级，不依赖分片完成顺序。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3,
+                4
+              ],
+              "text": "截至核验时 Latest 正式版为 v0.30.0；该标签代码没有本次优先级记录。不能把主干合入写成正式发布，也不能仅凭缺少这段保护就判断某个线上实例已经故障。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：服务可成功，草稿却未必正确",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "投机解码把额外工作换成更少的目标模型生成轮次。若草稿建议很少被接受，额外工作仍要付出，而节省的轮次变少。于是请求成功率、目标输出质量和生成效率可能给出三个不同信号。只有其中一个正常，不能替代另外两个验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "作者的硬件验证覆盖两个各有 8 张 Ascend 910B3（A2）的主机，TP8、DSpark K7、EP 关闭及开启。使用固定 nightly 代码加加载修复，不是把最新主干整栈重新压测。本文未执行硬件复现；不将其推广到 A3、A5、其他量化权重或 NVIDIA。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "稳定版文档中的功能支持、某个加载分支存在、真实请求触发该分支，是三层不同问题。记录镜像摘要、vLLM 与 Ascend 插件 commit、模型 revision、量化描述和加载选项，才能把一次性能变化定位到同一个实验对象。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：参数名归一化之后，来源不能消失",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "固定提交在映射前识别 mtp 命名空间，跟踪 embedding、输出 head 和三种 HC 参数的草稿来源。若相同目的参数已经由草稿来源填充，后续目标回退值跳过；如果目标值先到，之后的草稿值仍可替换。这里保存的是参数名集合，不是整份 checkpoint 缓冲。"
+            },
+            {
+              "type": "diagram",
+              "title": "同一目的参数：到达顺序不能决定权重身份",
+              "caption": "原创非实测机制示意。上排演示旧风险，下排演示来源优先级与拟议验收；箭头不是时间比例，也不保证所有部署都触发。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "old-draft",
+                  "label": "草稿权重先到",
+                  "detail": "草稿专用张量写入共享目的参数；先到不代表会被保留。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "草稿权重先到",
+                  "subtitle": "旧路径",
+                  "tone": "compute"
+                },
+                {
+                  "id": "old-target",
+                  "label": "目标权重后到",
+                  "detail": "旧行为按到达顺序覆盖，语义优先级没有独立编码。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "目标权重后到",
+                  "subtitle": "旧路径",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-value",
+                  "label": "草稿参数被替换",
+                  "detail": "模型仍能提供响应，性能症状可能比错误日志更明显。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "草稿参数被替换",
+                  "subtitle": "旧路径",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-check",
+                  "label": "验收只看成功",
+                  "detail": "教学风险：只验 HTTP 或启动成功会漏掉模型状态偏差。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "验收只看成功",
+                  "subtitle": "旧路径",
+                  "tone": "neutral"
+                },
+                {
+                  "id": "new-draft",
+                  "label": "识别来源命名空间",
+                  "detail": "先识别 mtp 来源，再进入参数名映射，避免映射后丢失身份。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "识别来源命名空间",
+                  "subtitle": "优先级路径",
+                  "tone": "control"
+                },
+                {
+                  "id": "new-owner",
+                  "label": "记录草稿所有权",
+                  "detail": "仅记录已由草稿专用来源提供的五类目的参数名。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "记录草稿所有权",
+                  "subtitle": "优先级路径",
+                  "tone": "control"
+                },
+                {
+                  "id": "new-guard",
+                  "label": "拒绝迟到回退值",
+                  "detail": "目标 fallback 不能覆盖已有草稿来源；草稿晚到仍可覆盖 fallback。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "拒绝迟到回退值",
+                  "subtitle": "优先级路径",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-check",
+                  "label": "逐分片验收待执行",
+                  "detail": "核对各 rank 的已加载张量及目标权重，再测接受长度与业务指标。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "逐分片验收待执行",
+                  "subtitle": "优先级路径",
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-draft",
+                  "to": "old-target",
+                  "label": "先后到达",
+                  "shortLabel": "先后到达"
+                },
+                {
+                  "from": "old-target",
+                  "to": "old-value",
+                  "label": "错误覆盖",
+                  "shortLabel": "错误覆盖"
+                },
+                {
+                  "from": "old-value",
+                  "to": "old-check",
+                  "label": "可能漏检",
+                  "shortLabel": "可能漏检"
+                },
+                {
+                  "from": "new-draft",
+                  "to": "new-owner",
+                  "label": "保留来源",
+                  "shortLabel": "保留来源"
+                },
+                {
+                  "from": "new-owner",
+                  "to": "new-guard",
+                  "label": "按语义裁决",
+                  "shortLabel": "按语义裁决"
+                },
+                {
+                  "from": "new-guard",
+                  "to": "new-check",
+                  "label": "独立验收",
+                  "shortLabel": "独立验收"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧风险：最后到达者获胜",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-draft",
+                      "old-target",
+                      "old-value",
+                      "old-check"
+                    ]
+                  },
+                  {
+                    "title": "修复原则：专用来源优先",
+                    "tone": "control",
+                    "nodeIds": [
+                      "new-draft",
+                      "new-owner",
+                      "new-guard",
+                      "new-check"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "教学上可把目标回退值视作“没有专用值时才采用的默认值”。默认值不是永久禁用，也不应因为先读到某个专用参数就禁止其他参数自己的回退。优先级必须按目的参数逐项生效，而不是给整个模型加一个“草稿已加载”的布尔量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "到达顺序可以影响执行时刻，但不应改变最后的模型定义。与其要求加载器永远先读目标分片，更稳健的契约是：对同一组合法输入张量的任意排列，得到相同的参数来源与数值；模型缺少某个专用张量时，回退规则仍按定义成立。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码、回归和硬件不是同一层证明",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "核验到的证据及可支持的判断",
+              "columns": [
+                "证据",
+                "已说明",
+                "尚不能说明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合并记录",
+                    "修复已进入主干",
+                    "当前正式镜像必然包含修复"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "固定提交加载器",
+                    "来源识别早于重命名；按目的参数维护优先级",
+                    "所有模型/量化路径都满足部署要求"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "单元测试",
+                    "目标先到、草稿先到、128 种洗牌及 rotation 两种状态；另有目标回退和部分专用参数用例",
+                    "真实分片、TP 分布式加载和吞吐已经被本站复现"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者硬件结果",
+                    "C1 纯 decode 请求均值 TPOT：EP 关闭 48.70→12.20 ms，开启 49.16→12.50 ms；修复后 C1/C8 合计 512 请求无错误",
+                    "相对一个原本正确模型的加速收益"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.30.0 标签源码",
+                    "不含本次 loaded_head_names 优先级集合",
+                    "某个使用此版的实例一定出现覆盖"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这些结果支持把“加载身份”纳入性能诊断，但不足以单独批准升级。作者数字的坏基线是被覆盖的草稿参数；拿该比值当作一般 DSpark 优化倍数，会把修复正确性的收益错误包装成新的算法上限。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：保留回退，不制造另一种错误",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "强制固定分片顺序可以掩盖复现，却不能证明模型定义与调度无关；冷启动、存储速度变化后顺序仍可能改变。",
+                "整模型一刀切禁止目标回退，可能破坏没有完整专用草稿参数的 checkpoint；应覆盖“全有、部分有、全无”三组。",
+                "不要用修改量化元数据或在线篡改权重代替受控产物修复；配置与张量的匹配本身也是模型定义。",
+                "所有性能对比必须在相同输入、输出上限、采样条件、预热和并发下进行；把加载修复和并行配置同时更换，会失去归因。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "作者尚未重新压测完整最新主干。这里推荐的是验收顺序，而不是现网变更指令。没有发现受影响加载路径时，不应仅凭这篇报告改动正在稳定运行的服务。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：让重启后的效率漂移可解释",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "原创故障假设，均需用实际观测证伪",
+              "columns": [
+                "症状",
+                "优先收集的证据",
+                "反证或分流"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "同镜像重启后接受长度变化",
+                    "启动时间线、checkpoint revision、加载参数来源摘要、各 rank 张量对照",
+                    "输入分布已改变时，先消除流量差异"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "请求成功但 TPOT 恶化",
+                    "接受长度分布、目标验证轮次、草稿耗时、端到端与纯 decode 口径",
+                    "若接受长度稳定，检查拥塞、通信和计算路径"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "只有个别 TP rank 状态异常",
+                    "逐 rank 目的参数清单和允许的切片转换说明",
+                    "不能用 rank0 正常替代其他 rank"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "关闭 EP 后仍异常",
+                    "使用相同权重和输入的对照",
+                    "EP 是实验变量，不应被当作必然根因"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "采集来源摘要可以只保存目的参数名、预期来源类型和核验结果，不把模型张量或业务输入放进公开报告。必要的诊断样本应使用合成数据；真实流量回放必须在已获授权的隔离环境完成。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：从排列不变性到冷启动重复性",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "以下均为待执行方案，不是本站测试结果",
+              "columns": [
+                "阶段",
+                "变量/输入",
+                "主要断言",
+                "失败时动作"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU 最小语义",
+                    "目标先到、草稿先到、确定种子的随机排列",
+                    "每个有专用值的目的参数最终都来自专用来源",
+                    "停止硬件性能评估，定位映射和覆盖"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回退边界",
+                    "全专用、部分专用、无专用；合法 rotation 配置",
+                    "无专用值的参数保留预期回退，其他参数不受影响",
+                    "保留原模型元数据，不强行补齐"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真实冷启动",
+                    "固定镜像和权重，多次独立启动；加载并发作为单独变量",
+                    "各 rank 结果与预期分片、dtype 和布局一致",
+                    "将异常启动隔离，不进入流量池"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "小规模服务",
+                    "固定合成请求，C1 与多请求并发分别对照",
+                    "输出校验、接受长度、错误和延迟全部记录",
+                    "保留同条件坏例，不扩大并发"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "负载稳定性",
+                    "预热后固定速率，再测阶梯负载",
+                    "纯 decode 与 TTFT 分开；排队量没有掩盖效率变化",
+                    "回到最近稳定负载，不以吞吐抵消错误"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "测试时同时保留未修复与修复产物的版本身份。若已有正确参数基线，应增加“正确基线对照”，避免仅与明显退化的部署相比。每次变更只解决一个假设，加载线程数、EP、图模式及并发逐个切换。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：参数身份是前置门，不是性能代用品",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议预先定义的门禁；数值阈值须由实际服务 SLO 决定",
+              "columns": [
+                "维度",
+                "口径",
+                "通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物包含关系",
+                    "精确 commit / 已审查 backport 与实际导入模块",
+                    "运行产物确实包含目标修复，非只看标签名"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "参数来源",
+                    "目的参数×rank×预期来源×合法变换",
+                    "所有适用参数均通过；缺测不记为成功"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "排列一致",
+                    "相同张量集合，不同读取排列",
+                    "最终参数与来源不随排列变化"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回退完整性",
+                    "无专用与部分专用 checkpoint",
+                    "合法回退仍可用，错误配置应清晰失败"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "业务正确性",
+                    "固定参考请求与输出检查",
+                    "零新增异常，不以接受率替代质量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "效率与服务",
+                    "纯 decode TPOT、TTFT、请求端到端、接受长度、负载",
+                    "达到预先设定目标，无未解释退化；不相减两个 p99"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "重复冷启动",
+                    "每次启动独立记录产物和参数校验",
+                    "所有重复均通过，不能挑最快一次"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "发布门禁与观测告警应分开：加载身份不符合预期时直接阻断流量比等待 TPOT 告警更靠前；但参数核对成功后，仍需服务 SLO 验收，因为它没有覆盖队列、传输和执行开销。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：不把主干修复写成部署结论",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "本站没有运行作者单元测试、NPU 模型加载或服务压测；本文只核对公开代码、测试内容、作者结果及发布信息。",
+                "未证实最新主干在目标部署全栈上的性能；也没有验证 A3/A5、其他 checkpoint、其他 vLLM/Ascend 组合。",
+                "需要在实际镜像中确认导入的是哪份插件代码；私有 backport 可能使版本号与包含关系不同。",
+                "后续正式版本是否收录本修复，应在升级当时重新读取 release、标签源码和构建产物，不沿用本次日期推定。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "sglang-prefill-cp-bcg-admission",
+    "kind": "analysis",
+    "title": "SGLang Prefill CP × BCG：把图重放收益与启动、显存成本分开验收",
+    "summary": "DeepSeek-V4.1 的 interleave CP 与 Breakable CUDA Graphs 已合入主干，但 H20-3e 实验分支、bounded replay 和正式交付仍是不同证据。本文解释捕获容量与有效 token 契约，并给出正确性、稳态 SLO 和冷启动资源的隔离验收矩阵。",
+    "publishedAt": "2026-11-16",
+    "reviewedAt": "2026-11-17",
+    "topics": [
+      "SGLang",
+      "PD 分离",
+      "推理编译",
+      "KV Cache",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang · Prefill CP × BCG 合并提交",
+        "url": "https://github.com/sgl-project/sglang/commit/50fbc8af48f870370f53f8ecb22ef941319417a7",
+        "publishedAt": "2026-11-16",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "SGLang #40333 · 功能说明与合入记录",
+        "url": "https://github.com/sgl-project/sglang/pull/40333",
+        "publishedAt": "2026-09-19",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "冻结源码 · CP 图准入条件",
+        "url": "https://github.com/sgl-project/sglang/blob/50fbc8af48f870370f53f8ecb22ef941319417a7/python/sglang/srt/layers/cp/bcg/__init__.py",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "冻结源码 · DSV4CPBCGInput",
+        "url": "https://github.com/sgl-project/sglang/blob/50fbc8af48f870370f53f8ecb22ef941319417a7/python/sglang/srt/layers/cp/bcg/dsv4_bcg.py",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "冻结源码 · Attention 元数据与有效行更新",
+        "url": "https://github.com/sgl-project/sglang/blob/50fbc8af48f870370f53f8ecb22ef941319417a7/python/sglang/srt/layers/attention/deepseek_v4_backend.py",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "Ant International · H20-3e 实验报告（LMSYS staging）",
+        "url": "https://staging.lmsys.org/blog/2026-11-06-deepseek-v41-h20",
+        "review": {
+          "category": "blog",
+          "publisher": "Ant International AI Infra Team / LMSYS staging",
+          "status": "attributed",
+          "note": "已核对作者署名、页面日期、实验设置和 BCG 相邻配置表及启动资源记录。此为 staging 页面上的团队实验，未独立复现，也不是 main 合并提交的 H20 性能证明。URL 日期与页面日期不同，以页面署名日期登记。"
+        },
+        "publishedAt": "2026-11-09",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "SGLang v0.5.23 标签内 DeepSeek-V4.1 配方",
+        "url": "https://github.com/sgl-project/sglang/blob/v0.5.23/docs/cookbook/autoregressive/DeepSeek/DeepSeek-V4_1.mdx",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "SGLang v0.5.23 正式 Release",
+        "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.23",
+        "publishedAt": "2026-11-02",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "SGLang #43089 · bounded SWA replay 与 CP BCG（核对时 Open）",
+        "url": "https://github.com/sgl-project/sglang/pull/43089",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "SGLang #49066 · Hopper FP8 prefill scoring（核对时 Open）",
+        "url": "https://github.com/sgl-project/sglang/pull/49066",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "SGLang #49068 · 验证阶段 paged K 重用（核对时 Open）",
+        "url": "https://github.com/sgl-project/sglang/pull/49068",
+        "accessedAt": "2026-11-17"
+      },
+      {
+        "title": "SGLang #45729 · colocate decode DP（核对时 Open）",
+        "url": "https://github.com/sgl-project/sglang/pull/45729",
+        "accessedAt": "2026-11-17"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#40333 已合入 main；冻结源码的准入仍将 bounded SWA replay 与该 CP BCG 选择分开。",
+        "sourceIndices": [
+          0,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "本站没有独立 GPU 复现或目标镜像验证，不据此建议生产升级。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "实际镜像是否包含此次合入，并选择了预期的 CP 与图后端？",
+      "捕获准备、固定缓冲与回退路径，会怎样改变启动 SLO 和可服务容量？",
+      "同一负载下收益来自计算、排队，还是其他同时变更的配置？"
+    ],
+    "related": [
+      {
+        "title": "H20 服务 SLO 的工程读法",
+        "path": "/radar/h20-serving-slo/"
+      },
+      {
+        "title": "SGLang Hang 诊断",
+        "path": "/inference/sglang-hang-diagnosis/"
+      }
+    ],
+    "report": {
+      "version": 1,
+      "scope": "核验于 2026-11-17。范围为 SGLang 合并提交 50fbc8a、相邻 PR 状态、v0.5.23 标签配方和 Ant International H20-3e 分支作者实验。main 功能、正式版、预览镜像与作者分支分别叙述；所有实验矩阵与生产诊断均为原创待验方案，本站未执行 GPU 压测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：合入的是组合能力，不是 H20 上线通行证",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "11 月 16 日，#40333 以 50fbc8a 合入 main，给 DeepSeek-V4.1 的 Prefill interleave CP 接上 Breakable CUDA Graphs。PR 标注 B200/H200；文本可走图，含图像请求回到 eager CP。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "真正值得运维关注的是两张账：每次请求的计算是否更省，和实例重新变得可服务要付出多少时间、显存。小幅稳态收益可能有价值，但不能遮住扩容变慢、可用 KV 减少或混合请求走不同路径。本文给出可证伪的验收方法，不建议直接替换生产镜像。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "与既有 [H20 服务 SLO 报告](/radar/h20-serving-slo/) 不同，这篇只解释一次新的 CP × BCG 合入及其交付边界；不重复累加原有优化成绩。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：CP 分工作业，Graph 减少重复调度",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上下文并行回答“提示词的计算行由哪些 rank 承担”，CUDA Graph 回答“已知一段执行结构能否复用”。两者解决不同成本。将它们组合，难点不是把开关同时打开，而是在批次长度、请求组合与 padding 改变时，仍让每张卡读到正确位置、正确身份的数据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                5
+              ],
+              "text": "作者的独立 H20-3e 分支实验在同机 4P+4D、NVLink 传 KV、Humming W4A8、DSpark block 5 下完成；24 并发、长共享前缀，观测命中率 93.21%。这是实验边界，不是普通 H20、跨机 RDMA 或随机负载的成绩。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "图捕获通常是一次准备成本，重放收益则随请求重复发生。稳态长时间运行可能摊薄准备成本；频繁重启、扩容或大量不适合捕获的输入则改变收益构成。这个判断来自成本模型，不是作者对所有业务的测量。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：局部容量、稳定地址、全局语义",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "捕获容量与本次有效数据：两条账不能合并",
+              "caption": "原创非实测机制示意。上组描述捕获契约，下组描述每次请求；两组只画各自的数据准备链；重放时还要同时满足上组容量与地址契约，跨组约束在正文解释。颜色区分计算、控制与 KV 状态。图不表示各阶段耗时比例。",
+              "basis": "inference",
+              "sourceIndices": [
+                3,
+                4
+              ],
+              "nodes": [
+                {
+                  "id": "cap",
+                  "label": "捕获容量",
+                  "detail": "为各 rank 保留图可使用的本地行容量。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "捕获容量",
+                  "tone": "control"
+                },
+                {
+                  "id": "address",
+                  "label": "固定地址",
+                  "detail": "图重放所读设备缓冲必须保持约定地址。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "固定地址",
+                  "tone": "kv"
+                },
+                {
+                  "id": "graph",
+                  "label": "捕获图段",
+                  "detail": "仅图安全计算段被固化，不能推断整个请求都已捕获。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "捕获图段",
+                  "tone": "compute"
+                },
+                {
+                  "id": "live",
+                  "label": "有效请求",
+                  "detail": "保留请求边界、真实 token 行和全局上下文语义。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "有效请求",
+                  "tone": "control"
+                },
+                {
+                  "id": "fill",
+                  "label": "填入本次数据",
+                  "detail": "把有效内容复制到捕获缓冲，按约定处理尾部。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "填入本次数据",
+                  "tone": "kv"
+                },
+                {
+                  "id": "replay",
+                  "label": "重放与有效输出",
+                  "detail": "重放前核对本地容量，之后仅真实 token 参与语义输出。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "重放与有效输出",
+                  "tone": "compute"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "cap",
+                  "to": "address",
+                  "label": "分配契约",
+                  "shortLabel": "分配契约"
+                },
+                {
+                  "from": "address",
+                  "to": "graph",
+                  "label": "捕获引用",
+                  "shortLabel": "捕获引用"
+                },
+                {
+                  "from": "live",
+                  "to": "fill",
+                  "label": "准备数据",
+                  "shortLabel": "准备数据"
+                },
+                {
+                  "from": "fill",
+                  "to": "replay",
+                  "label": "本次输入",
+                  "shortLabel": "本次输入"
+                }
+              ],
+              "presentation": {
+                "kind": "boundary",
+                "panels": [
+                  {
+                    "title": "捕获时固定的契约",
+                    "tone": "control",
+                    "nodeIds": [
+                      "cap",
+                      "address",
+                      "graph"
+                    ]
+                  },
+                  {
+                    "title": "重放时变化的数据",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "live",
+                      "fill",
+                      "replay"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "冻结的适配器保存每个全局桶对应的本地捕获容量；重放检查 live batch 是否超出它，再填充稳定输入缓冲。局部 token ID 与保留的全局输入字段用途不同，不能只看总 token 数就认定所有 rank 的几何一致。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "Attention 路径对允许缩短的 CP-global 元数据采用保留目标地址的复制；低压缩比状态更新只处理 live 行，避免把捕获桶的 padding 当作真实 token。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可把它理解为“容器大小”和“本次内容”两个不同约束。容器足够大不证明内容正确；内容长度正确也不证明图读的是这次写入的地址。实验需要同时覆盖容量变化与身份复用，而不是只用一种固定长度重复跑吞吐。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                3
+              ],
+              "text": "准入源码还明确：decoder bounded SWA replay 打开时，该 CP BCG 支持判断返回 false。适配器要求 PP=1 且非 HIP。因此作者分支的 bounded-tail 与 CP BCG 联用结果，不能当成此次 main 提交已经交付的组合。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：把主干、分支与发布物拆开",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "核验于 2026-11-17；状态与性能证据不能互相替代",
+              "columns": [
+                "证据层",
+                "已知内容",
+                "不证明什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合入记录",
+                    "50fbc8a 已进入 main",
+                    "某镜像包含它、目标硬件通过回归"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "正式版配方",
+                    "v0.5.23 标签内文档仍指向 dev-dsv41 预览镜像",
+                    "标签中有文档就表示 stock pip 已支持"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6,
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者分支的 BCG 相邻步骤",
+                    "吞吐 2200.82→2290.05 tok/s；约 +4.05%",
+                    "主干 PR 在 H20 的收益"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "准备成本",
+                    "8192-token capture、262144 上下文上限时：约 388 秒；每 P rank 14.53–14.59 GB",
+                    "这是全部启动时间，或该显存一定全部从 KV 等额扣除"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "相邻功能",
+                    "43089、49066、49068、45729 仍 Open",
+                    "已被当前稳定版或本 PR 一并交付"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    8,
+                    9,
+                    10,
+                    11
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "合入证据只关闭“代码是否进入该分支”这一问题。交付仍需从镜像 digest 找到代码与依赖，再核对实际解析后的参数、路径选择和回退。不要用一个 release 名称、一次 CI 通过或没有启动报错，替代后三层证据。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：吞吐小涨，资源与延迟可能反向",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                5
+              ],
+              "text": "作者相邻步骤的均值 TTFT 从 2662.13 降到 2390.32 ms，TPOT 从 5.28 升至 5.43 ms，且步骤 2/3 都是单次运行。它说明不同指标可向不同方向变化，不能据此确认稳定显著性。"
+            },
+            {
+              "type": "table",
+              "caption": "原创评估维度，不是性能预测",
+              "columns": [
+                "情形",
+                "可能的代价",
+                "必须补的证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "长寿命稳定实例",
+                    "准备成本有机会被摊薄",
+                    "固定运行窗口内，满足同一 SLO 的有效完成量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "突发扩容与重启",
+                    "图准备延后接流，旧实例继续背压",
+                    "从启动到可承接目标流量的时间分布"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "图像与文本混流",
+                    "走图比例下降，路径差异增加",
+                    "按输入类型分组的回退率、质量与首包"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "显存紧张",
+                    "固定捕获缓冲和工作空间挤压容量",
+                    "实测总 HBM、KV 池、峰值和请求拒绝"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "短请求或高缓存命中",
+                    "计算与调度所占比例改变",
+                    "同请求集、命中策略和并发的分层 A/B"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要用吞吐比反推扩容预算。更实用的比较单位是同样卡数、同样墙钟窗口、同样质量与 SLO 门槛下的完成请求数，同时报告准备时间和容量。捕获显存是组件观测，和框架预留池可能存在包含关系；加总前要先查口径，避免重复扣减。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产假设：把慢与错分开定位",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "以下均为排查假设，不能当作已发生的事故",
+              "columns": [
+                "观察",
+                "可能解释",
+                "区分证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "实例 Ready 后首批更慢",
+                    "应用探针先于实际图准备或负载适配完成",
+                    "启动、捕获结束、探针成功、首个合格响应四时间戳"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "某些批次正常，换长度后异常",
+                    "桶容量、有效行或复用地址契约不一致",
+                    "保存脱敏形状/桶/rank 元数据，并与 eager 同输入比较"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "扩容后总吞吐没有改善",
+                    "新实例接流慢或图显存改变可用容量",
+                    "按新旧实例分开看路由量、排队、KV 余量和错误"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "同平均 TTFT，尾延迟变差",
+                    "回退或重放覆盖不均，负载处在排队拐点",
+                    "分路径 p95/p99、到达/完成率和累计队列"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "逐请求指标必须先对齐边界：客户端发送到首个输出、服务端排队、实际计算不是一个时间段。吞吐变快可能只是压缩了此前的排队；不能从聚合 p99 的差值推断某个阶段省了多少。冷启动探针与稳态业务测量分开采样，才能避免“热过一次”污染启动结论。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：先验路径，再做受控 A/B",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "以下是待执行的隔离测试方案，不包含生产指令。准备一个不含内部数据的公开提示集，固定模型、tokenizer、精度、依赖与硬件；在同一实现基线上只切换获准的图路径。若某一组合不受支持，应记为不适用，而非强行关闭校验。"
+            },
+            {
+              "type": "table",
+              "caption": "计划实验；本站未运行 GPU 测试",
+              "columns": [
+                "组别",
+                "保持不变与变量",
+                "收集内容",
+                "判定目的"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份和准入",
+                    "固定 digest；核对冻结 commit、PP、CP 与 bounded replay",
+                    "解析配置、实际后端、启动拒绝/回退原因",
+                    "证明真的在比较预期路径"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正确性",
+                    "固定公开输入；文本长度跨桶、混合请求数、prefix 复用",
+                    "token/logprob 容差、输出顺序、有效行映射",
+                    "发现 padding 和 rank 身份问题"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "稳态",
+                    "同负载 eager 对照图路径；低/中/近饱和到达率",
+                    "成功量、TTFT/TPOT 分位数、队列与图覆盖率",
+                    "区分计算收益与排队转移"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "冷启动",
+                    "重新启动进程；缓存冷热分别固定",
+                    "加载、捕获、Ready、首个合格响应、峰值 HBM",
+                    "量化扩容与恢复代价"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "混合输入",
+                    "同模型下纯文本与含图像按组比较",
+                    "eager 回退、质量、尾延迟",
+                    "避免把回退误认为 graph 性能"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "容量压力",
+                    "逐档增加在途请求，保留回退基线",
+                    "KV 可分配量、OOM、拒绝、完成量",
+                    "验证同卡数服务预算"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "每组使用交替次序和多次重复，保留失败运行而非只平均成功值。预先声明热身、计量窗口、缓存清理与 SLO。若要比较作者分支与主干，要作为另一实验轴报告，不可在开启 BCG 的同时更换 scoring、MoE 或解码并行后，把总收益归到图。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：四道门，不能用效率抵消正确性",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "验收应预先填入业务容许值；这里不替业务编阈值",
+              "columns": [
+                "门",
+                "记录与口径",
+                "通过原则"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物门",
+                    "镜像 digest → commit → 依赖 → resolved config",
+                    "包含目标代码且所选组合明确受支持"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "语义门",
+                    "同公开输入、同 seed / 解码规则；必要时用容差或统计评估",
+                    "没有跨请求污染、截断、排序错误或不可解释质量退化"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务门",
+                    "同到达轨迹和窗口；成功率、超时率、TTFT/TPOT p95/p99",
+                    "同时满足既定 SLO，不用吞吐掩盖尾延迟"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "交付门",
+                    "冷启动到合格响应、捕获时长、稳态与峰值 HBM、KV 余量",
+                    "扩容/恢复窗口和容量仍有预留；回退可验证"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "输出一张 A/B 对照表即可完成首轮决策：版本身份、实际路径、覆盖率、正确性、SLO、有效吞吐、启动成本、显存/KV 容量。任何一项未知都应写未知，不能写零或沿用另一台卡的数据。回退演练也需计时，避免图路径出问题时才发现基线镜像或参数已失效。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：哪些问题仍然没有答案",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "本站未运行模型或 GPU 复现；PR 的 CI、截图及作者跑分不构成独立复现。",
+                "main 合入与预览镜像内容不是一回事；本文没有确认任何现有部署镜像包含 50fbc8a。",
+                "H20-3e 分支实验没有证明普通 H20、跨机 RDMA、多副本路由或当前生产输入分布的收益。",
+                "四个开放 PR 的状态会变；发布前和实验前应再次核对，不以本文日期推定未来收录。",
+                "PP>1、HIP、bounded SWA replay 与图路径的组合不能由本报告补授权或补兼容；以所选版本的准入和回归为准。",
+                "捕获预算对 KV 池的实际挤占、尾延迟及重启恢复时间，必须从目标环境获取，不按组件显存直接相减。"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-dp-abort-order",
     "kind": "analysis",
     "title": "SGLang DP 取消顺序：HTTP 200 之后，请求为何还在生成",
