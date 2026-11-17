@@ -1019,5 +1019,82 @@
     ],
     "publicationApproved": true,
     "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "alibaba-100056200004",
+    "company": "阿里巴巴集团",
+    "title": "基础设施与稳定性工程-AI Native稳定性架构师-GOC",
+    "locations": [
+      "杭州"
+    ],
+    "category": "sre",
+    "level": "本科；5 年以上稳定性工程、SRE 或运维架构经验",
+    "summary": "围绕大模型推理服务建立稳定性治理体系，覆盖变更、监控、演练和故障恢复，并探索智能诊断。",
+    "skills": [
+      "LLM Serving / MaaS",
+      "稳定性架构",
+      "可观测性",
+      "变更管控",
+      "故障演练",
+      "风险治理"
+    ],
+    "url": "https://talent-holding.alibaba.com/off-campus/position-detail?positionId=100056200004",
+    "sourceName": "阿里巴巴集团官方招聘详情",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-17 官方渲染详情可见投递简历按钮，未点击、勾选协议或提交。页面更新于 2026-11-13，未披露首次发布日期。地点为杭州；薪资和远程政策未明确。",
+    "verifiedAt": "2026-11-17",
+    "postedAt": null,
+    "priority": "strong",
+    "matchReasons": [
+      "职责直接聚焦模型推理服务的生产可靠性",
+      "侧重端到端风险识别、恢复和跨团队治理，而非纯内核研发"
+    ],
+    "gaps": [
+      "需有大型分布式系统稳定性体系落地经验",
+      "准备依赖分析、演练闭环及智能诊断的架构案例"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "tencent-2112508932995067904",
+    "company": "腾讯",
+    "title": "腾讯云-MaaS平台推理流量调度高级工程师(北/杭/深)",
+    "locations": [
+      "深圳"
+    ],
+    "category": "inference",
+    "level": "本科及以上；三年以上工作经验；高级后端研发方向",
+    "summary": "研发多地域推理调度、租户限流与弹性能力，将缓存亲和、预热和排空纳入推理链路优化。",
+    "skills": [
+      "Golang",
+      "分布式调度",
+      "KV Cache",
+      "Prefill / Decode",
+      "Token 级流控",
+      "HPA",
+      "流式传输"
+    ],
+    "url": "https://careers.tencent.com/zh-cn/jobdesc.html?postId=2112508932995067904",
+    "sourceName": "腾讯官方招聘详情",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-17 官方详情可见申请岗位入口，未点击或提交；更新于 2026-10-20，首次发布日期未披露。所属 CSIG。标题含北/杭/深，但地点字段为深圳，北京或杭州安排需确认；薪资和远程政策未明确。",
+    "verifiedAt": "2026-11-17",
+    "postedAt": null,
+    "priority": "strong",
+    "matchReasons": [
+      "直接覆盖推理入口、排队、扩缩容及缓存感知路由",
+      "同时关注服务延迟、GPU 利用率和租户资源公平性"
+    ],
+    "gaps": [
+      "偏系统研发，需扎实 Go、高并发与网络基础",
+      "需理解引擎执行流程，并具备调度或推理调优实践"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
   }
 ]
