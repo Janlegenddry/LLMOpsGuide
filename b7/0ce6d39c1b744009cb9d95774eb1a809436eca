@@ -1,0 +1,19 @@
+src/content/jobs.json
+  s_171d9b217bf4ef::t_0359c75f7068d0 1099-1138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b70ce6d39c1b744009cb9d95774eb1a809436eca",
+  "prompts": {},
+  "sessions": {
+    "s_171d9b217bf4ef": {
+      "agent_id": {
+        "tool": "antcc",
+        "id": "2dc41f69-7337-4612-a62f-d16e93a35955",
+        "model": "DeepSeek-V4-Flash-0731"
+      },
+      "human_author": "观至 <liguanzhi.lgz@antgroup.com>"
+    }
+  }
+}
