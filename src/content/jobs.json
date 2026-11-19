@@ -1096,5 +1096,45 @@
     ],
     "publicationApproved": true,
     "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "company": "TokenFab（象元工坊）",
+    "url": "https://www.tokenfab.cn/join.html",
+    "sourceName": "TokenFab 官方中文招聘页",
+    "sourceType": "official",
+    "status": "open",
+    "verifiedAt": "2026-11-19",
+    "postedAt": null,
+    "publicationApproved": true,
+    "containsPrivateData": false,
+    "id": "tokenfab-llm-inference-service",
+    "title": "大模型推理服务技术专家/工程师",
+    "locations": [
+      "深圳",
+      "上海",
+      "杭州"
+    ],
+    "category": "inference",
+    "level": "计算机相关专业硕士及以上；3 年以上后端服务、推理平台或 AI 基础设施开发经验",
+    "summary": "建设模型推理平台，兼顾分布式部署、性能、弹性和可靠性，推动新架构工程化。",
+    "skills": [
+      "SGLang / vLLM",
+      "Go / Python / C++",
+      "PD 分离",
+      "Mooncake / KV Cache",
+      "TTFT / TPOT",
+      "灰度与可观测性"
+    ],
+    "statusNote": "2026-11-19 官方完整 JD 和该岗位投递邮箱链接可见，未点击或发送。地点标注深圳、上海、杭州；邮件预填主题附深圳，其他地点需投递时说明。首次发布日期、薪资及远程政策未明确。",
+    "priority": "strong",
+    "matchReasons": [
+      "兼顾推理部署运营、效率优化与服务治理",
+      "覆盖冷启动、长尾请求和分布式推理能力建设"
+    ],
+    "gaps": [
+      "要求硕士及相关开发经历，非纯运维岗位",
+      "需扎实服务开发能力与复杂技术方案落地经验"
+    ]
   }
 ]
