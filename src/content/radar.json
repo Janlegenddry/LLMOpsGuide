@@ -1,6 +1,745 @@
 [
   {
     "schemaVersion": 1,
+    "id": "sgl-router-v0-1-0",
+    "kind": "release",
+    "title": "sgl-router 0.1.0：独立发布之后，先验收网关边界，再追求缓存命中",
+    "summary": "独立路由器已有 PyPI wheel 和多架构镜像，但不是 SGLang 引擎 1.0。本文拆解上游 AIGW、响应前重试、退出排空与 EndpointSlice、缓存事件及多副本状态，并给出可执行的联调和灰度验收矩阵。",
+    "publishedAt": "2026-11-18",
+    "reviewedAt": "2026-11-18",
+    "topics": [
+      "SGLang",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "sgl-router 0.1.0 独立版本标签",
+        "url": "https://github.com/sgl-project/sglang/releases/tag/router-v0.1.0",
+        "publishedAt": "2026-11-18",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "冻结版 README：部署与接口边界",
+        "url": "https://github.com/sgl-project/sglang/blob/7fed639806be1b03ef4eaba3fc4ad2117a8f2be4/sgl-router/README.md",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "冻结版 REFERENCE：重试、缓存和发现",
+        "url": "https://github.com/sgl-project/sglang/blob/7fed639806be1b03ef4eaba3fc4ad2117a8f2be4/sgl-router/REFERENCE.md",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "冻结版 ARCHITECTURE：reorg 路由流程",
+        "url": "https://github.com/sgl-project/sglang/blob/7fed639806be1b03ef4eaba3fc4ad2117a8f2be4/sgl-router/ARCHITECTURE.md",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "冻结版监控契约",
+        "url": "https://github.com/sgl-project/sglang/blob/7fed639806be1b03ef4eaba3fc4ad2117a8f2be4/sgl-router/monitoring/README.md",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "冻结版退出排空实现",
+        "url": "https://github.com/sgl-project/sglang/blob/7fed639806be1b03ef4eaba3fc4ad2117a8f2be4/sgl-router/src/server/shutdown.rs",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "冻结版 EndpointSlice 发现实现",
+        "url": "https://github.com/sgl-project/sglang/blob/7fed639806be1b03ef4eaba3fc4ad2117a8f2be4/sgl-router/src/discovery/k8s.rs",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "冻结版独立发布工作流",
+        "url": "https://github.com/sgl-project/sglang/blob/7fed639806be1b03ef4eaba3fc4ad2117a8f2be4/.github/workflows/release-sgl-router.yml",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "PyPI sgl-router 0.1.0 版本元数据",
+        "url": "https://pypi.org/pypi/sgl-router/0.1.0/json",
+        "review": {
+          "category": "community",
+          "publisher": "PyPI · sgl-router 项目",
+          "status": "attributed",
+          "note": "读取版本元数据与 urls：两种 Linux manylinux_2_28 wheel 的文件名、上传时间和散列；未安装或运行。"
+        },
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "Docker Hub v0.1.0 标签元数据",
+        "url": "https://hub.docker.com/v2/repositories/lmsysorg/sgl-router/tags/v0.1.0",
+        "review": {
+          "category": "community",
+          "publisher": "Docker Hub · lmsysorg/sgl-router",
+          "status": "attributed",
+          "note": "读取标签与镜像索引 digest、linux amd64/arm64 清单；未拉取运行，未验证二进制与源码逐字节对应。"
+        },
+        "accessedAt": "2026-11-18"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "router-v0.1.0 使用独立版本轨道；冻结版文档与发布工作流不将其等同于 SGLang 引擎版本。",
+        "sourceIndices": [
+          0,
+          1,
+          7
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "公开包注册表已列出 0.1.0 Linux wheel 与 v0.1.0 双架构镜像；这里只核对产物元数据，未执行部署回归。",
+        "sourceIndices": [
+          8,
+          9
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "与实际 AIGW、目标引擎和 P/D 传输组合的兼容性、性能收益及故障恢复仍须验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "AIGW 和 router 的超时、重试、流式提交边界是否一致？",
+      "多副本 router 的会话状态、缓存树和本地准入计数是否被误当成全局状态？",
+      "滚动更新期间，EndpointSlice 摘流、router 排空与已有长请求是否各有足够时间？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-18 核对 router-v0.1.0 固定提交文档、关键实现、PyPI 与 Docker Hub 元数据。原创机制分析与实验计划；未执行运行时、硬件、Kubernetes 或业务 AIGW 测试。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：这是路由层升级，不是引擎大版本升级",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议把 0.1.0 纳入独立路由层试点，而不是直接替换生产网关。第一阶段保留 AIGW 的业务治理职责，先打通一个模型、一种部署形态和最小请求集；第二阶段再开启缓存优选、P/D 和多副本。值得做出的亮点不是“接入了新组件”，而是建立可重复的请求语义、容量和故障边界验收。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                7
+              ],
+              "text": "冻结 README 明确说明 sgl-router 独立使用 semver；router-v* 工作流与引擎 v* 发布路径分开。此次核对对象是 router-v0.1.0 对应提交 7fed639806be1b03ef4eaba3fc4ad2117a8f2be4，不是 SGLang 引擎 v1.0。GitHub 标签页不能自动等同于一个正式 Release 对象。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                8,
+                9
+              ],
+              "text": "PyPI 元数据显示 0.1.0 的 x86_64、aarch64 两个 manylinux_2_28 wheel；Docker Hub 显示 v0.1.0 的 linux amd64、arm64 镜像。可下载产物只证明进入了分发环节，不证明目标系统可运行或业务无回归。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：把“业务选模型”和“模型内选引擎”分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "业务网关往往已处理租户、认证、配额和模型目录；新 router 的核心价值则在模型内部的放置决策。把两层都当成普通反向代理，会掩盖模板渲染、错误分类、流式承诺点与取消传播的责任变化。原来引擎完成的输入处理若前移，网关透传成功也不代表 token 序列一致。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                3
+              ],
+              "text": "该路由器面向一个模型，可配置统一引擎组或 P/D 桶。reorg 流程包含输入处理、选桶、准入、候选评分、派发和输出解析；架构文档只描述 --chat-routing reorg，不包含默认 legacy 路径。未显式设置该选项时，不应把 reorg 示意图套用到实际运行行为。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本文没有执行 GPU、Kubernetes 或目标 AIGW 实验，不能给出吞吐提升百分比。负载应按输入长度、输出长度、共享前缀比例、会话轮数和突发程度分层，避免把一个平均 QPS 当成完整能力。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：局部决策怎样变成端到端行为",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "两条数据路径，一个不能混淆的状态边界",
+              "caption": "原创机制示意，非压测结果。上游 AIGW 是拟议集成边界，不是项目内置组件。实线仅表达声明的交互；KV 由 P 直传 D，不经过网关或 router。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                3
+              ],
+              "nodes": [
+                {
+                  "id": "gateway",
+                  "label": "业务网关 AIGW",
+                  "detail": "负责业务鉴权、租户配额与外部请求契约；是否已有重试和粘性需联调确认。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "router",
+                  "label": "sgl-router 副本",
+                  "detail": "预处理、桶选择、准入、选 P/D 和响应处理；重试只能在允许的提交边界之前。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "prefill",
+                  "label": "Prefill 引擎",
+                  "detail": "接收请求并生成 KV；事件描述可匹配前缀，但不能替代引擎实际完成证据。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "decode",
+                  "label": "Decode 引擎",
+                  "detail": "接收请求及 P 直接传来的 KV，推进输出；不是缓存优选 P 的同一决策。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "state",
+                  "label": "副本内路由状态",
+                  "detail": "缓存树、会话绑定、在途计数不自动跨 router 共享；peer bootstrap 用于启动时树恢复，不是实时全局一致性协议。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "control",
+                  "label": "EndpointSlice 与信号",
+                  "detail": "发现可选引擎与 peer；引擎负载/KV 事件和 Kubernetes 发现是不同信号源，时效须分别观察。",
+                  "column": 0,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "gateway",
+                  "to": "router",
+                  "label": "请求、取消与流式连接"
+                },
+                {
+                  "from": "router",
+                  "to": "prefill",
+                  "label": "选择并派发 P"
+                },
+                {
+                  "from": "router",
+                  "to": "decode",
+                  "label": "选择并派发 D"
+                },
+                {
+                  "from": "prefill",
+                  "to": "decode",
+                  "label": "直接 KV 传输"
+                },
+                {
+                  "from": "state",
+                  "to": "router",
+                  "label": "缓存/会话/在途选择依据"
+                },
+                {
+                  "from": "control",
+                  "to": "state",
+                  "label": "成员和异步状态更新"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "在 reorg 中，先找长度适配的桶，再按偏好和容量等顺序尝试；无长度适配与无引擎准入是不同失败。cache_aware 面向统一或 P 组，D 默认仍可使用负载策略，不能把“命中某个 P 的 KV”误解成所有阶段都固定在同一实例。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "缓存优选解决重复预填充，负载优选解决热点等待，两者目标可能冲突。缓存命中更多但排队更久，是完全可能的结果。应把 prefix 命中、排队、TTFT 与达标吞吐一起看，而不是给命中率单独设无限上升的目标。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "配置 --retry-max-attempts 的默认值为 1，即不启用该类跨 worker 重试。响应前满足条件的失败可尝试未用过的 worker；已向客户端提交 2xx 流不能重新开始。请求级 stale deadline 约束总重试窗口，request timeout 对流式响应主要限制到 headers 的等待。429 是可重试条件之一，不能把一般 4xx 不重试的规则忽略这个例外。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "因此 AIGW 不应无条件再做同层重试。即使两层都遵守“客户端还没看到响应”，后端也可能已经投入计算。建议只选一层承担跨实例重试，另一层负责总 deadline 与取消透传；日志分别记录业务请求 ID 和尝试 ID，度量重试放大而不是只看最终成功。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "SIGTERM 处理先将 readyz 变为 503，再保留监听一段 drain 时间，之后停止接收新连接并排空在途请求。源码明确区分删除时 EndpointSlice 摘除传播与依赖探针的外部 LB 摘流；后者还受探针周期和失败阈值影响。在途 drain 不由这一固定暂停时长限定。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "容器 terminationGracePeriodSeconds 需要容纳退出前其他 hook、摘流等待及允许保留的长请求。仅把 drain 配成一个固定秒数并不能保证 SSE 不被 SIGKILL 截断；应通过滚动删除实验反推预算，而不是把 readyz=503 当作所有连接已经消失。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "缓存树、会话绑定与 in-flight 都存在 router 副本内。session_aware 多副本需要上游把同一会话送回同一副本；缓存树 peer bootstrap 则是新副本启动时获取兄弟快照并拼接增量。它们解决的是不同问题，不意味着各副本形成全局强一致调度器。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据：冻结源码、分发产物与运行验证分层",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "核对结果与不可越过的证据边界",
+              "columns": [
+                "对象",
+                "已核对",
+                "不能由此证明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "源码身份",
+                    "router-v0.1.0；commit 7fed639806be1b03ef4eaba3fc4ad2117a8f2be4",
+                    "引擎 v1.0 已发布，或生产验证完成"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "PyPI",
+                    "0.1.0 两个 Linux wheel；2026-11-18 UTC 00:53 左右上传",
+                    "其他 OS 有 wheel，或本机依赖可满足"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    8
+                  ]
+                },
+                {
+                  "cells": [
+                    "Docker",
+                    "v0.1.0 双架构索引；digest sha256:461d547638d07c7f6097d4809823239bc932a58b3af869fb3e2a4f548dee969f",
+                    "二进制已独立复现构建，或 GPU/网络部署已验收"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    9
+                  ]
+                },
+                {
+                  "cells": [
+                    "路由路径",
+                    "架构文档明确限定 reorg；legacy 仍是另一条路径",
+                    "仅升级包就自动使用新策略"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    1,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "发现机制",
+                    "EndpointSlice 条件 ready=false 被过滤；未设置 ready 按实现视为 ready",
+                    "引擎真实生成能力始终正常"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "运行结论",
+                    "本站尚未执行端到端实验",
+                    "任何硬件上的延迟、吞吐、稳定性提升"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "冻结发布工作流说明如何构建和分发，不是一次实际运行成功的证明。发布核对应保存镜像索引与实际架构子镜像 digest、wheel SHA256、启动参数、引擎版本及模型/模板身份；使用 latest 或 nightly 会使后续归因失去稳定基线。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：缓存收益必须放在拥塞和拓扑成本中衡量",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "inference",
+              "sourceIndices": [],
+              "items": [
+                "稳定共享前缀适合检验 cache_aware，但低复用短请求可能只增加预处理和状态维护成本。不要先承诺收益，再挑选有利负载。",
+                "同前缀突发时，pending prefix 可减少重复冷预填充，也可能集中请求形成热点。先用关闭状态建立基线，再扫 TTL、follower cap 和 admission；不能把“已路由过去”当成“KV 已真实存在”。",
+                "多副本增加入口可用性，却让本地 in-flight 上限不再等于全局 worker 上限。引擎负载上报延迟叠加突发流量时，需要观察多个 router 共同冲击同一引擎的幅度。",
+                "P/D 多增加配对、取消与传输依赖，先验证统一部署再扩展 P/D，可缩小故障定位空间。不要用 P/D 端到端结果直接归因某个 router 策略。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "缺失 KV 移除事件会留下虚假的缓存归属；冻结文档提供事件序列缺口重放，但历史缓冲有限，过旧缺口无法保证修复。DP 多 rank 的 PUB/replay 地址也需独立核对，避免端口区间重叠。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                4
+              ],
+              "text": "新副本 bootstrap 的 peer selector 匹配 EndpointSlice 标签而非 Pod 标签，并依赖相应 RBAC。readyz 在 bootstrap 结束前可保持不就绪，但 settled 不等于恢复成功，需要结合快照结果及 per-rank 状态。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、生产故障假设：先找证据，再决定调哪一层",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "以下是原创排障假设，不是已发生或已证实的缺陷",
+              "columns": [
+                "症状",
+                "优先假设",
+                "最小诊断证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "成功率正常但 GPU 工作量升高",
+                    "AIGW 与 router 双重重试放大，或客户端断连未及时止算",
+                    "同一业务 ID 的尝试链、retries、取消时间与引擎活跃请求归零时间"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "滚动更新时 SSE 中断",
+                    "摘流窗口或终止宽限期不足",
+                    "SIGTERM、readyz、EndpointSlice 变化、LB 最后一次分发和 SIGKILL 时间线"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新副本上线后 TTFT 变差",
+                    "冷缓存视图、错误 peer selector 或 RBAC",
+                    "peers_synced、peers、snapshot outcome、rank verdict；与引擎实际 cache occupancy 比较"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "路由器认为缓存充足但真实重复预填充",
+                    "移除事件丢失，或缓存身份与模板/适配器不一致",
+                    "丢批与 replay outcome、树覆盖率、模型和模板指纹；禁止仅凭命中日志归因"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "503 上升但 worker_health 仍为 1",
+                    "容量背压而非断路器故障；也可能早期准入拒绝",
+                    "edge response 状态、dispatch outcome、排队和 KV 占用；区分未派发与已派发请求"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "多副本下会话换 worker",
+                    "粘性键丢失或入口未粘到同一 router",
+                    "逐跳 session header、router 实例与 worker 选择轨迹"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "避免故障期间盲目 flush cache 来“修复缓存树”。这会同时改变业务负载和证据现场。先保存只读状态与差异，再在隔离副本验证恢复方案；真实业务提示词和租户标识不应直接写入公开复盘。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、实验矩阵：先语义，再可靠性，最后性能",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "计划执行，所有结果目前均待验证",
+              "columns": [
+                "实验",
+                "控制变量与注入",
+                "采集证据",
+                "预设判定"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "A：三路径契约",
+                    "同模型/模板/采样，直连引擎、router、AIGW→router；文本、工具、结构化输出及流式",
+                    "token/usage、finish reason、工具参数、错误码与 headers",
+                    "明确解释全部差异；不得静默改写或重复提交"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "B：重试边界",
+                    "响应前超时、429/5xx、首个 2xx 流提交后断连；分开开关两层重试",
+                    "请求 ID、尝试数、下游收到首响应时间、终止状态",
+                    "首响应提交后不得产生新重试流；总时长符合 deadline"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "C：客户端取消",
+                    "首 token 前和流中取消；统一与 P/D 分开",
+                    "取消传播、P/D 活跃请求与资源回落、残留连接",
+                    "预先约定回落窗口；不得无限遗留任务"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "D：滚动与发现",
+                    "持续长流下删除 router/worker；调整探针和 termination grace",
+                    "readyz、EndpointSlice、最后新派发、SSE 完整结束率",
+                    "预算内完成摘流；截断和重新分发均可解释且不重复输出"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "E：缓存视图恢复",
+                    "热引擎中新启 router，正确/错误 peer selector；模拟事件缺口",
+                    "bootstrap rank、snapshot、tree coverage、replay 与真实预填充量",
+                    "失败必须可观测；恢复成功不能只靠 settled=1"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "F：容量与热点",
+                    "相同总到达率，1/2/多 router；共享前缀突发与低复用随机请求",
+                    "每副本 in-flight、全局 worker 压力、队列、TTFT/TPOT、goodput",
+                    "局部上限不冒充全局保证；过载时有界且可恢复"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "G：PD 部分失败",
+                    "P 慢/退出，D 慢/退出，混合版本；控制传输配置不变",
+                    "配对身份、错误归属、room/请求清理、重试链",
+                    "不出现跨版本错误配对、重复输出和长期资源遗留"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "执行顺序建议为 A→B/C→D/E→F→G。每轮固定产物身份，保留关闭新功能的对照，先预热再记录稳定窗口，并在相同到达流量下比较。性能实验同时报告请求到达分布、模型、上下文长度与 cache 热度；只报峰值 token/s 无法复现路由价值。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、验收：响应成功不等于流完成，健康不等于可生成",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                4
+              ],
+              "text": "官方监控把入口接收、入口响应、worker dispatch 和提交后的流式结局分开。worker_health 表示断路器准入状态，不是模型输出正确性的证明；stream_outcome 只覆盖已提交 2xx 的流。因此入口 200 比例不能单独当完整成功率。"
+            },
+            {
+              "type": "table",
+              "caption": "建议在实验前填入业务目标；这里不捏造实测值或通用阈值",
+              "columns": [
+                "验收面",
+                "计算或观测口径",
+                "门禁"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "端到端成功",
+                    "入口请求按业务 ID 去重；最终成功且流完整结束才计成功；明确排除探针",
+                    "语义/重复输出回归为零；错误与断流不超过约定基线"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务质量",
+                    "按短/长上下文、流式与非流式分别报告 TTFT、TPOT、完成时延 P50/P95/P99",
+                    "同到达率、同质量下满足目标 SLO；不以均值掩盖长尾"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "有效容量",
+                    "goodput=同时满足正确性和约定 SLO 的完成请求/时间；成本用同计价口径资源时长",
+                    "只在质量和长尾均通过后认可降本收益"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "重试成本",
+                    "retries 增量、尝试/业务请求比，加引擎额外计算；分别看连接重发与跨 worker 重试",
+                    "总预算有界；不因多层重试造成失控放大"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "缓存视图",
+                    "同 deployment/worker/rank/tier 比较树块×块大小与引擎占用；结合 lost/replay",
+                    "偏离必须解释；不把覆盖率当实际请求命中率"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "更新恢复",
+                    "摘流时序、长流完成、bootstrap 快照和 per-rank 结果、回滚耗时",
+                    "失败可检测可回滚；未成功恢复不能标为已暖机"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2,
+                    4,
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "Prometheus 面板至少联看 sgl_router_requests_total、responses_total、worker_requests_total、stream_outcome_total、ttft_seconds、worker_inflight_requests 以及 KV 丢批与恢复指标。requests 与 responses 的差在进程重启、采样区间或多实例聚合下需解释，不能随意当持久在线请求数。跨 router、引擎、AIGW 的比率必须对齐时间窗和部署标签。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、待验证与落地：把“装得上”推进到“运维得住”",
+          "blocks": [
+            {
+              "type": "list",
+              "basis": "pending",
+              "sourceIndices": [],
+              "items": [
+                "尚未安装 wheel、拉取并启动镜像，也未执行 Kubernetes、GPU 或真实 AIGW 回归。公开注册表的分发存在性已核对，运行适配性未核对。",
+                "GitHub 此次证据是 router-v0.1.0 标签及固定源码，发布元数据检查中 /releases/tags/router-v0.1.0 未得到正式 Release 对象；不要因此否认已经存在的 PyPI/Docker 产物，也不要将 tag 写成引擎 1.0 正式发布。",
+                "目标引擎需要的 KV 事件字段、负载上报、DP publisher 地址、tokenizer/template、P/D 协议与版本组合，需要实际 server_info 和最小请求验收。",
+                "Responses/Conversations 等接口、模型别名及 adapter、工具/推理解析与认证头，不应假设与旧网关完全兼容；按冻结文档列接口清单逐项测试。",
+                "先产出一份网关契约测试集、一张入口到 worker 的状态面板、一套滚动/取消故障演练，再决定推广。真正可复用的成果是自动验收和诊断证据链，不是一次手工跑通。"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "推荐的近期动作是建立隔离单模型试点：只选一个负责人确认 AIGW/router/engine 的职责表，冻结产物与参数，跑完语义和失败矩阵后才给小比例业务流量。若性能无收益但发布与故障边界更清晰，也应如实记录；路由器的价值不必被包装成未经验证的吞吐增长。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "vllm-ascend-dspark-head-load-priority",
     "kind": "analysis",
     "title": "Ascend DSpark 加载优先级：请求成功，不代表草稿权重装对了",
@@ -641,6 +1380,624 @@
                 "需要在实际镜像中确认导入的是哪份插件代码；私有 backport 可能使版本号与包含关系不同。",
                 "后续正式版本是否收录本修复，应在升级当时重新读取 release、标签源码和构建产物，不沿用本次日期推定。"
               ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "vllm-ascend-mooncake-dcp-rank-identity",
+    "kind": "analysis",
+    "title": "Mooncake DCP 条带归属调查：传输成功为何仍可能用错 KV",
+    "summary": "围绕仍开放的 Ascend #22129 / #22144 / #22138，区分坐标与组内身份，独立复核排列差异，给出分路径、分版本的正确性验收方案；不是已发布修复。",
+    "publishedAt": "2026-11-17",
+    "reviewedAt": "2026-11-18",
+    "topics": [
+      "vLLM",
+      "NPU/昇腾",
+      "KV Cache",
+      "PD 分离",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM-Ascend #22129 · 故障报告",
+        "url": "https://github.com/vllm-project/vllm-ascend/issues/22129",
+        "review": {
+          "category": "community",
+          "publisher": "real-CLiang / vLLM-Ascend GitHub",
+          "status": "attributed",
+          "note": "核对公开作者陈述与 open 状态；不是独立 NPU 复现或已发布修复。"
+        },
+        "publishedAt": "2026-11-17",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "vLLM-Ascend #22144 · 拟议修复",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/22144",
+        "publishedAt": "2026-11-17",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "vLLM-Ascend #22138 · 相邻路径待调查",
+        "url": "https://github.com/vllm-project/vllm-ascend/issues/22138",
+        "review": {
+          "category": "community",
+          "publisher": "real-CLiang / vLLM-Ascend GitHub",
+          "status": "attributed",
+          "note": "核对公开作者陈述与 open 状态；不是独立 NPU 复现或已发布修复。"
+        },
+        "publishedAt": "2026-11-17",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "vLLM main · DCP 组构建代码",
+        "url": "https://github.com/vllm-project/vllm/blob/main/vllm/distributed/parallel_state.py",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "vLLM v0.33.0 · DCP 组构建代码",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/distributed/parallel_state.py",
+        "accessedAt": "2026-11-18"
+      }
+    ],
+    "claims": [
+      {
+        "status": "pending",
+        "text": "问题与修复仍开放；没有本地设备端到端复现或发布覆盖证明。",
+        "sourceIndices": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "questions": [
+      "实际镜像的 DCP 组是否排序？",
+      "目的端真实 rank 与握手身份是否一致？",
+      "Mamba 与 Pull 是否已有各自验证？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-18 公开源码与开放 issue/PR 核对；独立执行纯 Python 排列探针；未运行 NPU、Mooncake 设备传输或模型端到端测试。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先查条带归属，不把传输成功当正确性证明",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "这是一项有明确触发条件的正确性调查，不是发布公告。2026-11-18 核对时，#22129、#22144 与 #22138 均仍开放。应优先检查采用 Mooncake、P/D 分离、排序 DCP 组且 PCP>1、DCP>PCP 的组合；不据此断言所有昇腾推理服务受影响。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "真正可迁移的运维结论是：传输完成只证明字节到达，不能证明字节属于这个 rank 的 KV 条带。把目的端实际组内身份与发送端理解的一致性纳入准入，比仅检查通信错误率更有效。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：物理坐标与逻辑身份不是同一个量",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "P 计算输入并产生 KV，D 使用 KV 继续生成。TP、PCP 和 DCP 分别描述不同的并行分工。连接器既要找到接收 worker，也要知道其本地 KV 布局；坐标能定位进程，并不天然规定其组内条带编号。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3,
+                4
+              ],
+              "text": "本次核对可读取的 vLLM main 代码对 DCP 成员按 global rank 排序，v0.33.0 对应位置保留未排序列表。main 是移动分支，只能代表核对时快照，不能作为所有部署版本的事实。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：把可推导的地址与必须协商的身份分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "构造一个四 worker 教学例子：按 TP 优先展开得到坐标 (0,0)、(0,1)、(1,0)、(1,1)，对应 global rank 是 0、2、1、3。组成员一旦排序为 0、1、2、3，中间两项的组内位置交换。模运算仍返回旧展开位置，因此定位同一 worker 时可以得到不同条带编号。"
+            },
+            {
+              "type": "diagram",
+              "title": "同一个接收端，两种 rank 得到不同条带身份",
+              "caption": "原创 TP=2 / PCP=2 / DCP=4 教学图；上排为错误推导风险，下排为真实组内身份与拟议修复。不表示修复已经发布，也不表示本地做过设备传输。",
+              "basis": "inference",
+              "sourceIndices": [],
+              "nodes": [
+                {
+                  "id": "coord",
+                  "label": "目的端坐标",
+                  "detail": "示例 tp=0、pcp=1，TP=2、PCP=2、DCP=4。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "目的端坐标",
+                  "subtitle": "目的端坐标",
+                  "tone": "danger"
+                },
+                {
+                  "id": "guess",
+                  "label": "按坐标推导",
+                  "detail": "旧公式 (tp×PCP+pcp) mod DCP 得到 1。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "按坐标推导",
+                  "subtitle": "按坐标推导",
+                  "tone": "danger"
+                },
+                {
+                  "id": "route",
+                  "label": "条带身份为 1",
+                  "detail": "如果把 1 当接收端真实条带身份，则路由与布局契约不一致。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "条带身份为 1",
+                  "subtitle": "条带身份为 1",
+                  "tone": "danger"
+                },
+                {
+                  "id": "risk",
+                  "label": "传输成功仍待验",
+                  "detail": "作者报告会出现 KV 归属错误；本图不是 NPU 数据损坏复现。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "传输成功仍待验",
+                  "subtitle": "传输成功仍待验",
+                  "tone": "danger"
+                },
+                {
+                  "id": "group",
+                  "label": "目的端实际分组",
+                  "detail": "global rank=pcp×TP+tp=2；排序后的完整组为 [0,1,2,3]。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "目的端实际分组",
+                  "subtitle": "目的端实际分组",
+                  "tone": "control"
+                },
+                {
+                  "id": "real",
+                  "label": "真实组内位置为 2",
+                  "detail": "接收端 rank_in_group 是 global rank 在组内的位置，不是坐标展开值。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "真实组内位置为 2",
+                  "subtitle": "真实组内位置为 2",
+                  "tone": "control"
+                },
+                {
+                  "id": "meta",
+                  "label": "拟议握手携带身份",
+                  "detail": "PR 让发送端读取目的端上报的 dcp_rank；尚未合入。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "拟议握手携带身份",
+                  "subtitle": "拟议握手携带身份",
+                  "tone": "control"
+                },
+                {
+                  "id": "gate",
+                  "label": "独立校验归属",
+                  "detail": "用条带标记验证实际接收位置，再验证端到端输出。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "独立校验归属",
+                  "subtitle": "独立校验归属",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "coord",
+                  "to": "guess",
+                  "label": "坐标展开"
+                },
+                {
+                  "from": "guess",
+                  "to": "route",
+                  "label": "误作身份"
+                },
+                {
+                  "from": "route",
+                  "to": "risk",
+                  "label": "语义错位"
+                },
+                {
+                  "from": "group",
+                  "to": "real",
+                  "label": "按组排序取位置"
+                },
+                {
+                  "from": "real",
+                  "to": "meta",
+                  "label": "上报真实身份"
+                },
+                {
+                  "from": "meta",
+                  "to": "gate",
+                  "label": "对照接收布局"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧推导风险",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "coord",
+                      "guess",
+                      "route",
+                      "risk"
+                    ]
+                  },
+                  {
+                    "title": "真实身份与拟议验证",
+                    "tone": "control",
+                    "nodeIds": [
+                      "group",
+                      "real",
+                      "meta",
+                      "gate"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "拟议修复让 FullAttention/MLA Push 读取握手 dcp_rank；未分片层无需查条带身份。混合版本中，缺少该字段的危险组合应拒绝，安全组合保留回退。Mamba、whole-spec 和 Pull 不在该 PR 的修复范围。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：源码、作者测试与本地算术分别记账",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "证据分层，不把测试数量当线上保证",
+              "columns": [
+                "证据",
+                "已能支持",
+                "不能支持"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "公开 issue 与 PR 仍开放",
+                    "问题和修复正在讨论",
+                    "已合入、已发版、生产已修好"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0,
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "main / v0.33.0 源码差异",
+                    "两种组顺序确实不同",
+                    "任意镜像一定包含相同实现"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者报告 1424 项 CPU 测试通过",
+                    "作者测试结果及负对照说明",
+                    "本站重跑或 NPU 端到端复现"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "本地独立纯 Python 排列探针",
+                    "下表各坐标与组内位置不一致数量",
+                    "真实 KV 损坏、精度下降或性能变化"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "table",
+              "caption": "独立运行的纯排列探针：按 global rank 排序，与坐标公式比较",
+              "columns": [
+                "TP",
+                "PCP",
+                "DCP",
+                "身份不一致 worker"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "2",
+                    "2",
+                    "2",
+                    "0 / 4"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "2",
+                    "2",
+                    "4",
+                    "2 / 4"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "4",
+                    "2",
+                    "4",
+                    "4 / 8"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "4",
+                    "2",
+                    "8",
+                    "6 / 8"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "8",
+                    "1",
+                    "4",
+                    "0 / 8"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "本地探针不依赖框架和设备，仅计算有限排列。它复核数学条件，不能替代连接器调用路径、设备内存写入和真实模型输出。作者在 PR 中同时说明，当前 v0.33.0 E2E 镜像不呈现这个排序差异。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：拒绝危险组合，不等于无条件阻断滚动升级",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "对未知身份直接继续服务，可能把显性不可用换成隐性结果错误；对所有旧对端一律拒绝，又会扩大不必要的升级中断。合理策略是按层分片方式和拓扑条件区分。具体支持范围须以最终合入代码与实际镜像为准。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不要为了绕过问题直接调整 DCP/PCP：这可能改变显存、上下文容量、并行效率和模型支持范围。也不能用 v0.33.0 排列正确推断其整体版本更安全；本文只比较一个 rank 语义。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产诊断：把静默错误变成可定位的契约不一致",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "原创故障假设：一次基础框架升级改变了组内排序，连接器仍按旧坐标公式选条带。表象可能是通信成功而输出质量变差。先记录镜像摘要、两端 commit、模型类型、连接器方向及并行参数，再采集组成员列表、真实 rank_in_group、握手身份与实际接收槽位。不要从低错误率反推正确性。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "日志应使用请求关联 ID、条带 ID、rank 与布局版本，不记录原始用户提示或 KV 内容。隔离实验使用合成标记。没有接收位置证据时，应保留模型数值差异、缓存复用和调度差异等替代解释，避免把所有乱码归因于本议题。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先证明拓扑差异，再执行设备闭环",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "以下均为待执行验证计划，本地排列探针之外未执行",
+              "columns": [
+                "维度",
+                "最小对照",
+                "目的"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "组构建",
+                    "排序 / 未排序，固定其他变量",
+                    "隔离基础框架语义变化"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "拓扑",
+                    "2/2/2、2/2/4、4/2/8、8/1/4",
+                    "覆盖跨 TP 与非跨 TP 对照"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "版本配对",
+                    "旧/旧、新/新、旧/新、新/旧",
+                    "验证握手与拒绝边界"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "模型与方向",
+                    "FullAttention Push、MLA Push；Mamba/Pull 独立",
+                    "禁止跨路径外推"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "层布局",
+                    "分片 / 未分片层，真实调用点",
+                    "确认未分片层不被误拒绝"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据验证",
+                    "合成条带标记 + 固定输出基线",
+                    "关联内存归属与业务质量"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：正确性门先于吞吐门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议提前确定的准入标准，不是已取得结果",
+              "columns": [
+                "关卡",
+                "通过条件",
+                "失败处理"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份契约",
+                    "所有实际接收 worker 的握手身份与组内位置完全一致",
+                    "停止该拓扑上线"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "数据归属",
+                    "合成条带无错投、漏投与覆盖其他条带",
+                    "保留最小复现并隔离"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "混合版本",
+                    "危险缺字段组合明确拒绝；安全回退有覆盖",
+                    "收紧升级配对范围"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "模型输出",
+                    "固定种子及负载，按预注册容差对照基线",
+                    "不以性能收益覆盖正确性失败"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "服务性能",
+                    "正确性通过后再比较 TTFT、TPOT、吞吐和拒绝率",
+                    "按业务 SLO 决定是否推进"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待确认：开放状态不是部署结论",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "尚未运行 NPU、Mooncake 真实传输或模型端到端实验；没有掌握任何具体生产镜像与拓扑。未确认最终合入提交、发布标签及 Mamba/Pull 等相邻路径的解决方案。本地结果只支持排列层面的差异。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "PR 引用的一条 b11cb2a5 固定源码链接在本次读取时返回 404；因此本文使用当日可读取 main 与 v0.33.0 源码作有限比较，不把不可访问链接当已验证 pin。后续应取得可解析的不可变提交并重新核对产物。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "跟进触发条件应是修复合入且可追溯到构建产物，或出现覆盖排序组的设备复现与相邻路径修复。仅有评论数量增加、CI 绿灯或文字称已修复，不足以改变当前结论。"
             }
           ]
         }
