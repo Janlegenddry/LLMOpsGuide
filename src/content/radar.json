@@ -5026,9 +5026,9 @@
     "id": "vllm-extensible-kv-startup-memory-lifetimes",
     "kind": "analysis",
     "title": "vLLM 启动显存的两条边界：调优峰值不能常驻，捕获空间不能被预热占满",
-    "summary": "完整报告区分一次性调优、服务瞬态和 CUDA Graph 常驻显存。11 月 14 日补充：v0.34.0rc2 候选标签源码含两项机制；未将候选标签、正式 Release 和实际部署产物混同。",
+    "summary": "完整报告区分一次性调优、服务瞬态和 CUDA Graph 常驻显存。11 月 18 日复核：vLLM v0.34.0 正式 Release 及公开产物已可查；冻结源码保留两条机制，但目标镜像与 H20 行为仍需单独验收。",
     "publishedAt": "2026-11-12",
-    "reviewedAt": "2026-11-14",
+    "reviewedAt": "2026-11-18",
     "topics": [
       "vLLM",
       "KV Cache",
@@ -5159,6 +5159,45 @@
         "title": "vLLM v0.34.0rc2 标签页面（不是正式发布验收）",
         "url": "https://github.com/vllm-project/vllm/releases/tag/v0.34.0rc2",
         "accessedAt": "2026-11-14"
+      },
+      {
+        "title": "vLLM v0.34.0 正式发布与升级说明",
+        "url": "https://github.com/vllm-project/vllm/releases/tag/v0.34.0",
+        "publishedAt": "2026-11-16",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "vLLM v0.34.0 正式标签 · Worker 启动顺序",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.34.0/vllm/v1/worker/gpu_worker.py",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "vLLM v0.34.0 正式标签 · FlashInfer 调优边界",
+        "url": "https://github.com/vllm-project/vllm/blob/v0.34.0/vllm/model_executor/warmup/kernel_warmup.py",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "PyPI · vLLM v0.34.0 分发元数据",
+        "url": "https://pypi.org/pypi/vllm/0.34.0/json",
+        "review": {
+          "category": "blog",
+          "publisher": "PyPI",
+          "status": "attributed",
+          "note": "已核对项目分发注册表官方 API 的版本、文件与身份字段。仅证明公开产物的元数据，不是运行验证。"
+        },
+        "publishedAt": "2026-11-16",
+        "accessedAt": "2026-11-18"
+      },
+      {
+        "title": "Docker Hub · vllm-openai v0.34.0 标签与平台元数据",
+        "url": "https://hub.docker.com/v2/repositories/vllm/vllm-openai/tags/v0.34.0",
+        "review": {
+          "category": "blog",
+          "publisher": "Docker Hub",
+          "status": "attributed",
+          "note": "已核对项目分发注册表官方 API 的版本、文件与身份字段。仅证明公开产物的元数据，不是运行验证。"
+        },
+        "accessedAt": "2026-11-18"
       }
     ],
     "claims": [
@@ -5206,6 +5245,16 @@
           "id": "conclusion",
           "title": "结论：少留一次性峰值，不等于少留服务余量",
           "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                21,
+                22,
+                23
+              ],
+              "text": "11 月 18 日复核：v0.34.0 是正式 Release，公开 wheel 与镜像标签也已核对。正式标签将瞬态峰值记录收敛到 record_transient_peak：先记录调优前瞬态，调优完成后重置峰值；Worker 仍在非 eager 的图捕获前收缩至最小 KV 映射。以下 rc2 核对保留为历史，不再是最新版证据。"
+            },
             {
               "type": "paragraph",
               "basis": "official",
@@ -5755,6 +5804,52 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "table",
+              "caption": "11 月 18 日增量：正式源码、产物与运行证据分开",
+              "columns": [
+                "对象",
+                "直接观察",
+                "证据边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正式 Release",
+                    "11 月 16 日 23:22 UTC 发布，标记非预发布",
+                    "不是某个内部镜像或 Ascend 插件的兼容性证明"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    21
+                  ]
+                },
+                {
+                  "cells": [
+                    "正式标签源码",
+                    "调优前 record_transient_peak，调优后重置峰值；图捕获前收缩 KV",
+                    "两项机制仍在，接口归属与早期快照不同"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    22,
+                    23
+                  ]
+                },
+                {
+                  "cells": [
+                    "公开 wheel 和镜像",
+                    "PyPI 提供两种 Linux 架构 wheel；vllm-openai 发布 linux amd64/arm64 镜像索引",
+                    "只核验分发元数据，未运行或验证 H20 性能"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    24,
+                    25
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -5868,6 +5963,14 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "原创部署推导：把升级清单拆成源码身份、二进制身份、运行路径三个门。标签源码相同但镜像重打包时，补丁仍可能缺席；补丁存在但 extensible KV 关闭时，两条分支也不会提供预期行为。先记录镜像 digest、框架 commit、有效启动参数，再比较同一模型相同请求轨迹下的启动峰值与服务余量。不要把调优峰值下降解释成可无条件提高 gpu_memory_utilization。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                21
+              ],
+              "text": "正式版还改变了默认开关与资源预算：官方升级说明列出 GPU Runner V1 移除、默认 block size 64（ROCm 分页注意力保留 16）、extensible KV 默认开启且显存利用率默认值 1.0。联调时固定实际参数、镜像 digest 与负载；不要让多项默认变化同时进入同一对照。"
             }
           ]
         },
@@ -6069,6 +6172,12 @@
                 20
               ],
               "text": "本次没有核实 rc2 wheel、容器构建来源和签名，也没有运行 CUDA 实验。Release API 的 404 仅表示这次调用没有取得 release 对象，不证明标签无效。后续正式版仍需重查标签到实际产物的对应关系，不把 rc2 名称自动等同于正式发布。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "公开产物存在后仍需验证候选部署的 digest、目标卡启动与回退：按新旧配置分别记录图捕获、最终可用 KV、首批流量 TTFT 以及启动失败计数。未执行这些测试，不承诺生产收益。"
             }
           ]
         }
