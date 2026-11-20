@@ -244,5 +244,70 @@
     "verifiedAt": "2026-11-19",
     "publicationApproved": true,
     "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "areal-ascend-meetup-hangzhou-2026-11-21",
+    "title": "AReaL × 昇腾 Meetup：从 RSI 加速到 Agent 落地的全链路进化",
+    "organizer": "AReaL、昇腾、华为计算",
+    "scope": "local",
+    "region": "hangzhou",
+    "scopeNote": "杭州本地线下活动，内容偏后训练与 Agent 工程，不作为线上推理专场收录。联谱议程仅作为第三方补充来源。",
+    "archiveExceptionApproved": false,
+    "status": "scheduled",
+    "startDate": "2026-11-21",
+    "endDate": "2026-11-21",
+    "startAt": "2026-11-21T14:00:00+08:00",
+    "endAt": "2026-11-21T18:00:00+08:00",
+    "timeZone": "Asia/Shanghai",
+    "format": "in-person",
+    "city": "杭州",
+    "venue": "杭州梦想小镇 21 号楼二号厅",
+    "address": null,
+    "summary": "围绕 RSI、Agentic RL 后训练和 Agent 基础设施展开交流，包含 14:40 的 397B Agentic RL 昇腾基础设施分享；实际安排以主办方最新说明为准。",
+    "topics": [
+      "AReaL",
+      "昇腾",
+      "Agentic RL",
+      "后训练",
+      "Agent 基础设施"
+    ],
+    "officialUrl": "https://weibo.com/2/detail/5366646122482414",
+    "agendaUrl": null,
+    "registration": {
+      "status": "link",
+      "url": "https://e.huawei.com/cn/edg/1013089747722567981/register/1013089747708936493.html",
+      "deadline": "2026-11-21T18:00:00+08:00",
+      "note": "11 月 20 日可读取的华为正式报名页标注截止为 11 月 21 日 18:00（北京时间）。是否仍接收报名以页面实时提示为准，不保证余位、审核通过或报名确认；本站未提交报名。"
+    },
+    "livestream": {
+      "status": "unconfirmed",
+      "url": null,
+      "publicAccess": false,
+      "note": "尚未核验到官方公开直播入口。"
+    },
+    "replay": {
+      "status": "unconfirmed",
+      "url": null,
+      "publicAccess": false,
+      "note": "尚未核验到官方公开回放。"
+    },
+    "sources": [
+      {
+        "title": "华为中国政企业务官方公告（微博）",
+        "url": "https://weibo.com/2/detail/5366646122482414"
+      },
+      {
+        "title": "华为正式报名页（含报名截止时间）",
+        "url": "https://e.huawei.com/cn/edg/1013089747722567981/register/1013089747708936493.html"
+      },
+      {
+        "title": "联谱 Lianpu 活动与议程补充（第三方）",
+        "url": "https://lianpu.com/event/areal-ascend-meetup-rsi-agent-evolution"
+      }
+    ],
+    "verifiedAt": "2026-11-20",
+    "publicationApproved": true,
+    "containsPrivateData": false
   }
 ]
