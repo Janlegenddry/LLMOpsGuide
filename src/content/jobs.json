@@ -1136,5 +1136,44 @@
       "要求硕士及相关开发经历，非纯运维岗位",
       "需扎实服务开发能力与复杂技术方案落地经验"
     ]
+  },
+  {
+    "schemaVersion": 1,
+    "id": "tencent-1955829491829985280",
+    "company": "腾讯",
+    "title": "大模型推理后台开发工程师（深圳/北京/上海/杭州）",
+    "locations": [
+      "深圳"
+    ],
+    "category": "inference",
+    "level": "3 年以上工作经验，具备后端分布式系统设计和落地经验",
+    "summary": "腾讯 TEG 在线推理平台研发岗位，负责状态感知调度、资源管理、分布式服务编排、标准化服务框架及工具链，同时建设限流、容灾和可观测能力。",
+    "skills": [
+      "Golang/C++/Python",
+      "Linux 分布式系统",
+      "在线推理平台",
+      "状态感知负载均衡",
+      "长上下文管理",
+      "vLLM",
+      "可观测性"
+    ],
+    "url": "https://careers.tencent.com/jobdesc.html?postId=1955829491829985280",
+    "sourceName": "腾讯官方招聘",
+    "sourceType": "official",
+    "status": "review",
+    "statusNote": "2026-11-20 核对腾讯官方公开职位列表和详细职责，记录更新于 2026-11-17，并非初始发布日期。详情地点为深圳；标题另列北京、上海、杭州，各地名额待确认。未独立核实投递入口可用，暂列待复核。",
+    "verifiedAt": "2026-11-20",
+    "postedAt": null,
+    "priority": "related",
+    "matchReasons": [
+      "连接推理性能、成本和可靠性，并覆盖调度及服务编排。",
+      "对应从生产交付与故障治理转向研发推理平台核心模块的路径。"
+    ],
+    "gaps": [
+      "至少一门后端语言过硬，能独立设计和落地复杂的 Linux 分布式系统。",
+      "准备状态感知调度、长上下文或模型服务编排的代码和性能对照证据。"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
   }
 ]
