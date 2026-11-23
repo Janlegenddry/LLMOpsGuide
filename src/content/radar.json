@@ -1,6 +1,1874 @@
 [
   {
     "schemaVersion": 1,
+    "id": "sglang-hicache-write-back-stream-fence",
+    "kind": "analysis",
+    "title": "SGLang HiCache：KV 换出可以不阻塞调度，但不能失去写入顺序",
+    "summary": "主线 #50469 把一类 HiCache write-back 换出的主机同步等待改为设备流栅栏。作者 GB300 对照中首 token 更快、TPOT 稍慢；Decode、L3 等旁路仍保留同步。",
+    "publishedAt": "2026-11-22",
+    "reviewedAt": "2026-11-23",
+    "topics": [
+      "SGLang",
+      "KV Cache",
+      "PD 分离",
+      "服务调度",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "SGLang 主线合入 de41ccfa：HiCache write-back 流栅栏",
+        "url": "https://github.com/sgl-project/sglang/commit/de41ccfae097c629a3928150b1f7139e33dfd183",
+        "publishedAt": "2026-11-22",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "#50469：作者 A/B、准确率检查与适用边界",
+        "url": "https://github.com/sgl-project/sglang/pull/50469",
+        "publishedAt": "2026-11-14",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "锁定源码：分层缓存换出、路径保护与 ACK 指标",
+        "url": "https://github.com/sgl-project/sglang/blob/de41ccfae097c629a3928150b1f7139e33dfd183/python/sglang/srt/mem_cache/unified_radix_cache.py",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "锁定源码：D2H 备份和 H2D 回载的流顺序",
+        "url": "https://github.com/sgl-project/sglang/blob/de41ccfae097c629a3928150b1f7139e33dfd183/python/sglang/srt/managers/cache_controller.py",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "锁定源码：调度器设置流与 overlap 开关",
+        "url": "https://github.com/sgl-project/sglang/blob/de41ccfae097c629a3928150b1f7139e33dfd183/python/sglang/srt/managers/scheduler.py",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "正式版 v0.5.23 发布记录",
+        "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.23",
+        "publishedAt": "2026-11-02",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "v0.5.23 标签：UnifiedRadixCache 旧实现",
+        "url": "https://github.com/sgl-project/sglang/blob/v0.5.23/python/sglang/srt/mem_cache/unified_radix_cache.py",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "#47650：有界换出余量",
+        "url": "https://github.com/sgl-project/sglang/pull/47650",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "#49498：PD Prefill 的 D2H 与在途 forward 重叠",
+        "url": "https://github.com/sgl-project/sglang/pull/49498",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "锁定单测：换出等待与设备页释放顺序",
+        "url": "https://github.com/sgl-project/sglang/blob/de41ccfae097c629a3928150b1f7139e33dfd183/test/registered/unit/mem_cache/test_write_back_eviction_batching.py",
+        "accessedAt": "2026-11-23"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "SGLang 主线合入 de41ccfa；仅在受保护的 write-back 驱逐分支登记设备流等待并释放主机调度，P/D 的 Decode、L3 等路径保留同步。",
+        "sourceIndices": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "主机组批可能更快，但预填充改善不能抵消解码或业务保护桶的回退。",
+        "sourceIndices": [
+          1
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "正式产物包含性、本地 H20 及不同拓扑的正确性、P99 和达标吞吐均待验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "是否确实卡在调度 CPU 的换出同步，而非 P→D 交接？",
+      "备份完成事件与下一次设备槽覆写之间的顺序在哪些写路径上成立？",
+      "首 token 改善是否保留到流式完成和达标成本？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "以 11 月 22 日 16:46:53 UTC（北京时间 11 月 23 日 00:46:53）的 SGLang 主线合入为时间锚，核对 PR 描述、锁定源码和稳定标签；实验矩阵及图为原创，未运行设备、模型或线上测试。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：把换出等待从 CPU 移到设备流，不能删掉顺序",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2,
+                4
+              ],
+              "text": "SGLang #50469 在 11 月 22 日 16:46:53 UTC 合入主线（北京时间 11 月 23 日 00:46:53）。它改的是 UnifiedRadixCache 的 write_back 驱逐分支：满足限定条件时，CPU 只把等待登记到设备流，不再等 D2H 拷贝物理完成才继续；有旁路读写的配置仍保留同步。不是新发布版本，也没有增加面向用户的开关。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "作者在 GB300 上的 DeepSeek-V4.1-Flash P/D 回放见到端到端 tok/s/GPU 提升约 4.2%、TTFT P50 从 4.26 秒降到 2.73 秒；TPOT P50 从 6.75 升到 6.92 毫秒。先确认自己的 P 节点是不是在这个分支被同步卡住，不要把数据看成 H20 或 Mooncake 的通用提速。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：卡没满，可能是在等下一批被提交",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "L1 以设备内存保留热 KV，L2 以主机内存保留可恢复前缀。write_back 在驱逐受害页时发起备份，不能让新请求先把原页内容覆盖。一个保护办法是让 CPU 等设备完成再释放；它容易做对，却连只依赖主机的逻辑也一并卡住。对有长前缀、驱逐压力和较多并发的 P 实例，GPU 的下一个批次可能已经缺工。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "该 PR 作者在一个 DeepSeek-V4.1-Flash 分离式 Prefill 场景观察到，换出等待占调度器耗时的 50–56%。这不是占整条请求耗时的比例，也不是 GPU D2H 吞吐占比。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                7,
+                8
+              ],
+              "text": "前后调整不是同一件事。#47650 的有界余量减少等待出现的频率；#50469 改等待放在哪里；#49498 探索 P 节点上 D2H 与在途 forward 的重叠，PR 描述其仍保留主机等待。不要跨 PR 叠加收益。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：旧页先写完再读，新使用方不得提前覆写",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "同一份 KV 的备份依赖，放在 CPU 还是设备流上？",
+              "caption": "原创顺序示意，非实测。上组是旧的主机阻塞路径；下组是具备完整流顺序且开启 overlap 的快路径。实线只表达注明的约束，未画时间尺度。关闭 overlap 时还须在当前流登记等待；L3、buffer pipeline、linker、统一内存或 PD Decode 等不走图中快路径。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                2,
+                3,
+                4
+              ],
+              "nodes": [
+                {
+                  "id": "old-forward",
+                  "label": "当前 forward 写旧 KV 页",
+                  "detail": "计算仍可能在写 victim 在设备上的内容，备份读前必须满足前序依赖。",
+                  "column": 0,
+                  "row": 0,
+                  "shortLabel": "前一 forward",
+                  "subtitle": "写旧 KV 页",
+                  "tone": "compute"
+                },
+                {
+                  "id": "old-copy",
+                  "label": "D2H 备份到 host",
+                  "detail": "提交批量 D2H，拷贝流先等前一 forward，再读取 victim 并记录完成事件。",
+                  "column": 1,
+                  "row": 0,
+                  "shortLabel": "D2H 备份",
+                  "subtitle": "读取旧页内容",
+                  "tone": "communication"
+                },
+                {
+                  "id": "old-host",
+                  "label": "调度 CPU 同步等待",
+                  "detail": "旧换出路径在 CPU 对完成事件调用 synchronize，批次构建在这里停等。",
+                  "column": 2,
+                  "row": 0,
+                  "shortLabel": "CPU 同步",
+                  "subtitle": "等拷贝物理完成",
+                  "tone": "danger"
+                },
+                {
+                  "id": "old-next",
+                  "label": "释放设备页，继续调度",
+                  "detail": "拷贝完成后结算 ACK、降层并释放旧设备页，再由调度推进下一批。",
+                  "column": 3,
+                  "row": 0,
+                  "shortLabel": "释放与调度",
+                  "subtitle": "等完才继续",
+                  "tone": "control"
+                },
+                {
+                  "id": "new-forward",
+                  "label": "当前 forward 写旧 KV 页",
+                  "detail": "保留 D2H 读之前的 forward 写入完成依赖。",
+                  "column": 0,
+                  "row": 1,
+                  "shortLabel": "前一 forward",
+                  "subtitle": "依赖保留",
+                  "tone": "compute"
+                },
+                {
+                  "id": "new-copy",
+                  "label": "拷贝流提交 D2H 与事件",
+                  "detail": "完成事件供设备流等待；完成指标通过事件 query 确认，不能把提交算作已传完。",
+                  "column": 1,
+                  "row": 1,
+                  "shortLabel": "D2H 提交",
+                  "subtitle": "登记完成事件",
+                  "tone": "communication"
+                },
+                {
+                  "id": "new-guard",
+                  "label": "在设备流登记等待",
+                  "detail": "后续 forward 等待 D2H 完成；H2D 从同一个 forward 流继承这条顺序，实际覆写不早于旧页备份。",
+                  "column": 2,
+                  "row": 1,
+                  "shortLabel": "设备流排队",
+                  "subtitle": "实际覆写受限",
+                  "tone": "kv"
+                },
+                {
+                  "id": "new-host",
+                  "label": "主机结算换出并继续组批",
+                  "detail": "等待已排入设备流后，主机可以立即更新缓存元数据、归还页并继续组批，不必同步等事件完成。",
+                  "column": 3,
+                  "row": 1,
+                  "shortLabel": "主机组批",
+                  "subtitle": "不等传输完成",
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "old-forward",
+                  "to": "old-copy",
+                  "label": "旧 forward 完成约束 D2H 读",
+                  "shortLabel": "写完再读"
+                },
+                {
+                  "from": "old-copy",
+                  "to": "old-host",
+                  "label": "CPU synchronize 等完成事件",
+                  "shortLabel": "阻塞等完"
+                },
+                {
+                  "from": "old-host",
+                  "to": "old-next",
+                  "label": "事件已完成，才换出和继续调度",
+                  "shortLabel": "完成后推进"
+                },
+                {
+                  "from": "new-forward",
+                  "to": "new-copy",
+                  "label": "前序 forward 仍排序在 D2H 读之前",
+                  "shortLabel": "仍先写完"
+                },
+                {
+                  "from": "new-copy",
+                  "to": "new-guard",
+                  "label": "登记 wait_event，覆写须在事件完成之后",
+                  "shortLabel": "覆写等事件"
+                },
+                {
+                  "from": "new-guard",
+                  "to": "new-host",
+                  "label": "主机看到的是等待已经登记，不是数据已经拷完",
+                  "shortLabel": "只等登记"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "旧路径：CPU 阻塞排队",
+                    "tone": "danger",
+                    "nodeIds": [
+                      "old-forward",
+                      "old-copy",
+                      "old-host",
+                      "old-next"
+                    ]
+                  },
+                  {
+                    "title": "新路径：设备流保序，CPU 继续组批",
+                    "tone": "control",
+                    "nodeIds": [
+                      "new-forward",
+                      "new-copy",
+                      "new-guard",
+                      "new-host"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2,
+                3,
+                4
+              ],
+              "text": "拷贝流仍通过 write_fence_stream 等前一 forward，然后提交 D2H；变更后登记 forward stream.wait_event(完成事件)。overlap 开启时当前调度流不额外等；关闭时当前流也登记 wait_event，因为 forward 或状态拷贝可在该流上执行。回载 H2D 原先就等待 load_fence_stream；快路径要求它和 write_fence_stream 是同一个流对象。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2
+              ],
+              "text": "随后结算树上的 ACK，按序降层释放设备页。这里的 ACK 是主机元数据处理，不是传输实绩：已加栅栏的 ACK 另进队列，只有 finish_event.query() 核实对应完成事件才统计备份指标。不能用逻辑页已归还或队列被清空来判 D2H 已完成。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2
+              ],
+              "text": "快路径还要求 controller 与写流存在，并排除 L3 存储、buffer pipeline、linker、统一内存和 P/D 的 Decode 角色。典型例子是 D 节点的连接器可直接写设备槽；若这种写不遵循图里的等待，用 CPU 同步仍是必要保护。改动没有移除其他调用点的阻塞 writing_check。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据：同日 A/B 报告的是一段负载，不是一条容量曲线",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                7
+              ],
+              "text": "性能表来自作者同日 A/B：GB300、DeepSeek-V4.1-Flash、14 个 Prefill server 加 DEP16 Decode、overlap 开，模拟接受率关闭仅明确写在准确率场景。中段并发的 agentic 多轮回放，每臂两次，每次 1200 秒，同镜像/对照仅差该 PR，两臂都含 #47650。原文未提供足以复跑的完整请求轨迹、指定到达速率及完整有效请求分母。"
+            },
+            {
+              "type": "table",
+              "caption": "作者报告的比较，非本刊复现；两个阶段口径不可混用",
+              "columns": [
+                "口径",
+                "基线",
+                "候选",
+                "如何读"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "端到端 tok/s/GPU",
+                    "958.8k（957.5k / 960.0k）",
+                    "998.9k（1001.9k / 996.0k）",
+                    "作者报 +4.2%；不能用作输出 tok/s 或达标 goodput"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "Prefill 实际计算 tok/s/GPU",
+                    "92.8k",
+                    "96.4k",
+                    "+3.9%，不是端到端分母"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "TTFT P50 / P90",
+                    "4.26 s / 12.0 s",
+                    "2.73 s / 9.6 s",
+                    "不能推出 P99 或所有输入桶均更好"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "TPOT P50 / P90",
+                    "6.75 ms / 7.25 ms",
+                    "6.92 ms / 7.32 ms",
+                    "两档变慢，保留真实取舍"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "GSM8K 在负载下两遍",
+                    "无同表匹配基线",
+                    "严格匹配 0.9735 / 0.9750",
+                    "5-shot、temperature 0、并发 256；第二遍用于覆盖换出后回载，不能证明逐请求逐 token 一致"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "换出单测",
+                    "对照 overlap 开/关",
+                    "模拟流等待、主机未同步、已登记等待再释放",
+                    "测试断言覆盖顺序，不等价真实硬件下所有旁路和发布矩阵通过"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    9
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "作者把样本内差异概括为约 0.3–0.6%，两臂各两次不足以估计稳定效应区间。另一个较早 profile 的 Prefill GPU idle 从 20.6% 到 9.5%；较早栈中无条件等待当前流的实验为 −0.5%，当时有条件版本为 +2.9%。两组旧观察都不应并入上表当第三次重复。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：主机不阻塞，不保证每条设备队列更短",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "修复没有减少备份字节，也没移除先读旧页再复用的因果关系。换出让 CPU 更快提交新工作，P 队列可能下降，而 D 端批次变得更饱和或更长。作者提出后者解释其 TPOT 上升；本次公开数据不足以单独证明这个归因。若在 D 已经打满时一味加大发送，可能把 P 等待移成 D 尾部，而不是降低用户总等待。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如果未启用 write_back、目标上 L1 压力小、走完整 L3、以 D 端传输为主，试验优先级降低。不能从一个 GB300 P/D 中段负载外推到 H20、NPU、混部、容量上限或真实链路；也不能分别从不同配置挑 TTFT 与 TPOT 最优值当一组上线成绩。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、生产诊断：先定位停顿在哪，再决定是不是这条修复",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "“卡利用率低、首 token 慢”至少有三个竞争解释：调度 CPU 等换出事件、P 侧缺料或组批不足、P→D 握手/传输等待。建议按同一个请求尝试映射网关入站→P 排队→P 开始→KV 就绪/交接→D 首个正文→终态；再用短窗口 trace 把 CPU synchronize、主机组批空档、前一 GPU forward、D2H 与后一 GPU forward 串起来。跨进程使用同步误差界，不能拿两个独立 P99 相减来归因。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "如果换出等待下降却出现回加载荷后首次复用输出异常，优先保留当次缓存身份、出入页代次、传输完成与消费者事件。不要以吞吐增长掩盖错页，也不要因为换出计数已完成而放宽传输依赖。若作者快路径在本地没命中，先查镜像实际包含性、缓存实现与 guard，而不是盲目改副本数。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、实验矩阵：先把状态顺序证出来，再跑请求",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "隔离环境拟议方案，全部未执行",
+              "columns": [
+                "验证问题",
+                "对照",
+                "固定条件与记录"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "快路径与回载是否安全",
+                    "同树仅去/加 #50469；overlap 开/关各做",
+                    "用合成前缀制造 L1→L2 换出、回载和设备槽复用，记录事件、槽代次和确定性输出；无命中对照单列"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "不符合分支是否仍阻塞",
+                    "P 快路径 vs 逐一启用 L3、buffer pipeline、linker、统一内存或 D 的对应构型",
+                    "每个实际支持的组合单独验证 guard 和完成账；不能把几个例外叠为一项而失去归因"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "长会话时性能是否真值",
+                    "冻结候选/对照；低负载、近容量、短突发各做多轮",
+                    "同模型、权重、镜像依赖、卡数、P:D、KV 预算、#47650 包含性与外生到达；记录首正文、ITL、失败/取消与完整任务"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "收益能否保留到灰度",
+                    "仅在护栏通过后，另做授权的同期小流量对照",
+                    "预先定义可比曝光与停更条件；分开观察活动卡时和实际可释放卡时，不因结果不佳更换分母"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "用不同窗口做诊断 trace 和计分回放，避免 profiler 侵入互相污染。正式计分前固定缓存冷/热和输入/output 分布；维护者同日 A/B 的吞吐可作检查方向，不作 H20 目标。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、验收：正确性、用户等待、收益分开判",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "示例判定方式，阈值由服务当前 SLO 和重复基线定，不采用外部跑分阈值",
+              "columns": [
+                "门槛",
+                "证据和分母",
+                "不能晋级的情形"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "身份和分支",
+                    "精确 commit/镜像 digest、设备与缓存拓扑、guard 真假、用途隔离",
+                    "不确定包含性或没有观察实际路径：证据不足，暂停"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "顺序和输出",
+                    "前缀换出后回载、重复请求与新槽复用，覆盖输入长度、取消后收尾；缺失尾部明确上报",
+                    "检测到错页、脏读、未结算页或终态出错：停止并回退基线"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真实服务质量",
+                    "逻辑请求按入站分配分母；首个正文、流式尾部、完成、失败和取消逐桶计入",
+                    "短/长/高峰任一保护桶回退超预算、或缺少可比曝光：不扩大流量"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "容量/成本",
+                    "达标完成请求/时间、每千达标请求的卡时或成本，热点短期窗口和持续窗分开",
+                    "只有总 token 速度变好，达标量/卡时无增益或不可验证：不宣称省卡"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、尚待验证：这是主线合入，不是你当前镜像的能力",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2,
+                5,
+                6
+              ],
+              "text": "截至 11 月 23 日核对，正式 GitHub 发布入口仍指向 v0.5.23；该标签里的 UnifiedRadixCache 没有 _can_fence_write_back_on_streams，而合入提交有。日期先后不替代对目标镜像或下游回补的包含核验。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                1,
+                5,
+                9
+              ],
+              "text": "没有独立复跑公开实验，也没有确认哪一款正式镜像首次带入修复、H20 是否命中同一快路径、H20 与不同 P/D、L3 或混合缓存组合的行为、完整请求成功分母及 P99。上游单测断言和作者结果各自有效于其范围，不替代实际服务验收。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "inferrsi-v030-evidence-gated-optimization",
+    "kind": "analysis",
+    "title": "InferRSI v0.3.0：先定位瓶颈，再验证 Agent 调优值不值",
+    "summary": "新版本把瓶颈诊断、知识开关配对和胜出候选复验串起来。对照公开的 H20 历史失败案例，解释为什么软件发布、单点跑分和生产可用是三回事。",
+    "publishedAt": "2026-11-21",
+    "reviewedAt": "2026-11-22",
+    "topics": [
+      "推理编译",
+      "服务调度",
+      "NPU/昇腾"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "InferRSI v0.3.0 发布记录",
+        "url": "https://github.com/InferMatrixLab/InferRSI/releases/tag/v0.3.0",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对正式 tag、提交与维护者说明；不把发行检查当优化通过。"
+        },
+        "publishedAt": "2026-11-21",
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "v0.3.0 配对比较手册",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.0/docs/benchmark-comparison.md",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对任务、执行配对、知识隔离、证据和结果口径；未运行工具。"
+        },
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "#519：先记录瓶颈再搜索",
+        "url": "https://github.com/InferMatrixLab/InferRSI/pull/519",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对诊断与新候选及服务复用阶段的关联。"
+        },
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "#97：单 H20 历史实验归档",
+        "url": "https://github.com/InferMatrixLab/InferRSI/pull/97",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对公开对照实验和归档；作者数据、非本次版本结果。"
+        },
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "#67：历史整机性能验收任务",
+        "url": "https://github.com/InferMatrixLab/InferRSI/issues/67",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对总体任务与没有充分验收证据的状态，不按关闭标签推断通过。"
+        },
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "历史 H20 原始对照记录 patch",
+        "url": "https://github.com/InferMatrixLab/InferRSI/pull/97.patch",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对整机配对与单次候选内部对照两套不同分母，不跨实验组合结果。"
+        },
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "v0.3.0 会话隔离、派发与对照实现",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.0/src/inferrsi/apps/workflows/benchmark_compare.py#L213-L326",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "冻结代码核对工作区切分、交替执行顺序、指令和宿主边界。"
+        },
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "v0.3.0 瓶颈记录与 reference epoch",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.0/src/inferrsi/harness/optimization.py#L251-L325",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "冻结代码核对测量摘要内容、时间与阶段，不验证因果。"
+        },
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "Qwen 去噪任务规格",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.0/src/inferrsi/benchmark/tasks/qwen21-denoise-npu/task.json",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对模拟去噪任务的硬件和非整机范围。"
+        },
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "MoE forward 任务说明",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.0/src/inferrsi/benchmark/tasks/moe-forward-npu/TASK.md",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对两 NPU 的单层任务及通信和计时边界。"
+        },
+        "accessedAt": "2026-11-22"
+      }
+    ],
+    "claims": [
+      {
+        "status": "inference",
+        "text": "知识开关配对在同任务下隔离受管语料贡献；不等于消除模型既有知识或证实上线收益。",
+        "sourceIndices": [
+          0,
+          1
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "目标引擎、真实流量、长期正确性与实际节约卡时尚未验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "收益来自候选、知识库，还是基线与观测口径变了？",
+      "分桶不退化且扣除搜索成本之后，值不值得继续？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核对 2026-11-22 北京时间发布的 InferRSI v0.3.0，及早于本版的公开 H20 对照。未跑 GPU/NPU、未用生产流量；实验矩阵为原创设计。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：新版本让优化过程更可审计，不证明推理已经变快",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "InferRSI v0.3.0 于 11 月 22 日北京时间发布，对应提交 af836963（11 月 21 日 20:23 UTC）。新增或整理了先测瓶颈再试、知识库开关的独立会话比较、候选服务复用及最终独立验证。发行记录把这些能力与真实 campaign 验收明确区分。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "值得借用的是三道门：对照是否可比，候选输出是否正确，达标收益能否在没参与搜索的数据上复现。模型和 GPU 不换的前提下，先交付这条验收链比先承诺自动优化百分比更稳。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：要证明是知识库在帮忙，不能只比两个最快结果",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "候选生成和评测系统都可能改变结果。在同一会话先看 A 再跑 B，提示和探索路径会泄漏；在同一批输入上选最高分再汇报，搜索波动会被误当改进。需要给两臂同样的机会，再用未参与选优的流量复验。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                1,
+                8,
+                9
+              ],
+              "text": "发布默认比较昇腾上的 Qwen-Image 2.1 去噪与 MoE forward。一轮 repeat 是两任务各开、关一次，共四个独立 Agent 优化会话。指南对应一张或两张 NPU；默认 8 个候选轮次与 60 分钟 campaign 预算，不是 H20 文本生成性能或生产 SLO。去噪是带随机权重的单流代理任务；MoE 是双 NPU 的一层前向，包含 HCCL 通信与本地专家算子；两者都不是完整模型服务。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：诊断、独立搜索、候选筛选与终轮重验",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "先证明改哪里，再证明知识有没有用",
+              "caption": "原创工作流图。上层是冻结条件和可比配对，下层是单个会话的执行、独立复验及配对汇总。配对是工具设计，不表示有实测收益。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "nodes": [
+                {
+                  "id": "protocol",
+                  "label": "冻结任务与预算",
+                  "detail": "固定任务、评测规则、轮数和环境。两臂都能用基础任务指令。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "measure",
+                  "label": "测量同一基线",
+                  "detail": "从等条件 profiling 或测量形成可留存的瓶颈假设。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "on",
+                  "label": "知识库开启",
+                  "detail": "独立会话加载指定版本的受管知识，搜索证据可追踪。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "off",
+                  "label": "知识库关闭",
+                  "detail": "另起独立会话，不装载受管语料；不等于没有模型既有知识。",
+                  "column": 3,
+                  "row": 0
+                },
+                {
+                  "id": "pick",
+                  "label": "生成候选",
+                  "detail": "每个会话独立设计改动，不从另一臂带入候选。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "observe",
+                  "label": "逐轮评测",
+                  "detail": "按同一预算运行，保存代码、指标、失败与诊断关联。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "final",
+                  "label": "重跑胜出候选",
+                  "detail": "分别重新验证所选代码；记录独立终轮和正确性，不沿用搜索最好分。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "judge",
+                  "label": "核对配对完整",
+                  "detail": "按任务对比最终收益及搜索时间，证据失配判不足。",
+                  "column": 3,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "protocol",
+                  "to": "measure",
+                  "label": "固定对照"
+                },
+                {
+                  "from": "measure",
+                  "to": "on",
+                  "label": "登记诊断"
+                },
+                {
+                  "from": "measure",
+                  "to": "off",
+                  "label": "登记诊断"
+                },
+                {
+                  "from": "on",
+                  "to": "pick",
+                  "label": "独立提出候选"
+                },
+                {
+                  "from": "off",
+                  "to": "pick",
+                  "label": "独立提出候选"
+                },
+                {
+                  "from": "pick",
+                  "to": "observe",
+                  "label": "运行并留证"
+                },
+                {
+                  "from": "observe",
+                  "to": "final",
+                  "label": "选候选，再独立跑"
+                },
+                {
+                  "from": "final",
+                  "to": "judge",
+                  "label": "核对环境与配对"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "对照设计与诊断",
+                    "tone": "control",
+                    "nodeIds": [
+                      "protocol",
+                      "measure",
+                      "on",
+                      "off"
+                    ]
+                  },
+                  {
+                    "title": "候选、评测与复核",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "pick",
+                      "observe",
+                      "final",
+                      "judge"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                2,
+                6,
+                7
+              ],
+              "text": "对两臂都先登记来自冻结基线或同环境同负载的测量。受管知识检索和候选轮次关联诊断；服务复用遇到新的参考条件时，要登记对应阶段。每臂在隔离工作区使用冻结任务，主控通过宿主工具确认真实会话，不靠 CLI 伪造会话标识。源码约束摘要和 reference epoch 的留档，不验证瓶颈的判断一定正确。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                6
+              ],
+              "text": "关闭组移除受管知识数据与对应检索，其他知识来源由共同指令限制，并非操作系统沙箱。配对要求实际模型、推理 effort 和运行环境指纹匹配；宿主观察要有原始回执，字段本身不是独立认证。入选代码分别重跑终轮，缺失或无效配对报告证据不足。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据：标签功能与历史 H20 数值不是同一实验",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "核实了什么，尚未核实什么",
+              "columns": [
+                "证据",
+                "读数或能力",
+                "不能推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "v0.3.0 标签",
+                    "冻结任务下比较知识开/关；候选可做最终重验",
+                    "版本已提速或通过模型质量验收"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0,
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "单 H20 历史配对",
+                    "Qwen3.8-27B FP8、C1、8192 输入/2048 输出；TTFT 1.682 到 2.861 s，TPOT 10.567 到 12.188 ms",
+                    "不是 v0.3.0 开关组结果，不代表其他模型或并发"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    3,
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "另一候选内部短跑",
+                    "一对已测 8K 样本上换 prefill 路径，TTFT 2.864 到 2.321 s；第六个输出 token 已分叉",
+                    "不是战胜 1.682 s 基线，也不是回答质量通过"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    3,
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                3,
+                4,
+                5
+              ],
+              "text": "历史 H20 第一组用 10 个输入各三对运行，作者归档阶段的延迟比例上限为 1.03，两项均未达到。总体任务的验收协议另有门槛；公开最终记录仍不足以宣布总体通过。不能把另一臂的局部负载与历史基线混算。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：快一点的候选可能反而更贵",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "比较默认同时看优化后最终加速和实际 campaign 用时，可用完整口径再比较模型 token 开销。小样本的相对容差不是显著性检验；按任务报告配对结果，不把不同任务的耗时混成一个均值。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "业务账建议拆成：搜索阶段消耗的加速卡时、人工复核成本、上线后的达标吞吐和尾部风险。与只调已有参数相比，更大搜索空间可能找到更好候选，也会增加抽到假阳性和维护分支的成本。缺失数据不能默认为零成本或零故障。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、生产边界：先让工具出建议，发布控制仍独立",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "候选从开关比较中获益，只回答受管语料是否改善这项优化任务，不回答候选能否应对真实的长会话、热冷缓存或排队尖峰。使用候选前冻结镜像和版本，确认长答/工具终态、流式取消、排队与配额符合预定门槛，再进入有审批的实流灰度。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "采集按客户端可见首输出、ITL、终态与资源结算拆开。若首个事件只是 role、空段或 reasoning，而业务需要正文或完整工具参数，不能以它作为任务达标。真实流量只使用已批准用途的脱敏数据，工具无生产写权限。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、实验设计：一项优化拆成三个可回答的问题",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "隔离环境教学矩阵，非实测",
+              "columns": [
+                "问题",
+                "对照臂",
+                "控制与记录"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "候选本身是否更好",
+                    "现行配置 vs 一个冻结候选",
+                    "相同模型、镜像、卡数和到达轨迹；短、长、热、冷与突发逐桶记"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "知识是否帮了搜索",
+                    "独立 Agent 受管知识关 vs 开",
+                    "相同任务、模型/effort、设备、轮数、用时与正确性门；登记开关、候选血缘、失败成本"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "收益能否重现",
+                    "冻结候选与现行配置在保留数据重跑",
+                    "样本与时段不供优化者择优；独立重复，记录效应区间和每桶实际曝光"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "再加入人工或静态参数调优作业务基准时，它是第三种方法，不替换知识开关：前者回答谁在等工时或卡时条件下更划算，后者回答受管知识有无贡献。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、验收：三类失败明确区分",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "用门槛约束上线，而不是约束探索空间",
+              "columns": [
+                "门槛",
+                "记录",
+                "决策"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "证据有效",
+                    "同口径配对；保留记录、镜像、终轮输出和失败样本",
+                    "关键输入、输出或环境证据缺失则 HOLD"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "正确与稳定",
+                    "完整正文和工具参数、TTFT/ITL、错误、复读、取消及资源终态",
+                    "业务分桶出现超预算回退，停止晋级或回滚"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "收益为正",
+                    "达标完成量/卡时、搜索卡时和人工复核成本；预定义最低值得做的收益",
+                    "护栏有效且收益能在保留条件重复，才考虑少量灰度"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、待验证：还没有生产收益或跨栈外推",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "待核实不同随机性和负载窗口的重复性；受管语料开关是否在本地部署真正隔离；被选候选在文本生成、P/D、真实网关路径与 H20/昇腾部署的功能、性能和成本。本文没有执行任何优化、访问内部数据或改变线上配置。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "vllm-ascend-pcp-long-answer-quality-gate",
+    "kind": "analysis",
+    "title": "Ascend PCP 预填充变快之后：长回答为什么还要单独验收",
+    "summary": "一 token 基准证明了特定 PCP 配置的输入吞吐收益，不能证明 thinking-on 的长搜索回答稳定。本文分读主干 PR、A3 同提示词复读/空答报告，以及可回滚的服务质量门禁。",
+    "publishedAt": "2026-11-21",
+    "reviewedAt": "2026-11-22",
+    "topics": [
+      "NPU/昇腾",
+      "vLLM",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "vLLM-Ascend #22724：长搜索 RAG 重放报告",
+        "url": "https://github.com/vllm-project/vllm-ascend/issues/22724",
+        "review": {
+          "category": "community",
+          "publisher": "vLLM-Ascend GitHub issue",
+          "status": "attributed",
+          "note": "核对作者 A3 配置、顺序重放结果、机制假说和公开复现范围；未独立复现。"
+        },
+        "publishedAt": "2026-11-21",
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "#19362：按使用方拆分 PCP 元数据",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/19362",
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "#20374：PCP 本地投影/压缩与验证",
+        "url": "https://github.com/vllm-project/vllm-ascend/pull/20374",
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "#19362 冻结合入提交",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/1c2efa8ac24ba14fd69f12609b850d4e6daf0865",
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "#20374 冻结合入提交",
+        "url": "https://github.com/vllm-project/vllm-ascend/commit/3f1de8b04de8feab92587439b24e2cbf67133720",
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "官方 RC 冻结压缩器，已有 BF16 round-trip",
+        "url": "https://github.com/vllm-project/vllm-ascend/blob/24487f4f48ee99cf45d86d1c504e645549b8c1ef/vllm_ascend/ops/triton/compressor/compressor_triton.py",
+        "accessedAt": "2026-11-22"
+      },
+      {
+        "title": "官方 RC 标签",
+        "url": "https://github.com/vllm-project/vllm-ascend/releases/tag/v0.32.0rc1",
+        "accessedAt": "2026-11-22"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "两主干 PR 分别拆分 PCP 元数据职责与前移本地投影/压缩；官方 RC 压缩器已有 BF16 往返。",
+        "sourceIndices": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "开放 issue 的同一请求重放支持增加长回答发布门禁，不是生产故障率，也不能确认 BF16 根因。",
+        "sourceIndices": [
+          0
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "单 PR 隔离、实际镜像适用性、生产门禁与修复结果未验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "单 token 性能对照和长任务终态是否分别达标？",
+      "同一夹具能否跨副本、冷热状态稳定完成？",
+      "失败前消耗、空答和工具动作如何保留在验收分母？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-22 核对公开 #22724、#19362/#20374 及官方 RC 冻结压缩器；开源作者结果与建议分级，未独立复跑。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：保留单 token 性能预筛，但另设长回答质量门禁",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一张吞吐上升的表，不能批准一次可能把长回答改成空答的升级。建议把“PCP prefill 性能”和“真实长度下答案/工具动作可用”拆成两个独立门禁。性能收益尚可评估，坏桶未解释前先停在隔离验证，不建议据此关闭生产 PCP。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "两条 PCP PR 已进入主干；#22724 是 11 月 21 日打开的公开个案，11 月 22 日复核时仍开着。它没有给出已确认根因、修复版本或生产通用结论。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "报告者在自制 v0.32.0rc1-based 镜像上看到同一请求有时复读至预算上限、没有正文；同一候选也能通过。最强结论是该固定提示词在这些镜像上的终态有差异，不是确定性失败，更不是发生率。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：性能表要回答“能多快起跑”，业务还要问“能否到达终点”",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "PCP 在预填充阶段将上下文工作分给多个 rank。移动计算与聚合边界，可能减少通信或元数据准备；但上线同时要验证长序列中样本最终是否给出符合任务要求的输出。推理服务可用性不能只用 HTTP 状态和首个响应字段定义。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "Issue 对照是 A3 四节点 P/D 分离（两 P 节点、两 D 节点；6 P 实例、16 D 实例），DeepSeek V4.1 Flash W4A8、P 侧 TP1+PCP。同一个含 62 条搜索结果、27,250 token 的请求顺序重复，thinking 开启、温度 0、非流式。DSpark 5 speculative tokens 是固定条件，不是独立测出来的故障因子。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "识别回归不需要新旧回答逐字相同。但对“本应回答”的任务，应有有效正文且引用可回指、内容可信；“本应调用工具”的任务，则可能本来就没有正文，必须校验完整工具名与参数，不应简单按空正文误判。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：两条代码变更与两类试验为何不能混为一谈",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "两个测试终点：首块预填充和完整业务终态",
+              "caption": "原创验收边界示意，不是因果线路图或实测时间轴。两套公开实验不是同一系统的同一轮 A/B；下面是需要分别验证的采样终点。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                1,
+                2,
+                5
+              ],
+              "nodes": [
+                {
+                  "id": "shape",
+                  "label": "受控输入长度和并发",
+                  "detail": "32K、128K，固定并发和拓扑的单轮性能对照。不同 PCP/DP 分组应各自核算。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "prefill",
+                  "label": "PCP 预填充与缓存",
+                  "detail": "观测输入吞吐、首 token、抢占，并核对使用的 PCP 路径。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "one",
+                  "label": "只出 1 token",
+                  "detail": "只说明这个性能窗口，没有后续 token 序列可用于长回答判断。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "rag",
+                  "label": "长搜索语义夹具",
+                  "detail": "固定文档、引用格式、历史消息、采样与模型；跨多个夹具。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "decode",
+                  "label": "完整生成与服务解析",
+                  "detail": "继续生成，分别观察 reasoning、正文、工具调用结构及超时。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "terminal",
+                  "label": "可用答案或工具动作",
+                  "detail": "检查完整终态、重复、有效引用与工具参数；无可用结果仍留在分母。",
+                  "column": 2,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "shape",
+                  "to": "prefill",
+                  "label": "固定压力"
+                },
+                {
+                  "from": "prefill",
+                  "to": "one",
+                  "label": "性能窗口截止"
+                },
+                {
+                  "from": "rag",
+                  "to": "decode",
+                  "label": "逐轮交付"
+                },
+                {
+                  "from": "decode",
+                  "to": "terminal",
+                  "label": "校验业务终态"
+                }
+              ],
+              "presentation": {
+                "kind": "boundary",
+                "panels": [
+                  {
+                    "title": "性能预筛",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "shape",
+                      "prefill",
+                      "one"
+                    ]
+                  },
+                  {
+                    "title": "质量门禁",
+                    "tone": "control",
+                    "nodeIds": [
+                      "rag",
+                      "decode",
+                      "terminal"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                3
+              ],
+              "text": "#19362 按 State、SWA、Attention、Indexer 等使用方拆分元数据，把 rank 本地 query 所需字段与全局 cache 写入字段分开，并在符合条件的批次共享上下文准备。它不是把 KV 数值切换成 BF16 的 PR。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2,
+                4
+              ],
+              "text": "#20374 面向纯 PCP 预填充，让 rank 先对本地归属行做 SWA KV 投影及 C1/C2 压缩，再收集 KV 和 BF16 latent 行供副本缓存写入；边界对齐、C2 跨 chunk 配对和环形状态仍是正确性约束。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "要把“某段 math 在 FP32”“池化后有 BF16 往返”“传输的 latent 是 BF16”当成不同边界。冻结的官方 RC 压缩器已含 pooled_bf16 往返与 compressor_from_projected 定义。新 PCP 数据流改变何时、在哪条路径用这些操作，不能表述为首次引入这些函数或 BF16。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                5
+              ],
+              "text": "一种待验证解释是新路径改变舍入或合并顺序，使某一步候选 logits 的排序翻转，之后自回归读入不同历史。它解释了为什么各小张量在容差内，长输出仍可能走不同分支；不意味着已经在此案例定位到第一个差异，也不意味着任何微差都会导致循环。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据对照：同请求顺序重放、prefill 筛查和质量子集",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "作者公开证据，均未由本站独立复现",
+              "columns": [
+                "证据对象",
+                "配置与观察",
+                "不能推出的结论"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#22724 自制基线",
+                    "同一 27,250-token 请求，6/6 正常完成，约 51 秒/轮",
+                    "不是官方 RC 镜像的认证结果"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "#22724 双 PR 候选",
+                    "#19362+#20374 仅叠这两条时 1/3 通过，另两轮复读；失败约 652 秒至 length 且零正文",
+                    "非确定性失败；不是生产发生率、流式 TTFT 或通用费用"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "#22724 四 PR 候选",
+                    "叠加另两项改动后 1/6 通过，另五轮复读；报告还称其余 16 轮案例未复现该故障",
+                    "另两项不是此样本复现的必要条件，不排除交互"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "#20374 A3 性能",
+                    "16 A3、C16、32K/128K、1 输出 token；每格各 16 暖+32 计量，六组各一次 A/B；输入吞吐 +3.12%～+12.66%",
+                    "不覆盖完整作答，也不等于 issue 的硬件拓扑、基线或 +18.5%"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "#20374 A3 准确性",
+                    "算子比较和 GPQA 100 题，thinking off 72→71；固定 4096-word 上下文的 SWA bounded replay 67→67",
+                    "不是无质量测试，也不覆盖 thinking on 长搜索 RAG"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "#20374 A5 单独证据",
+                    "不同量化组合；PCP8 的 32,769-token 预检出现首 token 差异",
+                    "不能混作 A3 基线，也不能把首 token 差异等同空答"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "#19362 另一次性能样本",
+                    "8×910B、TP4/PCP2；另有自身围绕 metadata 的测量",
+                    "不是 A3 四机 P/D 复现的对照"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                2
+              ],
+              "text": "Issue 还报告双 PR 在自己的饱和场景有吞吐/TTFT 改善。实验条件和分母未按 #20374 的六行共同基线给出，不能拿来平均或互相填空。作者的单请求时长包含其交付本地 reasoning 预算，不能当作原生流式指标。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：不要用算子容差、单步 token 或小样本互相替代",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "正确性至少三层：算子输出及索引/状态正确；受控生成在预期范围内；最终服务可用答案或工具动作。前一层通过是证据，不是后一层已通过。应同时记录数值误差、首个可复现分歧、终态及业务判定，避免为追求字符串完全一致误杀语义正确样本。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "1/3、1/6 是两个镜像对一条相同提示词的重复次数，不是多请求抽样所得的总体比例。报告者没有单独比较 #19362 和 #20374；它把问题缩小到双 PR 组合出现的条件，却没有隔离哪个改动、哪个状态边界或交互造成。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "调高精度或切换执行路径可能改变占用、吞吐和调度。没做隔离前，应把它们留作实验变量，不把关闭 PCP、关闭 DSpark 或强改传输 dtype 写成修复。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、生产判断：先排除伪空答，再区分计算和交付边界",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "工程诊断假设，不是对任何部署的诊断",
+              "columns": [
+                "症状",
+                "先检查什么",
+                "最有用证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "非流式 length、reasoning 循环、零正文",
+                    "重复生成确实发生，还是字段投影/分离把正文隐藏",
+                    "区分 reasoning/正文 token；终态、重复片段率、失败前消耗；隔离服务直连对照"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "经网关才工具不完整",
+                    "转发、解析、下游提前关闭或 schema 协商",
+                    "顺序累积 JSON delta，保存结构摘要与取消时点，不只判断 content"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "候选才出现受控分歧",
+                    "先冻结版本和路由，再定位 rank、chunk、cache 层",
+                    "同一夹具跨副本重跑；对齐 P/D 拓扑、构建、量化、缓存/原始终态输入输出"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "平均 TTFT 变好但失败上升",
+                    "快指标忽略了没有可用结果的请求",
+                    "完整接入分母、未交付结果类别、完成率及客户端首可用时点"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "记录第一个面向客户端的文本或预先定义的首个可执行工具动作，另列 role/空 delta/内部 reasoning。对流式应维持终止、引用与工具组装契约；而原 issue 为非流式，不声称它证实网关或 SSE 存在缺陷。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、验证矩阵：先受控回放，再依门禁决定是否灰度",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "以下为未执行计划；只用公开、合成或经批准的数据",
+              "columns": [
+                "阶段",
+                "怎么做",
+                "判定"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "1 版本身份",
+                    "记录 digest、Ascend plugin 与 vLLM SHA、模型量化/模板、P/D TP/PCP、DSpark 参数和设备",
+                    "对照材料可复现；同名 RC 不替代镜像指纹"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "2 独立性能预筛",
+                    "固定同硬件/负载，按 PCP 桶做 1-token 输出；分冷热、交替轮次",
+                    "符合预定性能界；不签语义通过"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "3 逐步隔离组合",
+                    "基线、两单 PR（在依赖允许时）、组合；无法独立构建则明确标注；每格同夹具跨轮",
+                    "定位组合/交互；若基线也抖动，不强作单因果"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "4 完整长答",
+                    "多条公开/合成长搜索夹具；固定检索材料、重复配置、不同长度与缓存桶、多个副本",
+                    "非空正文、内容正确、对应引用合法、无意外重复/截断"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "5 工具及流式合同",
+                    "对相同目标做直连与网关；正/负工具例、自然完成/超时/取消分开",
+                    "装配完整 delta，工具符合 schema；不把合理的空正文当故障"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "6 经批准灰度",
+                    "隔离门全通过后，按真实流量画像做可回滚小组；固定容量和对照分桶",
+                    "关键质量桶退化、基线漂移或终态缺失则 HOLD/回滚"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可保留一条已知难题作为回归哨兵，但签署必须依赖多任务和多轮证据。若要定位第一处数值分叉，可在隔离设置捕捉该轮选中 token、对应候选排序/差距，再沿 rank/chunk 检查；不要默认开启生产逐 token 内容日志。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、验收：可用终态优先，吞吐收益按完整分母看",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "质量非劣边界和性能门槛均应由目标服务在测试前写明",
+              "columns": [
+                "验收面",
+                "口径",
+                "不通过条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "语义终态",
+                    "预期答案/工具分开；分别检查有效引用、内容与 tool schema",
+                    "新增错答、意外空答、严重复读、无法执行的工具动作"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真实交付",
+                    "首个可用正文/动作和最终完成率；无可用结果留在失败/删失统计，按原因拆分",
+                    "只有 HTTP 200 或成功样本延迟漂亮，失败分母缺失"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "延迟与成本",
+                    "各长度和冷热桶看 p95/p99、完成时间与失败消耗；非流式不假填 TTFT",
+                    "有关键桶越界，或只闭环到首 token"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "性能收益",
+                    "等资源条件下看 prefill throughput 与 SLO 内有效完成请求数，分开报",
+                    "只在 1 token 好看，完整业务 quality/goodput 不可接受"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回滚证据",
+                    "基线可回退、可解释的多轮对照和实际观察窗",
+                    "基线漂移、结果不稳定、回滚不可用或缺终态证据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "进度表分两列签字：引擎性能可以先过；应用语义不足就 HOLD 整体推广。把灰度观察对象定义为实际可用结果，而不是部署成功、首个字节或者最大输入吞吐。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、未验证：不要从主干、RC 叫法或相邻问题外推线上",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                0
+              ],
+              "text": "报告者没有公开精确 payload、逐镜像 manifest 或第一处 token/logit 分歧。所见仍是开放 issue，暂无被此文独立确认的精度根因、单 PR 隔离、已发布修复或受影响版本全集。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                0,
+                3,
+                4,
+                6
+              ],
+              "text": "官方 RC 对应的冻结 plugin 源码与报告者派生镜像分开记录，有相同版本文字也不表示相同二进制；部署判断还须核对上游 vLLM、plugin、补丁和运行条件。本文不把主干 PR 合并写成稳定版本发布。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "没有运行 NPU/线上试验。本案例可以借用为服务质量门禁的例子，不是 Infer RSI 本身，也不用于解释任何未采样的现网异常。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sgl-router-v0-1-0",
     "kind": "release",
     "title": "sgl-router 0.1.0：独立发布之后，先验收网关边界，再追求缓存命中",
@@ -2714,6 +4582,667 @@
                 "PP>1、HIP、bounded SWA replay 与图路径的组合不能由本报告补授权或补兼容；以所选版本的准入和回归为准。",
                 "捕获预算对 KV 池的实际挤占、尾延迟及重启恢复时间，必须从目标环境获取，不按组件显存直接相减。"
               ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "sglang-stream-delivery-cancellation-gate",
+    "kind": "analysis",
+    "title": "SGLang 流式交付与取消双门禁：解码没掉速，用户为何更慢？",
+    "summary": "一次逐块断连探测让作者 GB200 高并发流式吞吐下降，而限频后恢复大部分差距。本文区分三组公开证据、HTTP 事件驱动清理和引擎结算，给出直连与网关的发布验收。",
+    "publishedAt": "2026-11-16",
+    "reviewedAt": "2026-11-21",
+    "topics": [
+      "SGLang",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "#50741：流式断连检查从逐块改为限频",
+        "url": "https://github.com/sgl-project/sglang/pull/50741",
+        "publishedAt": "2026-11-16",
+        "accessedAt": "2026-11-21"
+      },
+      {
+        "title": "#50722：高并发流式吞吐回退的作者调查",
+        "url": "https://github.com/sgl-project/sglang/issues/50722",
+        "review": {
+          "category": "community",
+          "publisher": "SGLang GitHub issue",
+          "status": "attributed",
+          "note": "核对作者报告的 GB200 复现、客户端与调度日志指标、HTTP 事件循环解释；未独立复现。"
+        },
+        "accessedAt": "2026-11-21"
+      },
+      {
+        "title": "#46586：断连与发送失败清理修复",
+        "url": "https://github.com/sgl-project/sglang/pull/46586",
+        "accessedAt": "2026-11-21"
+      },
+      {
+        "title": "v0.5.23 冻结 TokenizerManager",
+        "url": "https://github.com/sgl-project/sglang/blob/v0.5.23/python/sglang/srt/managers/tokenizer_manager.py",
+        "accessedAt": "2026-11-21"
+      },
+      {
+        "title": "c81230b：逐输出检查的冻结实现",
+        "url": "https://github.com/sgl-project/sglang/blob/c81230b/python/sglang/srt/managers/tokenizer_manager.py",
+        "accessedAt": "2026-11-21"
+      },
+      {
+        "title": "837d1cf：限频后的冻结实现",
+        "url": "https://github.com/sgl-project/sglang/blob/837d1cf/python/sglang/srt/managers/tokenizer_manager.py",
+        "accessedAt": "2026-11-21"
+      },
+      {
+        "title": "837d1cf：等待间隔默认值",
+        "url": "https://github.com/sgl-project/sglang/blob/837d1cf/python/sglang/srt/environ.py",
+        "accessedAt": "2026-11-21"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "#50741 相关合入代码保留首次未完成输出检查并按等待间隔限制后续运行输出探测；v0.5.23 标签路径不同。",
+        "sourceIndices": [
+          0,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      {
+        "status": "inference",
+        "text": "作者复现支持把 HTTP 交付作为独立发布门禁，不能从调度日志推导客户端体验。",
+        "sourceIndices": [
+          1
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "目标硬件、镜像、网关和实际流量的尾延迟与取消资源结算尚未实测。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "客户端实际收到的吞吐、间隔与引擎产出是否一致？",
+      "直连和经网关的客户端取消何时传播到引擎与资源终态？",
+      "目标运行镜像究竟包含哪组修复及依赖组合？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-21 核对 #50722/#50741、#46586 和相关冻结源码。公开作者实验与原创建议分级；未复跑基准，未改动线上。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：流式上线不能只看 decode tok/s，还要验证客户端收到与资源收回",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "把“流式交付”和“断连结算”设为同一次发布的两道独立门禁。前者回答用户实际收到多快、有没有完整收完；后者回答用户离开以后引擎是否及时停止、请求资源是否可回收。只恢复流式吞吐而丢了取消，或只证明取消能触发却拖慢正常流，都不应过门。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2,
+                3,
+                4,
+                5
+              ],
+              "text": "这是一篇 11 月 21 日的公开技术解读，不是当天的新稳定版公告。11 月 9 日合入的 #46586 含清理修复与逐输出探测；11 月 17 日合入主干的 #50741 调整后者，保留事件驱动的清理路径。v0.5.23 冻结代码没有该逐流块探测。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议先查实际镜像是否包含相关改动，再用直连和经过网关的同负载 A/B 检查。本文没有在 H20、其他硬件或线上流量上复现，不据此建议一键升级或修改轮询参数。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：GPU 已经产出，不等于流已经送到用户",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个请求至少横跨引擎生成、HTTP 前端封装与发出、网络/代理转发、客户端消费。解码日志通常只描述某个调度窗口的产出，客户端有效吞吐则以客户端实际接收为准。异步转发积压时，两个数字可以同时正确却走向不同。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "上游作者的复现为 gpt-oss-120b、TP4、单 GB200 tray、流式 /v1/completions；强制前缀 miss，输入 8000、输出 1000，并发 256、1280 请求。特定运行窗口约 253 个请求在跑时，调度日志约 28.6k tok/s，但实际平均运行批占用从 126.5 降到 114.8。不能把条件日志理解为所有负载下引擎利用率或行为整体没变。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可操作的诊断目标不是给“CPU 瓶颈”贴标签，而是找出首个扩大的时间段：如果调度器到 HTTP 待写之间增大，与网关收到到客户端之间增大，责任边界完全不同。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：为什么看似便宜的一次检查会放大，以及如何保住断连清理",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "两个方向，两种结果：输出交付与取消结算",
+              "caption": "原创机制示意，不是实测时序。转发输出与向上游传播取消是不同职责；各箭头均需按实际路径验证，图中不承诺固定延迟。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                1,
+                2,
+                5
+              ],
+              "nodes": [
+                {
+                  "id": "decode",
+                  "label": "调度器产出",
+                  "detail": "引擎推进解码，把输出送到 HTTP 面；这里的 tok/s 不是用户实收速率。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "send",
+                  "label": "HTTP 组装与写流",
+                  "detail": "TokenizerManager、SSE 序列化、ASGI 写出共享前端执行资源；热路径上的重复探测可能增加调度开销。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "relay",
+                  "label": "网关转发",
+                  "detail": "可选中间层，可能缓冲、合并块或提前超时；没有网关的上游实验不能覆盖此层。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "client",
+                  "label": "客户端可见输出",
+                  "detail": "区分首个有效输出、后续块间隔、正常流终止。",
+                  "column": 3,
+                  "row": 0
+                },
+                {
+                  "id": "close",
+                  "label": "调用方断开",
+                  "detail": "控制实验分别在首个有效输出前和生成途中主动断开。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "propagate",
+                  "label": "断连被上游感知",
+                  "detail": "直连或网关传播；响应监听和发送失败是不同入口，限频探测只是回退。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "abort",
+                  "label": "清理并发出 abort",
+                  "detail": "关闭生成迭代器可触发请求清理，但发出 abort 不是调度器已经停止。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "retire",
+                  "label": "请求与资源结算",
+                  "detail": "核对活跃请求消失以及应释放的请求级资源，不要求共享缓存全部清空。",
+                  "column": 3,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "decode",
+                  "to": "send",
+                  "label": "输出进入 HTTP 层"
+                },
+                {
+                  "from": "send",
+                  "to": "relay",
+                  "label": "写出流式响应"
+                },
+                {
+                  "from": "relay",
+                  "to": "client",
+                  "label": "客户端实际收到"
+                },
+                {
+                  "from": "close",
+                  "to": "propagate",
+                  "label": "传播关闭信号"
+                },
+                {
+                  "from": "propagate",
+                  "to": "abort",
+                  "label": "事件/失败进入清理"
+                },
+                {
+                  "from": "abort",
+                  "to": "retire",
+                  "label": "核对引擎终态与释放"
+                }
+              ],
+              "presentation": {
+                "kind": "lifecycle",
+                "panels": [
+                  {
+                    "title": "正向交付链",
+                    "tone": "communication",
+                    "nodeIds": [
+                      "decode",
+                      "send",
+                      "relay",
+                      "client"
+                    ]
+                  },
+                  {
+                    "title": "反向取消链",
+                    "tone": "control",
+                    "nodeIds": [
+                      "close",
+                      "propagate",
+                      "abort",
+                      "retire"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "上游定位到 Starlette/AnyIO 的断连探测会尝试 ASGI receive，而不是读取一个简单布尔变量。在其 uvicorn 组合中，这会让流任务让出事件循环、经取消调度恢复。只检查一次未必昂贵，但按每块重复、同时挂着许多流时，累计排队与调度成本可能压过 HTTP 输出推进。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3,
+                4,
+                5,
+                6
+              ],
+              "text": "冻结代码对比：v0.5.23 将运行中该检查留在非流式分支；c81230b 把检查置于流式 yield 之前；837d1cf 为运行输出检查引入每请求的单调时钟节流，首次未完成输出可触发，之后不早于等待间隔重试。若首个输出已经是终态，finished 分支会先处理并退出，不进入这一运行中探测。无输出时的事件等待超时检查仍在。默认间隔为 4 秒，不是承诺每 4 秒一定探测，因为执行还取决于等待/产出路径与任务是否被调度。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                2
+              ],
+              "text": "在作者描述的 ASGI 2.3 组合中，响应层监听断连并取消 body 任务；在 ASGI 2.4+ 的发送失败路径中，#46586 的迭代器关闭使清理能够运行。实际依赖版本与服务器行为必须复查；“检测到关闭”“生成迭代器退出”和“引擎完成终止”不能混成同一个时间点。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "轮询兜底不能替代事件链已经打通的证明。若网关维持到上游的连接，即便客户端关闭，服务端也可能还未收到对应的关闭信号。实验应同时看两跳，不应通过频繁检查来掩盖信号没有传到的问题。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据：隔离复现、配对复测、断连试验各回答不同问题",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "公开作者报告，未经独立复现；各行不拼接成一次实验",
+              "columns": [
+                "队列或版本组",
+                "观察结果",
+                "不能由此推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "#50722 隔离定位",
+                    "同场两次的客户端输出约 9,159→7,117 tok/s（−22.3%）；平均 ITL 22.8→30.6 ms，平均 TTFT 5.0→5.1 s",
+                    "不是稳定版、H20 或网关结果；调度日志是条件窗口"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "#50741 交替启动，并发 256",
+                    "6,654→8,362 client tok/s（+25.7%）；p99 ITL 47.93→33.98 ms；p99 TTFT 8.301→8.361 s",
+                    "不是与 issue 基线直接配对；不能宣称 p99 TTFT 改善"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "#50741 交替启动，并发 1",
+                    "501.6→499.3 client tok/s，报告归为轮次波动",
+                    "不能保证所有低负载或其他模型无影响"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "#50741 独立中途 TCP RST",
+                    "三个流式端点均约 0.14 s，达到 gauge 刷新观测下限；非流式约 1.93 s",
+                    "不是精确清理时延、首 token 前验证或代理后的资源释放 SLA"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "版本轴",
+                    "Nov 9 c81230b 与 Nov 17 837d1cf 是主干状态；v0.5.23 代码另核",
+                    "不能靠标签发布日期判断实际镜像内容或推送状态"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "PR 还列出较早的 main/打补丁表，客户端速率为 6,992→8,894；它使用另一轮次统计，不能配上交替启动的 ITL 或题述 issue 的基线计算提升。应把每个基准的输入、分母、样本和聚合方法留在原行。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：快路径、省探测和可恢复性之间如何权衡",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "事件驱动清理可以避免每个正常块都付出一次探测，但它有前提：服务器发出可观察的关闭事件，或上游写失败能正确关闭 iterator。限频探测是安全网，不是把 4 秒当业务承诺。如果在特定服务器/网关组合中缺少事件，兜底仍可能受任务排队与代理状态影响。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "追求更多 token 一次送出也有代价：减少写次数可能改善处理能力，但会改变用户块间隔与取消边界。不要同时改流式聚合粒度、连接策略和取消逻辑后只报一个吞吐值；否则无法知道是更快送达、批量积累造成波形变化，还是幸存请求比例上升。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "测量要对齐输出语义：首个 header、角色提示、心跳或空 delta 不算首个用户可用内容。若业务包含 reasoning、工具参数或可见正文，应预先声明它们各自的起点与完成条件，而不是混进一个 TTFT 序列。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、故障定位：把请求轨迹对齐，而不是相减几个全局分位数",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "工程假设与判别证据，非生产故障结论",
+              "columns": [
+                "症状",
+                "先验证",
+                "有效证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "直连、代理均慢，调度日志相近",
+                    "HTTP 前端事件循环、组帧、写出是否积压",
+                    "同 request 的引擎输出到前端收到/待写时间，loop lag 与 CPU，按并发分桶"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "只有代理变慢",
+                    "代理缓冲、期限、写出/客户端读取和路由差异",
+                    "同样流量与模型的两跳时间戳，记录实际路由和字节转发节奏"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "客户端关闭但引擎仍跑",
+                    "代理未取消 upstream，或清理/abort 传播缺一段",
+                    "客户端关闭→upstream 关闭→服务端观察→abort→调度终态→资源释放同 ID 证据"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "吞吐与 p99 变好但完成率变差",
+                    "最慢请求因断流/超时不再进入成功样本",
+                    "总 offered/accepted、正常完成、预期取消、超时、服务错误、拒绝与未分类数一同对账"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "用同一个脱敏业务 ID 串联，若重试再记录不同 upstream attempt ID。冻结代码中的 response_sent_to_client_ts 在 yield 前赋值，只能当服务端边界，不能当网络交付。单进程段优先单调时钟，多进程段要求校时并保留误差；以逐请求持续时间聚合，不用“客户端 p99 减引擎 p99”构造并不存在的端到端分段。不得为诊断采集真实 prompt 或客户端身份。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、验证矩阵：一个可回滚的受控对照",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "计划执行，所有结果待验证",
+              "columns": [
+                "实验",
+                "控制与扰动",
+                "记录/判定"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物确认",
+                    "同模型/权重、硬件、启动参数与 HTTP/ASGI 依赖；冻结 baseline 与 candidate 镜像 digest",
+                    "记录两个修复的真实包含关系、依赖版本与实际服务路由"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "自然完成",
+                    "两版本×直连/代理×低/代表性繁忙；匹配输入/输出长短与 cache 热度，交替轮次",
+                    "客户端输出速率、完成流/s、p95/p99 块间隔、引擎 decode、loop lag；保留未完成数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "首内容前关闭",
+                    "排队/预填充阶段主动关闭；不要在错误前偷偷获得首块",
+                    "定位关闭传播、观察/abort、调度终态、应释放资源；无首内容单独计数"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生成中关闭",
+                    "已观察到首内容后主动关闭；直连和代理分别做，按端点记录",
+                    "同 ID 轨迹及最后输出；与自然完成区分，禁止把取消当服务失败或完整成功"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "发送失败与回退",
+                    "用受控测试替身覆盖依赖协议分支，验证监听、发送失败、兜底；设正常完成保护组",
+                    "清理能触发且不误取消其他请求；不从探针刷新时间替代真实资源结算"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "代理超时/拒绝对照",
+                    "人为设定测试 deadline、限制策略；与主动取消分开",
+                    "记录哪层发出终态、是否向上游传播；未派发请求不要求有引擎 span"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议先在隔离环境跑语义，再用可比的到达率做性能，最后在已有授权后才讨论小比例流量。数据必须可追溯到固定 cohort；不混用强制 cache miss 的基准与真实 prefix 热度下的服务容量。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、验收：业务交付、取消和可解释性都必须过门",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "先约定本地 SLO 与噪声区间，公开数字不是阈值",
+              "columns": [
+                "维度",
+                "计算口径",
+                "停止条件"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "结果对账",
+                    "offered→accepted，已接入请求最终分类：完整完成、预期取消、超时、服务错误、拒绝或未分类；attempt 独立保留",
+                    "控制组有缺失/混淆或成功率靠漏样本变好"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "首内容",
+                    "从真实客户端请求到首个有效语义输出；同时报告无有效输出的覆盖率与成因",
+                    "第一块、header 或空 delta 被当成有效 TTFT，或者无首内容失败被隐藏"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "连贯交付",
+                    "p95/p99 可见块间隔，只有 token 级可精确观测才叫 ITL；记录完整流/s 和 delivered tok/s",
+                    "超出预设非劣界，或平均改善但尾部更差"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "取消结算",
+                    "按首内容前/后、直连/代理分层，关联到 abort、调度和资源终态",
+                    "取消丢失、资源回收时间超出预设非劣界、误取消别的请求，或只靠粗刷新 gauge 下结论"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "推广门禁",
+                    "按真实负载层看 SLO 内完成量、失败分解与回滚可执行性",
+                    "无代表性结果/无回滚证据，不扩大范围"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "同一张发布看板至少展示用户实收输出、客户端间隔、完整率、引擎 decode、HTTP loop lag、在途与取消结算耗时。监控用于提示，逐请求事件用于定位，隔离实验用于因果验证，三者不可互代。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、范围外和待验证：升级前先补哪些证据",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                0
+              ],
+              "text": "未独立运行 GPU/网关/HTTP 依赖组、未测试首 token 前取消或生产资源回收。在某个 gauge 周期内回到零仅说明作者该采样能看到归零，不说明真实 abort 发生于哪一个毫秒，也不证明 KV 当时已可复用。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                3,
+                4,
+                5
+              ],
+              "text": "v0.5.23 是本报告解读的具体冻结参照，主干合入号不是新稳定版号。派生镜像、单独 backport、不同服务器与缓冲政策都可能改变路径；必须核对正在运行的镜像、包版本和测试结果，再判定是否具备同样问题或收益。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "可交付的 SRE 资产是一套双门禁回归：固定流量对照、直连/代理双路径、预期中断与异常中断分流、可核对的资源结算和上线停止条件。其价值是明确什么时候应按住发布，而不是承诺某一补丁能给目标集群带来固定百分比。"
             }
           ]
         }
