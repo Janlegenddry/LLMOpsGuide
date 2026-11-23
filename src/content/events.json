@@ -18,7 +18,7 @@
     "city": "杭州",
     "venue": "云谷中心 · 云谷之芯",
     "address": "杭州市西湖区灯彩街 1009 号",
-    "summary": "关注 vLLM、SGLang 在 Kubernetes 上的部署、GPU 调度，以及推理可观测性与可靠性实践。",
+    "summary": "15:00 真假 TTFT，16:00 推理服务不停服升级，16:30 llm-d × vLLM-MUSA 的 P/D 分离与 KV 感知路由；16:30 同时有推理性能与能效可观测。",
     "topics": [
       "vLLM / SGLang",
       "Kubernetes",
@@ -49,9 +49,13 @@
       {
         "title": "CNCF 官方活动页",
         "url": "https://community2.cncf.io/events/details/cncf-kcd-hangzhou-presents-kcd-hangzhou-2026/"
+      },
+      {
+        "title": "主办团队 11 月 20 日小程序报名公告",
+        "url": "https://weibo.com/2/detail/5367367253099270"
       }
     ],
-    "verifiedAt": "2026-11-16",
+    "verifiedAt": "2026-11-23",
     "publicationApproved": true,
     "containsPrivateData": false
   },
@@ -307,6 +311,71 @@
       }
     ],
     "verifiedAt": "2026-11-20",
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "ascend-sglang-meetup-shanghai-2026-11-14",
+    "title": "昇腾开源软件极客营 · SGLang Meetup 上海站",
+    "organizer": "昇腾、SGLang 开源社区",
+    "scope": "local",
+    "region": "shanghai",
+    "scopeNote": "上海线下已结束活动。时间为会前海报计划时间，保留议程和图文回顾。",
+    "archiveExceptionApproved": false,
+    "status": "scheduled",
+    "startDate": "2026-11-14",
+    "endDate": "2026-11-14",
+    "startAt": "2026-11-14T09:00:00+08:00",
+    "endAt": "2026-11-14T17:45:00+08:00",
+    "timeZone": "Asia/Shanghai",
+    "format": "in-person",
+    "city": "上海",
+    "venue": "上海粤海万怡酒店 · 牡丹亭",
+    "address": "上海市虹口区逸仙路 328 号",
+    "summary": "聚焦 SGLang 在昇腾的工程实践。会前议程：14:10 SGLang Roadmap、15:10 Mooncake KV Cache、16:05 Atlas 800T A2 长上下文优化、16:35 小红书 Dots NPU 推理部署。DOIT 图文回顾可读，未核实录像或讲义。",
+    "topics": [
+      "SGLang",
+      "昇腾 NPU",
+      "Mooncake KV Cache",
+      "长上下文推理",
+      "生产推理部署"
+    ],
+    "officialUrl": "https://www.sohu.com/a/1099753011_122105141",
+    "agendaUrl": "https://q4.itc.cn/q_70/images03/20261110/0b66886e119c4c6a88a46e61281e88ea.jpeg",
+    "registration": {
+      "status": "closed",
+      "url": "https://www.sohu.com/a/1099753011_122105141",
+      "deadline": null,
+      "note": "活动已结束。Datawhale 公告含历史报名海报，不是当前报名入口。"
+    },
+    "livestream": {
+      "status": "unconfirmed",
+      "url": null,
+      "publicAccess": false,
+      "note": "未核验到公众直播。"
+    },
+    "replay": {
+      "status": "unconfirmed",
+      "url": null,
+      "publicAccess": false,
+      "note": "DOIT 为公开图文回顾，非视频回放；未核验录像或讲义。"
+    },
+    "sources": [
+      {
+        "title": "Datawhale 会前公告",
+        "url": "https://www.sohu.com/a/1099753011_122105141"
+      },
+      {
+        "title": "昇腾与 SGLang 联合议程海报（历史）",
+        "url": "https://q4.itc.cn/q_70/images03/20261110/0b66886e119c4c6a88a46e61281e88ea.jpeg"
+      },
+      {
+        "title": "DOIT 11 月 20 日媒体图文回顾（非回放）",
+        "url": "https://www.doit.com.cn/itnews/872469433364549.html"
+      }
+    ],
+    "verifiedAt": "2026-11-23",
     "publicationApproved": true,
     "containsPrivateData": false
   }
