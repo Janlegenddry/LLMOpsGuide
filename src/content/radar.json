@@ -25892,6 +25892,618 @@
   },
   {
     "schemaVersion": 1,
+    "id": "llm-d-router-kv-transfer-queue-saturation",
+    "kind": "analysis",
+    "title": "llm-d-router 的 P/D 饱和度修正：等 KV 与等 Decode 不是一回事",
+    "summary": "只从路由器队列项扣除正在拉取 KV 的等待，不抹去总队列。拆解 #4016 的阶段口径、scrape-lag 补偿和保护边界，并给出影子打分及慢传输/真饱和对照。",
+    "publishedAt": "2026-11-05",
+    "reviewedAt": "2026-11-23",
+    "topics": [
+      "服务调度",
+      "PD 分离",
+      "KV Cache"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "#4016：对 KV 传输中的等待收窄饱和度口径",
+        "url": "https://github.com/llm-d/llm-d-router/pull/4016",
+        "review": {
+          "category": "community",
+          "publisher": "llm-d-router GitHub",
+          "status": "attributed",
+          "note": "核对最终 PR 正文、2026-11-22 主干合并及维护者测试说明；没有独立执行 Go 测试。"
+        },
+        "publishedAt": "2026-11-05",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "冻结合并提交：extractor、detector 和单测",
+        "url": "https://github.com/llm-d/llm-d-router/commit/4e589553487d6853288824da243459da028a4d8b",
+        "review": {
+          "category": "community",
+          "publisher": "llm-d-router GitHub",
+          "status": "attributed",
+          "note": "核对冻结 patch 的 extractor.go、mapping.go、detector.go、文档与测试；用冻结源码而非早期 PR 标题。"
+        },
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "vLLM 指标：异步 KV load 各阶段",
+        "url": "https://docs.vllm.ai/en/stable/usage/metrics",
+        "accessedAt": "2026-11-23"
+      },
+      {
+        "title": "llm-d-router v1.0.0 公开发布记录",
+        "url": "https://github.com/llm-d/llm-d-router/releases/tag/v1.0.0",
+        "review": {
+          "category": "community",
+          "publisher": "llm-d-router GitHub",
+          "status": "attributed",
+          "note": "核对旧稳定版发布日期、对应提交和发布内容；不将 11 月的主干修复视为该版本内容。"
+        },
+        "accessedAt": "2026-11-23"
+      }
+    ],
+    "claims": [
+      {
+        "status": "inference",
+        "text": "按已合入主干实现，窄口扣减可降低传输等待被误读为 D 容量用尽的风险，但总等待和端到端风险都需要保留。",
+        "sourceIndices": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "实际制品、运行配置与真实负载收益均须验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "能否把正在传输与未启动/已完成仍排队分开？",
+      "score 下降时传输超时和用户达标完成量是否恶化？",
+      "抓取不完整、真饱和、完成突发时还能否保护容量？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "2026-11-23 核对 #4016 公开记录、冻结实现、vLLM 指标与旧稳定标签；未运行 GPU 或线上实验。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "一、结论：等 KV 的请求仍在等待，但不一定代表 Decode 无算力",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这次修改最值得借鉴的是指标分工：总等待保留给可观测性，路由器的队列项只扣除传输确已发起且未报告完成的那部分；传输未发起或已完成仍排队则保留。这样既不把传输等待直接当 D 算力饱和，也不把业务等待抹掉。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                1,
+                3
+              ],
+              "text": "正式证据是 #4016 于 11 月 22 日合入主干（4e58955），不是同日稳定版或生产性能结论。PR 提供定向测试，未提供受控 P/D 生产延迟、吞吐或成本数据。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "优先做影子评分和双轨仪表盘，不建议直接降低容量阈值、屏蔽传输告警或改现有生产策略。尤其需要证明：当传输才是真瓶颈时，少过滤 D 不会把压力继续灌给 P、网络或 KV 分配。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "二、背景：把总等待、等待阶段和调度容量分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                2
+              ],
+              "text": "vLLM 将引擎等待总数与按原因、按异步 KV load 阶段的分解分别导出。按原因的 deferred 是宽桶，包含 LoRA、KV transfer 等；按阶段有 waiting_to_start、in_progress、completed_waiting 三类，分别表示未启动、启动后未报告完成、已完成但尚未运行。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0
+              ],
+              "text": "在 P/D 分离中，D 侧可能已经接收请求，却在等待 KV；少量运行序列与较大等待队列可以同时存在。llm-d PR 指出旧 detector 把总量用于 saturation 和注入调度 profile 的 filter，可能把仍有计算空间的 D 排除。这个报告不将判定解释为引擎本身不健康。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "传输“已启动未报告完成”可能包含排队、进展慢、回调延迟或拥塞，不等于链路流量一直在跑。只有对瓶颈目标与时间窗口做了约定，才能把这个桶用作一个较好的修正信号。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "三、机制：扣窄口子集，但不能让在途补偿重复记账",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "同一等待队列，两条不同用途的信号",
+              "caption": "原创机制示意。上轨用于总账与监控，下轨只用于特定 detector 的队列项。图不表示引擎状态改变、KV 故障消失或吞吐提升。",
+              "basis": "inference",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "nodes": [
+                {
+                  "id": "engine",
+                  "label": "引擎总等待 W",
+                  "detail": "可包含未发起 KV load、进行中、已完成仍等以及其他约束，占用真实业务等待时间。",
+                  "column": 0,
+                  "row": 0
+                },
+                {
+                  "id": "extract",
+                  "label": "原总量照常发布",
+                  "detail": "extractor 保存 WaitingQueueSize；其他消费者仍看到原口径。",
+                  "column": 1,
+                  "row": 0
+                },
+                {
+                  "id": "dash",
+                  "label": "总队列与业务告警",
+                  "detail": "用户等待、错误、E2E/TTFT 与传输压力仍需独立观察，不由筛选分数替代。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "stage",
+                  "label": "原始 W + 进行中 D",
+                  "detail": "同次抓取取得总等待 W，并仅从 in_progress 提取 D。无、非法或未配置 D 时按代码回退。原始 W 和运行数 R 也供在途补偿使用。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "subtract",
+                  "label": "扣 D，保留原始 W 补偿",
+                  "detail": "队列公式为 W−int(D)+max(0,L−W−R)（D 合法且启用在途补偿时）。第二项使用原始 W，而不是已经扣减的 W−D。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "decide",
+                  "label": "饱和评分和实例过滤",
+                  "detail": "更新 queue term；KV usage、过期/缺失策略和其他限制保持独立。",
+                  "column": 2,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "engine",
+                  "to": "extract",
+                  "label": "总量不扣减",
+                  "shortLabel": "总量不扣"
+                },
+                {
+                  "from": "extract",
+                  "to": "dash",
+                  "label": "保留原口径",
+                  "shortLabel": "原口径"
+                },
+                {
+                  "from": "stage",
+                  "to": "subtract",
+                  "label": "原始 W 与窄口 D",
+                  "shortLabel": "原 W + D"
+                },
+                {
+                  "from": "subtract",
+                  "to": "decide",
+                  "label": "只替换 queue term",
+                  "shortLabel": "新队列项"
+                }
+              ],
+              "presentation": {
+                "kind": "boundary",
+                "panels": [
+                  {
+                    "title": "观测总账",
+                    "tone": "neutral",
+                    "nodeIds": [
+                      "engine",
+                      "extract",
+                      "dash"
+                    ]
+                  },
+                  {
+                    "title": "路由准入信号",
+                    "tone": "control",
+                    "nodeIds": [
+                      "stage",
+                      "subtract",
+                      "decide"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "合并实现把可选 deferredRequestsSpec 编译到 extractor 映射。内置 vllm 匹配 stage=in_progress；合法 waiting 提取发生时才写 DeferredQueueSize，缺失/非有限的 deferred series 归零。若等待 family 不可用，这一分支不会产生新的 deferred 样本，不能解释为“确认没有传输”。同名自定义 engineConfigs 替换内置配置，没配 spec 就没有这条信号。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "记 W=原始等待、R=运行请求、L=producer 提供的已接入在途数、D=deferred 标量。有效 D 要满足 0≤D≤W，队列估计为 W−int(D)+max(0,L−W−R)；没有有效 D 不扣减，没有 producer 则没有 credit。计算项仍以整数请求数计。负值、非有限或大于 W 不应压低队列项。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "教学例：W=8、R=2、L=12、D=5，credit 是 2，旧 queueDepth=10，新 queueDepth=5。若用扣减后 W=3 重算 credit，会误得 7 并重新补回 5；这是同一批请求已出现在 scrape 的原总量中。数字是示意，不是基准测试。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1
+              ],
+              "text": "饱和评分仍以队列阈值、KV 利用率阈值分别衡量并取较高项；同一 queueDepth 也用于过滤。队列项降到 0 不代表所有饱和条件解除：高 KV 使用和缺失/过期遥测仍可触发既有行为。具体阈值应从目标 profile 核对，不照抄文档示例。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "四、证据：主干行为、测试样例与仍不存在的性能证据",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "不同证据不混用",
+              "columns": [
+                "对象",
+                "已核对的结论",
+                "不能证明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "合并提交",
+                    "4e58955 改变 extractor 与 detector；WaitingQueueSize 保持总数",
+                    "不能凭主干提交推断已部署镜像"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0,
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者阶段样例",
+                    "未启动 2、进行中 1、完成后等 2；只扣 1，即使 reason=deferred 为 3",
+                    "不能改用 reason=deferred 作为等价替代"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "作者回退样例",
+                    "无阶段或非有限值归零；非法范围不扣；等待 family 缺失不产出新 deferred",
+                    "不能把 0 当无传输的真值"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0,
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "版本与角色",
+                    "作者说明 v0.32.0 起的 KV consumer（含 both）有相应 stage；官方指标列三阶段",
+                    "不能假设派生镜像、SGLang、所有 connector 或生产环节已按此导出"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    0
+                  ]
+                },
+                {
+                  "cells": [
+                    "真实流量",
+                    "未独立运行测试、未测 D 过滤占比、用户延迟或容量",
+                    "无量化收益/安全放量保证"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "五、取舍：避免假饱和，也要保护真正的瓶颈",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "扣减之后，原本跨阈值的 D 可能重新入选。若随后大量 KV 同时完成，队列会重新显形，形成短时拥塞；若某个到达率下 P/D 链路不稳定，更多准入还会推高传输在途或失败率。要在稳态、慢传输与完成突发三种场景都检查保护效果。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "不应把该逻辑泛化成“所有因依赖卡住的请求都不算队列”。未发起请求还在等待 load 准入；完成后但未运行则可能真缺 decode 容量，LoRA 或 grammar 会占据服务等待而且不属于这次扣减对象。宽扣容易把实质队列掩盖。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "独立 scrape 不保证端到端同步。除范围基本校验，还要验证 W、R、D 的实例范围与时间，新旧 dashboard 共享同一组原始指标但不覆盖彼此；必要时回退到原总量与显式不可信标签，而非静默填补产生乐观判定。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "六、运维定位：保留三条判定轨道",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "下表为隔离场景诊断建议",
+              "columns": [
+                "症状",
+                "先对齐的观察",
+                "下一步证据"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "D 被经常过滤，running 低",
+                    "总队列拆出三个 KV 阶段、KV 占用、原/新 scorer 结果",
+                    "同一端点同一时刻核对 in_progress 与实际在途，排除遥测错位"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "新 scorer 给出低压但 TTFT 恶化",
+                    "业务队列、传输等待、P/网络/D 压力",
+                    "请求终态、传输完成/超时、同步后的已就绪队列与拒绝原因"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "切镜像或滚动后 D 长期等于零",
+                    "抓取缺失、role/config 改变、自定义配置覆盖",
+                    "实际 /metrics、engineConfigs 命中项、实例标签与采样时间"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "不同 DP rank 数据相加后异常",
+                    "路由端点范围是否匹配聚合范围",
+                    "把 W、R、D 按同端点/模型切分再比较，不跨集群汇总"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "面板最少保留：总等待 W；阶段分解和样本年龄；修正 queue term 与 KV usage term；路由过滤/拒绝；应用 TTFT、超时和 goodput。避免从相关性直接诊断网络，配对一次与输出一致的请求链再下结论。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "七、验证矩阵：先影子记分，随后受控 P/D 回放",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "所有为待执行隔离验证，先固定引擎与负载",
+              "columns": [
+                "对照",
+                "控制或故障",
+                "预期判定"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "信号合同",
+                    "同 W/R，分别注入三个阶段、LoRA / grammar 控件",
+                    "仅进行中改变队列项；总量保留"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "抓取回退",
+                    "阶段缺失/恢复、非有限、D>W、等待缺失、自定义覆盖",
+                    "不乐观减压；区分缺测和真零"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "延迟记账",
+                    "可控 L 与 W/R，跨过 queueThreshold",
+                    "credit 基于原 W/R，检测与过滤一致"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "健康 D、慢传输",
+                    "同输入、模型与到达分布，单改隔离传输延迟",
+                    "观察假过滤，并独立看 transfer/SLO 改变"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真饱和与完成突发",
+                    "传输没开始/完成后等待、高 KV、P/D 负载错配",
+                    "保留真拒绝/排队保护；排空后不出现未受控积压"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "响应与回滚",
+                    "旧/新策略并列影子；经批准后才做实验流量切换",
+                    "核对业务及路由指标、失败归类和可逆性"
+                  ],
+                  "basis": "pending",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "先跑无模型的确定性 scorer 回放（相同 scrape 序列），再跑隔离引擎。固定精确镜像、connector、端点拓扑、DP、采样周期、模型与缓存冷热分层、客户端压力和重试；每轮对照变更单项。预注册精度容忍区间，再看用户端观测。"
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "八、验收：不是让分数更低，而是让准入判断更接近事实",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "以下为建议门禁，不虚构通用阈值",
+              "columns": [
+                "门",
+                "通过要求",
+                "停止信号"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "总账不变",
+                    "同一输入总等待不改变，传输在途单列",
+                    "总面板被新口径写低"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "假阳性可解释",
+                    "有余力且 in_progress 为主时减少误排除；看端点级决定",
+                    "阶段无法复核或只看路由平均"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "真饱和保护",
+                    "完成等待、未启动、高 KV 或遥测不可信时仍有保护",
+                    "吞吐看着正常但队列不可控"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "用户结果非劣",
+                    "同 offered load 下按长短和缓存组报 p95/p99 TTFT、错误、goodput 与 transfer timeout",
+                    "任一关键组越过预设停止线，或反馈样本丢失"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回滚可用",
+                    "能快速切回原 queue term；双口径并行验证",
+                    "影响扩散、恢复时序不可证或无法切回"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "成功指标可以写成“在同等负载与失败预算内，降低被误过滤的健康 D 比例，并不恶化传输等待/超时”。用业务达标完成量作容量口径，用户有等待但被提前拒绝不能从分母中消失。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "九、未验证：版本、协议、适配与效果仍须现场结算",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                0,
+                1,
+                3
+              ],
+              "text": "冻结提交证明主干存在改动，但没有确认下一正式 tag、目标镜像或任意自研网关已生效。v1.0.0 发布记录早于该合并，不是依据。验证前检查实际 digest、插件名与属性、引擎 metric role 和映射。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [
+                2
+              ],
+              "text": "文中阶段语义是 vLLM 的生产指标契约；不同框架或自定义 exporter 可能定义不同。需要对齐报告的作用域、采样粒度、请求身份与终态再移植。不能把本例当作具体线上故障诊断，也不建议直接替换 PD 调度参数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "建议沉淀一份可重复的决策样本：原样输入、旧/新公式、阶段归属、过滤原因和业务终态。它能用来评估任何声称“队列下降”的路由改动，而不依赖某一个路由产品。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "mooncake-tent-batch-registration-reference-identity",
     "kind": "analysis",
     "title": "Mooncake TENT 批量注册去重：一次物理注册如何承接多份逻辑引用",
