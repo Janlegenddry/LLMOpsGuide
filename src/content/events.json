@@ -6,19 +6,19 @@
     "organizer": "CNCF KCD Hangzhou 社区",
     "scope": "local",
     "region": "hangzhou",
-    "scopeNote": "杭州本地线下活动。",
+    "scopeNote": "杭州本地线下活动。时间以最新参会指南为准：09:00 签到，09:30–17:30 正式议程；CNCF 旧卡片的 09:00–18:00 为较宽时间窗。指南地点段与交通段的楼号不一致，暂不采用楼号。",
     "archiveExceptionApproved": false,
     "status": "scheduled",
     "startDate": "2026-11-28",
     "endDate": "2026-11-28",
-    "startAt": "2026-11-28T09:00:00+08:00",
-    "endAt": "2026-11-28T18:00:00+08:00",
+    "startAt": "2026-11-28T09:30:00+08:00",
+    "endAt": "2026-11-28T17:30:00+08:00",
     "timeZone": "Asia/Shanghai",
     "format": "in-person",
     "city": "杭州",
     "venue": "云谷中心 · 云谷之芯",
     "address": "杭州市西湖区灯彩街 1009 号",
-    "summary": "15:00 真假 TTFT，16:00 推理服务不停服升级，16:30 llm-d × vLLM-MUSA 的 P/D 分离与 KV 感知路由；16:30 同时有推理性能与能效可观测。",
+    "summary": "09:00 签到，09:30–17:30 为正式议程。15:00 真假 TTFT，16:00 推理服务不停服升级，16:30 llm-d × vLLM-MUSA 的 P/D 分离与 KV 感知路由；16:30 同时有推理性能与能效可观测。已公告全天直播，直达入口待核验。",
     "topics": [
       "vLLM / SGLang",
       "Kubernetes",
@@ -28,16 +28,16 @@
     "officialUrl": "https://community2.cncf.io/events/details/cncf-kcd-hangzhou-presents-kcd-hangzhou-2026/",
     "agendaUrl": "https://sessionize.com/view/9wf3k38o/GridSmart?format=Embed_Styled_Html&isDark=False&title=KCD+Hangzhou+2026",
     "registration": {
-      "status": "qr",
-      "url": "https://community2.cncf.io/events/details/cncf-kcd-hangzhou-presents-kcd-hangzhou-2026/",
+      "status": "link",
+      "url": "https://meet.agicamp.com/meet/hangzhou0019",
       "deadline": null,
-      "note": "请到官方页顶部扫描参会报名二维码（模力工场微信小程序），不要与下方合作社区二维码混淆。名额、审核与截止时间尚未确认。"
+      "note": "阿里云公开报名说明确认模力工场报名入口；当前是否仍接受报名、余位、审核及截止均未核实。也可到 CNCF 官方活动页顶部扫描参会报名二维码（模力工场微信小程序），不要与下方合作社区二维码混淆。"
     },
     "livestream": {
-      "status": "unconfirmed",
+      "status": "pending",
       "url": null,
       "publicAccess": false,
-      "note": "尚未确认官方公开直播。"
+      "note": "主办方已公告全天直播，渠道为模力工场、蚂蚁开源、开源社、DaoCloud、霍太稳视频号。尚未核验直达直播间及各分会场分流方式，暂不提供可直接观看入口。"
     },
     "replay": {
       "status": "unconfirmed",
@@ -53,9 +53,29 @@
       {
         "title": "主办团队 11 月 20 日小程序报名公告",
         "url": "https://weibo.com/2/detail/5367367253099270"
+      },
+      {
+        "title": "阿里巴巴中间件最新参会指南",
+        "url": "https://weibo.com/2/detail/5368481069665854"
+      },
+      {
+        "title": "阿里巴巴云原生参会指南（原始出处）",
+        "url": "https://xie.infoq.cn/article/ecce83c47025152e516060266"
+      },
+      {
+        "title": "阿里云公开报名说明",
+        "url": "https://segmentfault.com/a/1190000048420491"
+      },
+      {
+        "title": "模力工场报名页（当前受理状态待确认）",
+        "url": "https://meet.agicamp.com/meet/hangzhou0019"
+      },
+      {
+        "title": "参会指南同文镜像（仅辅助核对）",
+        "url": "https://jishuzhan.net/article/2124816786940755969"
       }
     ],
-    "verifiedAt": "2026-11-23",
+    "verifiedAt": "2026-11-24",
     "publicationApproved": true,
     "containsPrivateData": false
   },
