@@ -1175,5 +1175,43 @@
     ],
     "publicationApproved": true,
     "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "deepexi-s10",
+    "company": "滴普科技",
+    "title": "AI infra工程师",
+    "locations": [
+      "北京"
+    ],
+    "category": "inference",
+    "level": "3 年以上 AI Infra、分布式系统、GPU 集群、大模型推理或相关基础设施经验；学历原页未明确，需确认",
+    "summary": "负责生产级模型推理的部署、升级和性能调优，建设容量评估、故障恢复以及发布回滚机制。",
+    "skills": [
+      "SGLang / vLLM / TensorRT-LLM",
+      "PD 分离与 KV Cache",
+      "分布式推理与并行策略",
+      "NVIDIA GPU 软件栈",
+      "Python / Shell",
+      "推理压测与可观测性"
+    ],
+    "url": "https://www.deepexi.com/join-us/social/s10",
+    "sourceName": "滴普科技官方社会招聘",
+    "sourceType": "official",
+    "status": "open",
+    "statusNote": "2026-11-24 官方在招列表链接到岗位详情，页面显示立即投递及邮件投递说明；未提交。地点为北京；原页未明确首次发布日期、截止日、薪资和远程政策。",
+    "verifiedAt": "2026-11-24",
+    "postedAt": null,
+    "priority": "strong",
+    "matchReasons": [
+      "职责覆盖模型服务从压测、发布到线上运行的全过程",
+      "兼顾稳定性、尾时延、吞吐和单位 Token 成本"
+    ],
+    "gaps": [
+      "要求独立完成多机多卡推理部署、压测和生产优化",
+      "需要 NVIDIA 软件栈、跨机通信排障及自动化工具开发经历"
+    ],
+    "publicationApproved": true,
+    "containsPrivateData": false
   }
 ]
