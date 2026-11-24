@@ -1,0 +1,19 @@
+src/content/events.json
+  s_d8520dc58ca244::t_d34c0729a439ff 9,14-15,21,31-32,34,37,40,56-75,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1d3c91e18b70ce1dce9039b0935463ac3ac3ffe2",
+  "prompts": {},
+  "sessions": {
+    "s_d8520dc58ca244": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5005-3bd2-7e00-98b6-670036c98687",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "观至 <liguanzhi.lgz@antgroup.com>"
+    }
+  }
+}
