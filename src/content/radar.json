@@ -1,6 +1,485 @@
 [
   {
     "schemaVersion": 1,
+    "id": "flashinfer-v076-prefill-plan-host-buffer-lifetime",
+    "kind": "release",
+    "title": "FlashInfer v0.7.6：Prefill 计划的页锁缓冲，什么时候才能复用？",
+    "summary": "正式版为两类 prefill wrapper 增加双槽与逐槽 CUDA 事件。SGLang 的依赖版本和 CUDA Graph replay 入口必须分开确认；正确性、尾延迟和页锁内存分别验收。",
+    "publishedAt": "2026-11-25",
+    "reviewedAt": "2026-11-26",
+    "topics": [
+      "推理编译",
+      "SGLang",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "FlashInfer v0.7.6 正式发布",
+        "url": "https://github.com/flashinfer-ai/flashinfer/releases/tag/v0.7.6",
+        "publishedAt": "2026-11-25",
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "发布分支回移补丁 #9951",
+        "url": "https://github.com/flashinfer-ai/flashinfer/pull/9951/files",
+        "publishedAt": "2026-11-24",
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "v0.7.6 prefill wrapper 源码",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/v0.7.6/flashinfer/prefill.py",
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "v0.7.6 CUDA 回归测试源码",
+        "url": "https://github.com/flashinfer-ai/flashinfer/blob/v0.7.6/tests/attention/test_batch_prefill_plan_race.py",
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "SGLang v0.5.23 Python 依赖",
+        "url": "https://github.com/sgl-project/sglang/blob/v0.5.23/python/pyproject.toml",
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "SGLang v0.5.23 FlashInfer 后端",
+        "url": "https://github.com/sgl-project/sglang/blob/v0.5.23/python/sglang/srt/layers/attention/flashinfer_backend.py",
+        "accessedAt": "2026-11-26"
+      }
+    ],
+    "claims": [
+      {
+        "status": "confirmed",
+        "text": "FlashInfer v0.7.6 正式发布；#9951 的逐槽完成保护存在于发布标签。",
+        "sourceIndices": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "未在 H20 做运行时、输出或性能验证。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "服务请求命中的是公开 wrapper.plan，还是框架直接调用底层 planner？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核对 FlashInfer v0.7.6 与 SGLang v0.5.23 的公开标签，含源码、测试定义与候选评估方法。未做硬件性能实验。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：先确认跑到哪条 plan，再谈升级",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "FlashInfer v0.7.6 于 11 月 25 日正式发布（标签关联 ebf047a）。发布分支回移 #9951，为 paged 和 ragged prefill wrapper 中调用缓存模块的 plan 分支加上双页锁缓冲与逐槽完成事件。修的是 CPU 写入与在途 H2D 读取的先后关系，不是一条通用加速结论。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                4,
+                5
+              ],
+              "text": "SGLang v0.5.23 的公开 cu13 Python 清单仍锁在 FlashInfer 0.7.2，框架源码也另有绕过公开 wrapper.plan 的快路径。对服务团队，第一步不是替换 wheel，而是查实际运行版本与工作负载调用路径；第二步才分别验证输出、尾延迟和常驻主机内存。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "问题背景：attention 计划不是 KV cache 本体",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "变长批次的请求数、各请求的 query/KV 长度和分页布局可能不同。plan 生成执行所需的索引与调度元数据，后续 run 消费计划。页锁内存是 CPU 到 GPU 的暂存区域，不等于 GPU 上存放模型状态的 KV 数据。相邻批次形状相似时，污染可能不容易露出来；也不能仅凭 TTFT 抖动就断定命中这类错误。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                3
+              ],
+              "text": "上游回归测试给出不同形状的 A/B 批次：A 为批量 8、query 64、KV 1024，B 为批量 1、query 1、KV 16。它比较有重叠时的 A 输出和隔离同步后的 A 输出，而非测量在线吞吐。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：把“拷贝排队”与“允许复用”分开",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "计划页的所有权：提交异步拷贝后，CPU 何时可以复用内存？",
+              "caption": "原创机制示意，不是 GPU trace 或实测时间线。两组分别描述无槽位保护和正式版的控制分支。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "nodes": [
+                {
+                  "id": "single",
+                  "label": "单槽写入",
+                  "detail": "CPU 为当前批次生成整数计划元数据，写入可用于异步 H2D 的页锁内存。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "overlap",
+                  "label": "旧拷贝在途",
+                  "detail": "H2D 已排入 CUDA 流。CPU 返回并不表示拷贝已经读完主机页。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "communication"
+                },
+                {
+                  "id": "replace",
+                  "label": "下一批覆写",
+                  "detail": "另一轮计划重用同一主机槽位；元数据可能被下一批覆盖。",
+                  "column": 2,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "choose",
+                  "label": "轮转槽位",
+                  "detail": "每个 wrapper 在两个 pinned host 槽位间切换。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "fence",
+                  "label": "等待本槽事件",
+                  "detail": "仅当将要复用的槽位仍在途，等待该槽位记录的 CUDA event。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "communication"
+                },
+                {
+                  "id": "mark",
+                  "label": "写入并记事件",
+                  "detail": "把槽位传给底层 plan，再在对应 CUDA 流记录事件；此边界不等同于请求完成。",
+                  "column": 2,
+                  "row": 1,
+                  "tone": "compute"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "single",
+                  "to": "overlap",
+                  "label": "提交异步 H2D"
+                },
+                {
+                  "from": "overlap",
+                  "to": "replace",
+                  "label": "下一轮可能抢先写同一槽"
+                },
+                {
+                  "from": "choose",
+                  "to": "fence",
+                  "label": "复用前检查"
+                },
+                {
+                  "from": "fence",
+                  "to": "mark",
+                  "label": "本槽安全后继续"
+                }
+              ],
+              "presentation": {
+                "kind": "boundary",
+                "panels": [
+                  {
+                    "title": "单槽：提交不等于读完",
+                    "tone": "control",
+                    "nodeIds": [
+                      "single",
+                      "overlap",
+                      "replace"
+                    ]
+                  },
+                  {
+                    "title": "双槽：每个槽位独立确认完成",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "choose",
+                      "fence",
+                      "mark"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "按时间看，GPU 流可以先忙于其他工作；CPU 已把本批 H2D 和计算排队，又进入下一个 plan。单槽实现如果重写同一块 pinned host buffer，之前排队的读取可能看到下一批数据。双槽让连续两个计划用不同的暂存地址；第三轮若回到首槽、且事件尚未完成，就只等首槽。双槽本身并不证明无限重叠，也不意味着任意线程共享同一个 wrapper 是安全的。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "两个 wrapper 的相关 plan 分支先 query，必要时 synchronize，再给底层模块传入当前槽并 record 当前 CUDA 流；reset 与销毁也处理已有拷贝。发布分支补丁兼顾未运行 __init__ 的 wrapper 兼容路径。需跟踪实际 backend 分支，不能把 wrapper 级保护等同于所有 planner、CUDA 图或第三方集成自动受保护。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：正式标签、测试覆盖和框架引用分开看",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "源码核验，不是 GPU 复现",
+              "columns": [
+                "证据",
+                "核对到什么",
+                "不能推出什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "正式发布与补丁",
+                    "release 清单列出 #9951；v0.7.6 源码中 paged/ragged 路径有逐槽事件。",
+                    "不能保证下游镜像包含、调用或兼容。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "定向测试",
+                    "paged FA2/FP16 测试先隔离计算参考，再构造相邻计划重叠；另有销毁和缓冲初始化用例。",
+                    "没有覆盖本站未运行的硬件、其他 backend、ragged 数值输出或在线 P99。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "SGLang 公开清单",
+                    "v0.5.23 声明 flashinfer_python[cu13]==0.7.2，其后端还会为限定 replay 安装 fast_prefill_plan。",
+                    "不能从固定的包版本推断定制镜像；不能从导入库推断请求经过公开 wrapper.plan。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    4,
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：用额外页锁内存换取生命周期正确性",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "按标签构造代码举例，单个对应 wrapper 的默认整数工作区大小为 8 MiB，每个槽按相同形状申请，因此 2×8 MiB 对比单槽的 8 MiB，推导额外约 8 MiB 页锁主机内存/默认 wrapper。该数字不含分配器缓存、其他缓冲、进程数、重设后的尺寸，也不是显存增量或进程 RSS 实测。应实测每个实例的 wrapper 数、启动前后常驻主机内存与容器压力。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                5
+              ],
+              "text": "已有阻塞回读可能压低重叠概率；换 GPU、驱动、模型配置或启用图回放都可能改变等待分布。逐槽等待有助于保证正确性，但新的等待也可能影响 CPU 侧计划尾延迟。统计计划耗时、请求 TTFT 与合格吞吐，不用平均 tok/s 抵掉输出错误。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产排查：从版本到入口再到用户结果",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                5
+              ],
+              "text": "SGLang 标签源码中，限定的 FA2 CUDA graph draft-extend 与特定 DFlash/EAGLE verify replay 会在预先 capture 完成后将 begin_forward 换成 fast_prefill_plan；后者直接调用缓存模块的 plan。条件包含运行模式、dispatch 条件及部分 DFlash/EAGLE 约束，不能由算法名字单独判定。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                4,
+                5
+              ],
+              "text": "底层调用存在不同入口，这就是需要单列捕获/回放与普通 prefill 的原因。看到模型请求 HTTP 200 或几条短回复一致，不足以证明这一流量分支覆盖了标签中新增的保护；反过来，未命中新实现也不能证明线上异常就是这次竞态。保留旧镜像、旧 JIT 缓存产物身份与快速恢复路径，不建议在现网直接混装不受支持的 wheel。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "测试环境：定向重叠、引擎回放、强度回放",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "以下均为待执行计划；仅在批准的隔离环境实测",
+              "columns": [
+                "组别",
+                "固定或切换因素",
+                "记录"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "A1 定向正确性",
+                    "运行官方相应用例；若另加覆盖，按 paged/ragged 和实际后端分开，保持张量、精度和种子一致。",
+                    "参考张量误差、非有限值、CUDA 异常、是否经过同一 wrapper 分支。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "A2 框架路径",
+                    "受支持的基线/候选镜像，同权重和负载；分别跑普通 prefill、图 capture、图 replay 和命中的投机验证。",
+                    "实际包及构建身份、调用路径、每个回放桶输出与终止原因。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "B 高低负载",
+                    "匹配到达记录与长短混合，独立对照冷/热态及稳定/突增，并记录早退、断流及重试。",
+                    "请求级质量、P95/P99 TTFT、TPOT、SLO goodput、每实例主机内存与计划尾延迟。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    2
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：正确性与容量各有独立停止线",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "阈值由平台基线和业务标准预先冻结",
+              "columns": [
+                "验收门",
+                "何时通过",
+                "何时暂缓"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "产物与覆盖",
+                    "记录实际 wheel、引擎、后端和调用证据，并在基线及候选保持可比。",
+                    "只有公开依赖清单，或候选走了不同的未验路径。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    4,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "数值与用户输出",
+                    "使用预定义误差阈值并通过逐请求完整性、结构检查和固定解码条件下的参考对比。",
+                    "新增非有限值、输出完整性失败或参考偏差不可解释。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "服务预算",
+                    "在相同流量与服务目标下守住延迟、合格吞吐及页锁主机内存预算。",
+                    "消失的平均耗时对应更坏的 P99，或长上下文/高并发出现质量或资源回归。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "仍待验证：实际镜像、命中范围与服务表现",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "本报告核对公开标签、修复差异、测试定义及 SGLang 公开清单和后端源码，未在 H20 或其他 GPU 上运行 CUDA 测试，没有本地/生产故障复现、延迟收益或升级结论。实际镜像依赖、JIT cache 构建身份、backend 分布及服务回放仍待环境所有者核对。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                4,
+                5
+              ],
+              "text": "如果只有标准路径通过，而高流量主要走自定义 replay，结论应是覆盖不足；如果风险低但资源预算未知，应留在隔离验证阶段，而不是用“上游已发布”代替放量决定。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-pd-pp-prefill-transfer-release-consensus",
     "kind": "analysis",
     "title": "SGLang P/D 与 PP：所有预填充阶段结束，才回收在途 KV",
@@ -1169,6 +1648,520 @@
               "basis": "inference",
               "sourceIndices": [],
               "text": "没有复跑或改线上。此结论不外推 H20、昇腾、Mooncake，也不是某个异步 write-back 变更的效果；迁移需要重新按该链路做独立实测。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "inferrsi-v031-frozen-p1-evidence-validity",
+    "kind": "analysis",
+    "title": "InferRSI v0.3.1：四个计时都在，为什么仍可能不能比较？",
+    "summary": "预发布新增冻结 P1 离线评估。有效证明不能覆盖同检查的坏证明；全过也只说明 P1 资格，不是候选加速或上线许可。",
+    "publishedAt": "2026-11-22",
+    "reviewedAt": "2026-11-25",
+    "topics": [
+      "推理编译",
+      "服务调度",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "InferRSI v0.3.1 预发布与变更清单",
+        "url": "https://github.com/InferMatrixLab/InferRSI/releases/tag/v0.3.1",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对预发布标签、时间、关联提交和变更清单；版本发布不代表任务验收。"
+        },
+        "publishedAt": "2026-11-22",
+        "accessedAt": "2026-11-25"
+      },
+      {
+        "title": "v0.3.1 冻结的离线评估契约",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.1/docs/contracts/production-assess.md",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对记录身份、证据绑定、F/C/M、资格判断及评估边界。"
+        },
+        "accessedAt": "2026-11-25"
+      },
+      {
+        "title": "v0.3.1 Benchmark 评估实现",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.1/src/inferrsi/benchmark/assessment.py",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对证据缺口优先级、M 的终态断言和资格聚合。"
+        },
+        "accessedAt": "2026-11-25"
+      },
+      {
+        "title": "实现评审 #560 与软件测试口径",
+        "url": "https://github.com/InferMatrixLab/InferRSI/pull/560",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对回归覆盖和作者测试报告，非加速器或线上测量。"
+        },
+        "accessedAt": "2026-11-25"
+      },
+      {
+        "title": "v0.3.0 正式版本",
+        "url": "https://github.com/InferMatrixLab/InferRSI/releases/tag/v0.3.0",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "区分正式基线与 v0.3.1 预发布。"
+        },
+        "accessedAt": "2026-11-25"
+      }
+    ],
+    "claims": [
+      {
+        "status": "inference",
+        "text": "P1 证据过关可作为性能对比的前置条件，不等于可以自动放量。",
+        "sourceIndices": [
+          1,
+          2
+        ]
+      },
+      {
+        "status": "pending",
+        "text": "生产 worker 的完整执行、目标硬件性能与灰度收益不在这次证据范围。",
+        "sourceIndices": []
+      }
+    ],
+    "questions": [
+      "坏证明、缺证明、冲突证明能否给出可区分的结论？",
+      "相对收益和绝对 SLO 如何分开验收？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核验于 2026-11-25。范围为 v0.3.1 预发布固定的软件契约、源码及评审。实验矩阵是原创拟议，不是生产或加速器实测。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：计时存在，不等于证据合格",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "这次值得跟的不是又有一个 Agent 能调参，而是评估器可以拒绝看上去够漂亮、实际证据不完整的候选：四轮计时都有，退出和资源释放却没得到证实，仍不能用该次交付给候选打性能分。把「可以进入下一轮比较」和「确实更快、可以发布」拆开，才能避免评分系统把测量故障奖励成优化。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                4
+              ],
+              "text": "v0.3.1 是预发布，标签提交 0e6b4ea，GitHub 原发布时间是 11 月 22 日 23:09 UTC，即北京时间 11 月 23 日 07:09；正式基线仍为 v0.3.0。新增的是冻结 P1 的 Benchmark 离线评估端口，不是上线优化成果。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：先冻结问题，再读运行结果",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "上一版公开分析关注怎样搜索和比较候选。这次的问题更靠前：规格写了哪些条件，数据属于哪一次执行，它能不能支持逐项结论。先冻协议再读结果，是为了复核时不能临时换基线、补口径，或只挑对候选有利的证明。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "Apps 负责读取固定记录和准备信息，并给 Benchmark 只读工件能力；Benchmark 并不启动 worker、占用设备、发起网络任务或改写执行事实。CLI 预览、注册前校验与运行前预算复检是发布清单上的相邻变化，不能拼成已执行生产闭环的证据。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：共同验证身份，独立判 F、C、M",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "入口先绑住记录哈希、长度、attempt、revision 和协议身份，协议真实字节还要单独读取验证；不是用地址相同或证明自报的候选 ID 认领数据。涉及运行或采样时，证据要追到已启动步骤、实际候选和运行入口。哈希能核对字节，不会自动证明这份字节属于本轮。"
+            },
+            {
+              "type": "diagram",
+              "title": "离线评估三项分工",
+              "caption": "原创非实测示意。三项并列；P1 资格不包含后续性能比较。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "nodes": [
+                {
+                  "id": "frozen",
+                  "label": "冻结协议和记录",
+                  "detail": "Apps 读取已留存的固定记录与准备产物。",
+                  "column": 0,
+                  "row": 1
+                },
+                {
+                  "id": "bytes",
+                  "label": "验证身份与字节",
+                  "detail": "校验协议及逐份声明的工件。",
+                  "column": 1,
+                  "row": 1
+                },
+                {
+                  "id": "f",
+                  "label": "F 格式",
+                  "detail": "根据格式证明判断。",
+                  "column": 2,
+                  "row": 0
+                },
+                {
+                  "id": "c",
+                  "label": "C 正确性",
+                  "detail": "根据 grader 证明判断。",
+                  "column": 2,
+                  "row": 1
+                },
+                {
+                  "id": "m",
+                  "label": "M 测量",
+                  "detail": "看四轮计时、执行完成与清理。",
+                  "column": 2,
+                  "row": 2
+                },
+                {
+                  "id": "elig",
+                  "label": "P1 资格",
+                  "detail": "聚合资格，输出没有收益比较。",
+                  "column": 3,
+                  "row": 1
+                }
+              ],
+              "edges": [
+                {
+                  "from": "frozen",
+                  "to": "bytes",
+                  "label": "固定输入"
+                },
+                {
+                  "from": "bytes",
+                  "to": "f",
+                  "label": "格式"
+                },
+                {
+                  "from": "bytes",
+                  "to": "c",
+                  "label": "正确性"
+                },
+                {
+                  "from": "bytes",
+                  "to": "m",
+                  "label": "计时与终态"
+                },
+                {
+                  "from": "f",
+                  "to": "elig",
+                  "label": "判定"
+                },
+                {
+                  "from": "c",
+                  "to": "elig",
+                  "label": "判定"
+                },
+                {
+                  "from": "m",
+                  "to": "elig",
+                  "label": "判定"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "M 需要 A1/B1/B2/A2 四个正毫秒样本、预定轮次与角色，另外确认进程成功退出、步骤均已结束、已获租约已释放并有匹配清理证明。四个数值都在，不等于执行终态已被证实。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "ABBA 次序是制衡简单时间漂移的起点，不能自动消除缓存串扰、余温、背景噪声或样本量不足。可比较性还要看每轮是否有独立且一致的起始条件。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：缺失和冲突给出不同的资格",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "冻结契约的判定口径",
+              "columns": [
+                "输入",
+                "该项判定",
+                "整体 P1 资格"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "F、C、M 证据齐全且都通过",
+                    "三个 PASS；metrics 和 comparison 为空",
+                    "eligible，仅限 P1"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "同一匹配检查有好证明，也有声明但不可用的证明",
+                    "该项 INCONCLUSIVE，保留好引用与缺口；其他项独立",
+                    "无另外失败或冲突时 unknown"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "两份可信计时证明相互矛盾",
+                    "该项 INCONCLUSIVE，不按先后挑赢家",
+                    "ineligible"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "协议真实字节缺失，或宿主出现未知异常",
+                    "协议缺失是端口错误；未知异常向外传播",
+                    "没有合法评估结果"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1,
+                    2
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                3
+              ],
+              "text": "作者在 #560 报告 141 项定向软件测试、零跳过，其中包含证明顺序、多份证据和读取失败的回归。这个数量不是线上请求、GPU 运行或独立复现的数量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3
+              ],
+              "text": "本次用公开 v0.3.1 标签源代码，在隔离 CPU 环境另行运行 Benchmark 准备、Benchmark 评估和 Apps 评估这三个测试文件，结果为 143 项通过。这里复核的是固定留存样例、编解码和软件路径；与作者评审时的 141 项不是同一代码快照，不能将差值解释为覆盖增长。没有运行真实推理进程或加速器测量。"
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：无结论的测量不该训练下一轮搜索",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "更严格的归属和终态记录有成本，会增加存储写入、故障重采和资源占用。值得分开统计的是工件缺失、身份对不上、运行未结束与真实负向结果；把这些一起塞进候选失败率，容易把归档问题误判成优化方向错了。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "一个成功工件只证明它覆盖的范围。它不会替请求级 trace 的时间窗、P/D 角色与实际 rank 做担保；隔离软件 fixture 也不能替代真实长上下文、流式终态和跨实例 KV 路径。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产影响：结果、归因与放量分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "预发可从一处小参数开始。固定 A/B 工件、模型、拓扑、请求长度分桶、冷热缓存和到达过程。线下性能数字只从未开启诊断 profiling 的可比实验中取，诊断再独立采集。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "例如对照里 p99 首 token 确实退化，但诊断采集漏了 Decode 目标：性能结论可成立，kernel 根因待证。反过来，若计时证据未与真实运行或清理事实绑定，就不能给该次候选打性能分。两种情况不能共用一个「实验失败」。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验：先验证门会拦，再验证候选值不值",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "拟议小范围实验，未在目标硬件运行",
+              "columns": [
+                "场景",
+                "控制条件",
+                "预期观测"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "一好一坏的证明",
+                    "固定同一检查，交换证明顺序",
+                    "保留好引用并标缺口，结果不受顺序影响"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "计时齐全但缺清理",
+                    "只移除租约释放事实或独立清理证明",
+                    "M 为 INCONCLUSIVE，先核对隔离环境是否存在残留"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "可信计时冲突",
+                    "保持合法身份，只改变一个样本事实",
+                    "记录冲突，P1 不具资格"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "独立候选比对",
+                    "固定版本与负载，加入从未参与调优的请求分桶",
+                    "多轮复测分桶 p99 首 token、生成时延、错误率与资源消耗"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "回退演练",
+                    "有审批的预发或灰度，旧版本可回用",
+                    "验证停发、恢复时间和在途流式结果；不承诺无感恢复"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：别把 P1 字段接成上线按钮",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "三类验收分别给出证据",
+              "columns": [
+                "关口",
+                "判定口径",
+                "不足时处置"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "实验可信",
+                    "候选与输入可追溯、每项证据独立、采样与资源终态完整",
+                    "补证据或可控重跑，不填零或估值"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "候选有净收益",
+                    "同一负载下比较 SLO 内成功请求速率、卡时和附加资源成本；搜索预算也入账",
+                    "改善落在重复噪声内或关键桶回退，不晋级"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                },
+                {
+                  "cells": [
+                    "生产准入",
+                    "绝对 SLO、输出正确性、流式完成、资源回收与人工回退全部过门",
+                    "停止放量或执行已审批的回退"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [],
+              "text": "固定并发下更快，不等于固定 SLO 下可承载更多；前者可以帮助定位，后者才对应有效容量。若真实流量的输入长度、前缀复用和峰值与离线分布不同，要用独立回放或小灰度复核。"
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：还有哪些证据没闭合",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                3
+              ],
+              "text": "冻结契约没有声称运行过生产 Harness 的评估 worker；其执行目标和后续联合 CPU 验收明确分列。后续主分支就算实现了更多，也需要按提交核验，不能倒填成本预发布能力。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "未证明端到端 GPU/NPU 服务加速、模型质量收益、绝对 SLO 达标和在线回退。未操作生产配置。"
             }
           ]
         }
