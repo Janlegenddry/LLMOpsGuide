@@ -98,7 +98,7 @@
     "city": "旧金山",
     "venue": "Fort Mason Center for Arts & Culture",
     "address": "2 Marina Blvd, San Francisco, CA",
-    "summary": "活动已结束，保留官方议程、历史报名和两篇同主题技术文章，并补充官方图文复盘与 SGLang / NVIDIA 工作坊材料；新增资料为文字和代码，非视频回放。",
+    "summary": "活动已结束。保留官方议程、历史报名、同主题技术文章、图文复盘和工作坊；官方讲稿合集包含 OpenRSI × SGLang-Omni、Meta HiCache 与 Cloudflare Mooncake 等 PDF，另附 OpenRSI 直达讲稿。讲稿不是视频回放。",
     "topics": [
       "SGLang",
       "KV Cache",
@@ -123,7 +123,7 @@
       "status": "pending",
       "url": null,
       "publicAccess": false,
-      "note": "官方 FAQ 计划提供部分场次剪辑；截至 2026-11-19 尚未核验到官方公开回放，图文复盘和工作坊代码不作为视频回放。"
+      "note": "官方计划提供部分场次录像；截至 2026-11-26 未核实到公开官方视频。讲稿 PDF、工作坊代码和图文复盘均不作为视频回放。"
     },
     "sources": [
       {
@@ -149,9 +149,17 @@
       {
         "title": "活动页所列 SGLang / NVIDIA 工作坊材料（非回放）",
         "url": "https://github.com/yvbbrjdr/ss26-local-ai-workshop"
+      },
+      {
+        "title": "SGLang Summit 官方讲稿合集（非视频）",
+        "url": "https://drive.google.com/drive/folders/1bPmOZFhuuykdG1X1021Q2RcMhfPgQC14"
+      },
+      {
+        "title": "OpenRSI × SGLang-Omni（讲稿 PDF）",
+        "url": "https://drive.google.com/file/d/1is-a9RtFra2WHG0C_KNR9XTEirTb_ScO/view"
       }
     ],
-    "verifiedAt": "2026-11-19",
+    "verifiedAt": "2026-11-26",
     "publicationApproved": true,
     "containsPrivateData": false
   },
