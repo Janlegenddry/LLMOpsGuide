@@ -1,6 +1,516 @@
 [
   {
     "schemaVersion": 1,
+    "id": "inferrsi-v034-measurement-check-status-gate",
+    "kind": "release",
+    "title": "InferRSI v0.3.4：样本和清理记录都在，为什么还不能给性能分？",
+    "summary": "独立用同一组 CPU 反例对比 v0.3.1、v0.3.3 与 v0.3.4：六个边界场景的旧版 M PASS 在新版变成预期的 INCONCLUSIVE。解析测量状态门及 SRE 上线启发。",
+    "publishedAt": "2026-11-26",
+    "reviewedAt": "2026-11-26",
+    "topics": [
+      "推理编译",
+      "服务调度",
+      "故障分析"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "InferRSI v0.3.4 预发布与变更清单",
+        "url": "https://github.com/InferMatrixLab/InferRSI/releases/tag/v0.3.4",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对 GitHub Release API 的发布时间、预发布标志、固定提交及 #649 清单。"
+        },
+        "publishedAt": "2026-11-26",
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "修复提交 e2f3be1：必须有成功的 P1 测量检查",
+        "url": "https://github.com/InferMatrixLab/InferRSI/commit/e2f3be102c66c358803ed2186ed67bf627ebcbdf",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对评估器、单元测试、CLI 存档回放改动和预期判定。"
+        },
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "v0.3.4 标签的 P1 评估代码",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.4/src/inferrsi/benchmark/assessment.py",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对正样本和清理证明接受条件、坏证据、冲突与资格。"
+        },
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "v0.3.4 标签的 CPU 定向检查",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.4/tests/benchmark/test_benchmark_assessment.py",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "使用相同定向用例对固定旧版及新版源码跑 CPU 验证。"
+        },
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "v0.3.3 预发布",
+        "url": "https://github.com/InferMatrixLab/InferRSI/releases/tag/v0.3.3",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对固定候选、证据采集和 CPU handoff 形成顺序。"
+        },
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "v0.3.4 CPU smoke 契约",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.4/docs/contracts/p1-cpu-smoke.md",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "只核对 CPU 证据管道及边界，不代表模型质量或速度。"
+        },
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "v0.3.1 标签的 P1 评估代码",
+        "url": "https://github.com/InferMatrixLab/InferRSI/blob/v0.3.1/src/inferrsi/benchmark/assessment.py",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "与新版相同定向用例交叉验证的历史版本。"
+        },
+        "accessedAt": "2026-11-26"
+      }
+    ],
+    "claims": [
+      {
+        "status": "inference",
+        "text": "固定反例只验证离线评估器，不支持任何模型加速或生产发布结论。",
+        "sourceIndices": [
+          1,
+          3,
+          5
+        ]
+      }
+    ],
+    "questions": [
+      "候选的正向附件是否来自同一次真正成功的测量检查？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "核对 v0.3.4 预发布标签与 v0.3.1/v0.3.3 的离线测量判定，含独立 CPU 配对测试。无真实模型、硬件或线上流量。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：计时有效，不等于测量检查成功",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                3,
+                6
+              ],
+              "text": "用 v0.3.4 的同一组 6 个反例，固定载入 v0.3.1 和 v0.3.3 源码均出现 6/6 断言失败：测量 M 被判 PASS，而测试预期 INCONCLUSIVE。载入 v0.3.4 则 6/6 通过。这是本地 CPU 评估器验证，不是模型或设备性能复测。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                0,
+                1,
+                2
+              ],
+              "text": "v0.3.4 是 11 月 26 日发布的预发布，包含 #649。作为验收边界，正向样本和“清理已完成”的附件现在还必须来自成功的已记录检查。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "背景：一份证据不是三个结论",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                4,
+                5
+              ],
+              "text": "以 F、C、M 分开看：F 确认格式，C 判断输出正确性，M 判断测量是否成立。v0.3.3 接上固定候选、采集入口及 CPU handoff；本次关注的是交付后如何判断证据，不是改变模型、算法或服务配置。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                5
+              ],
+              "text": "CPU smoke 的 A1/B1/B2/A2 是四次真实但极小的 CPU 操作，对比固定输入的参考和候选字节结果；这些时刻不设加速阈值，输出质量和统计收益没有被证明。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：独立绑定样本、状态和原始记录",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "测量读法：附件内容与检查结论必须一起验",
+              "caption": "原创语义图，展示本次测试覆盖的旧路径与新版规则，不代表生产测量时序。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                3,
+                6
+              ],
+              "nodes": [
+                {
+                  "id": "blob",
+                  "label": "有正向数据",
+                  "detail": "样本值有效或清理写为确认。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "compute"
+                },
+                {
+                  "id": "old",
+                  "label": "未交叉校验",
+                  "detail": "旧版可能不检查正向测量附件是否来自成功检查。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "pass",
+                  "label": "测量被判 PASS",
+                  "detail": "固定旧版在六个定向夹具中给出 M PASS。",
+                  "column": 2,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "parse",
+                  "label": "校验身份和格式",
+                  "detail": "先绑定检查、记录、证据族和实际运行对象。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "pair",
+                  "label": "校验状态与附件",
+                  "detail": "正样本或已清理附件必须绑定 passed；保留负向清理事实。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "communication"
+                },
+                {
+                  "id": "unknown",
+                  "label": "缺有效测量",
+                  "detail": "不可用的检查不计为结果；没有独立反证时测量不确定。",
+                  "column": 2,
+                  "row": 1,
+                  "tone": "neutral"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "blob",
+                  "to": "old",
+                  "label": "数值正常不等于检查成功"
+                },
+                {
+                  "from": "old",
+                  "to": "pass",
+                  "label": "旧版缺这一道门"
+                },
+                {
+                  "from": "parse",
+                  "to": "pair",
+                  "label": "正向证明要求检查通过"
+                },
+                {
+                  "from": "pair",
+                  "to": "unknown",
+                  "label": "判定继续保留证据缺口"
+                }
+              ],
+              "presentation": {
+                "kind": "boundary",
+                "panels": [
+                  {
+                    "title": "旧版定向反例",
+                    "tone": "control",
+                    "nodeIds": [
+                      "blob",
+                      "old",
+                      "pass"
+                    ]
+                  },
+                  {
+                    "title": "新版：状态与证据同时成立",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "parse",
+                      "pair",
+                      "unknown"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "author",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "预发布代码把 check_id、状态类型、可信绑定与证据附件分开验证。样本或肯定的清理证明若来自失败检查，将计为坏证据；否定清理证明仍可说明未完成，若它与另一条可信肯定证明冲突，不能直接合并成通过。格式和正确性各自保留自己的独立裁决。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2
+              ],
+              "text": "保留原始记录与新判定两份材料。重放已有存档不应修改原件，也不应默默把实测失败改写成成功，用编号把评估结果与当时的检查对应起来。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：同一个反例套件跑三个标签",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "独立 CPU 配对检查；6 个场景为两类检查 × 三种记录组合",
+              "columns": [
+                "运行评估器",
+                "测试观察",
+                "证据边界"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "v0.3.1 / v0.3.3",
+                    "各 6 个用例输出 M PASS，未符合新版对这些夹具的 INCONCLUSIVE 断言。",
+                    "只是特定失败状态与正附件的组合，不等同于全部历史记录有误。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2,
+                    3,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.3.4",
+                    "6 个同样的反例均通过；另外四组定向测试共 167 项通过（包含上述用例）。",
+                    "不是全仓测试，无 GPU/NPU、无在线模型或服务流量。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "v0.3.4 正负冲突",
+                    "作者测试覆盖负向清理证据单独存在与正负并存，及独立 F/C 失败不被 M 缺失覆盖。",
+                    "未把候选获益、稳定性和灰度安全合为一个状态。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1,
+                    3
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：宁可记不确定，也不把脏证据奖励成优化",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                3
+              ],
+              "text": "更严格的规则会把原本可参加比较的少量边界记录降为未知。代价是重看原始日志或隔离重测；好处是不会仅因四个数字齐全就奖励一次失败的测量。不应改旧记录使其可通过，也不应抹掉已独立确认的输出问题。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产启发：RSI 只在证据无缺口时推荐比较",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                2,
+                5
+              ],
+              "text": "若要借用到推理发布门禁，拆成产物身份、运行状态、测量完整性、输出质量与服务收益。机器重启、卡未归还、流截断、实验越过时间预算等都应束缚本次测量的用途。采集异常与候选失败分开，不直接自动回滚线上服务或调整参数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                5
+              ],
+              "text": "作者的 CPU 闭环是一个可测试的最小骨架；迁到真实流量时还要证明输入分桶与生产相关、真实 TTFT/TPOT 指标一致、设备租约和清理可追踪。只有离线证据与线上指标同时满足，才能讨论候选是否值得人工放量。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：从最小反例到隔离流量",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "第一组已做，后两组为待执行设计",
+              "columns": [
+                "阶段",
+                "对照",
+                "观察"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "CPU 单元",
+                    "相同 v0.3.4 定向用例，固定 import 旧版和修复版源码。",
+                    "按样本/清理、失败单条/两种顺序分别检查 M 和记录身份。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    2,
+                    3,
+                    6
+                  ]
+                },
+                {
+                  "cells": [
+                    "集成回放",
+                    "在批准的隔离环境，保存成功与不完整记录，评估后用同一输入重评。",
+                    "记录、证据附件、CLI 状态及前后结果哈希；原始记录不可变。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    2
+                  ]
+                },
+                {
+                  "cells": [
+                    "服务流量",
+                    "固定镜像、硬件、到达轨迹和长度分布，先检查质量，再看 SLO 合格吞吐与资源成本。",
+                    "异常、超时、缺测和资源泄漏不计为正收益；分开冷/热与长/短。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：测量缺证不能进入性能结论",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "判定示例取自固定源码与测试逻辑",
+              "columns": [
+                "输入",
+                "期望",
+                "说明"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "失败检查＋正向附件",
+                    "M INCONCLUSIVE；资格 unknown（无独立反证时）",
+                    "清理/样本缺口保留，不能用同 key 的正常副本盖掉缺陷。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "可信清理正负冲突",
+                    "M INCONCLUSIVE；该资格 ineligible",
+                    "这是独立可信反证，不同于纯粹的缺证。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "F/C 独立失败",
+                    "相应维度仍 FAIL",
+                    "不能被 M 未知覆盖。完整通过仍只是证据资格，不是加速或发布许可。"
+                  ],
+                  "basis": "author",
+                  "sourceIndices": [
+                    1,
+                    3,
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "仍待验证：真实硬件收益与历史受影响比例",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "没有复查真实活动的历史存档，没有验证发现错误的实际比例，也未在真实 GPU/NPU 跑端到端评估。v0.3.4 的并行搜索、知识排序及其他变化不是本文核验范围。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "flashinfer-v076-prefill-plan-host-buffer-lifetime",
     "kind": "release",
     "title": "FlashInfer v0.7.6：Prefill 计划的页锁缓冲，什么时候才能复用？",
@@ -1661,7 +2171,7 @@
     "title": "InferRSI v0.3.1：四个计时都在，为什么仍可能不能比较？",
     "summary": "预发布新增冻结 P1 离线评估。有效证明不能覆盖同检查的坏证明；全过也只说明 P1 资格，不是候选加速或上线许可。",
     "publishedAt": "2026-11-22",
-    "reviewedAt": "2026-11-25",
+    "reviewedAt": "2026-11-26",
     "topics": [
       "推理编译",
       "服务调度",
@@ -1725,6 +2235,29 @@
           "note": "区分正式基线与 v0.3.1 预发布。"
         },
         "accessedAt": "2026-11-25"
+      },
+      {
+        "title": "InferRSI v0.3.4 预发布与变更清单",
+        "url": "https://github.com/InferMatrixLab/InferRSI/releases/tag/v0.3.4",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对 GitHub Release API 的发布时间、预发布标志、固定提交及 #649 清单。"
+        },
+        "publishedAt": "2026-11-26",
+        "accessedAt": "2026-11-26"
+      },
+      {
+        "title": "修复提交 e2f3be1：必须有成功的 P1 测量检查",
+        "url": "https://github.com/InferMatrixLab/InferRSI/commit/e2f3be102c66c358803ed2186ed67bf627ebcbdf",
+        "review": {
+          "category": "community",
+          "publisher": "InferMatrixLab / InferRSI",
+          "status": "attributed",
+          "note": "核对评估器、单元测试、CLI 存档回放改动和预期判定。"
+        },
+        "accessedAt": "2026-11-26"
       }
     ],
     "claims": [
@@ -1755,6 +2288,16 @@
           "id": "conclusion",
           "title": "结论：计时存在，不等于证据合格",
           "blocks": [
+            {
+              "type": "callout",
+              "basis": "inference",
+              "sourceIndices": [
+                5,
+                6
+              ],
+              "text": "本文主体仍解读 v0.3.1 当时的软件契约。后来使用 v0.3.4 的同一组六个反例，本地 CPU 验证发现 v0.3.1 与 v0.3.3 会把特定失败状态下的正向样本或清理附件误判为 M PASS；v0.3.4 全部按预期保留为 INCONCLUSIVE。不要把旧版在该边界的 PASS 当作已验证测量。未复核真实历史活动，不推断曾经有多少记录受影响。",
+              "title": "后续核验：v0.3.4 修正正向测量检查的状态绑定"
+            },
             {
               "type": "paragraph",
               "basis": "inference",
