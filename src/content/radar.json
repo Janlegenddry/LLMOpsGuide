@@ -990,6 +990,523 @@
   },
   {
     "schemaVersion": 1,
+    "id": "dynamo-v170-live-retune-replay-gates",
+    "kind": "release",
+    "title": "Dynamo v1.7.0：自动调优能重放真实流量，为什么还不能自动放量？",
+    "summary": "解析 Dynamo v1.7.0 实验性 Live Retune：同窗回放、三项 KV 路由参数、基线和探针、建议模式与回退收敛。拆分模拟得分、实际配置、客户端 SLO 三道门。",
+    "publishedAt": "2026-11-24",
+    "reviewedAt": "2026-11-27",
+    "topics": [
+      "服务调度",
+      "故障分析",
+      "KV Cache"
+    ],
+    "visibility": "public",
+    "containsPrivateData": false,
+    "sources": [
+      {
+        "title": "Dynamo v1.7.0 正式发布",
+        "url": "https://github.com/ai-dynamo/dynamo/releases/tag/v1.7.0",
+        "publishedAt": "2026-11-24",
+        "accessedAt": "2026-11-27"
+      },
+      {
+        "title": "v1.7.0 Live Retune 指南",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.7.0/docs/fern/pages/kubernetes/auto-deployment/planner-live-retune.md",
+        "accessedAt": "2026-11-27"
+      },
+      {
+        "title": "v1.7.0 DGDR 候选收集实现",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.7.0/components/src/dynamo/planner/retune/live/dgdr.py",
+        "accessedAt": "2026-11-27"
+      },
+      {
+        "title": "v1.7.0 评分与保留判定",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.7.0/components/src/dynamo/planner/retune/controller.py",
+        "accessedAt": "2026-11-27"
+      },
+      {
+        "title": "v1.7.0 DGDR 单元测试",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.7.0/components/src/dynamo/planner/tests/unit/test_live_retune_dgdr.py",
+        "accessedAt": "2026-11-27"
+      },
+      {
+        "title": "v1.7.0 实际 Router 应用与回退",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.7.0/components/src/dynamo/planner/retune/live/actuator.py",
+        "accessedAt": "2026-11-27"
+      },
+      {
+        "title": "目标函数 PR #17540",
+        "url": "https://github.com/ai-dynamo/dynamo/pull/17540",
+        "accessedAt": "2026-11-27"
+      },
+      {
+        "title": "v1.7.0 评分计算实现",
+        "url": "https://github.com/ai-dynamo/dynamo/blob/v1.7.0/components/src/dynamo/planner/retune/sweep.py",
+        "accessedAt": "2026-11-27"
+      }
+    ],
+    "claims": [
+      {
+        "status": "inference",
+        "text": "模拟证据有效、配置已经收敛与真实请求达标是三个不同判断。",
+        "sourceIndices": [
+          1,
+          2,
+          5,
+          7
+        ]
+      }
+    ],
+    "questions": [
+      "当前策略、候选策略和实际客户端通过率是否在同一个流量切片比较？"
+    ],
+    "related": [],
+    "report": {
+      "version": 1,
+      "scope": "仅分析正式标签 v1.7.0 的实验性 Kubernetes Planner Live Retune，核对官方指南、候选收集、评分、应用和测试源码；未运行集群或 GPU。",
+      "sections": [
+        {
+          "id": "conclusion",
+          "title": "结论：回放可推荐，不能替代上线决定",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "Dynamo v1.7.0 是 11 月 24 日发布的正式版本，但其中的 Planner Live Retune 仍是实验功能。官方指导只用于开发集群。Kubernetes 路径固定引擎和副本，只搜索三个 KV 路由参数，不会自己改引擎代码、调整 P/D 副本或证明硬件加速。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                3
+              ],
+              "text": "最值得借的是门禁分层：历史流量用于选候选，隔离测试用于验控制面，真实请求才用于判断尾延迟、完整输出以及达标吞吐。这个机制与 Infer RSI 在反复测量、保留或拒绝候选上相邻，不等于 Agent 自动改代码的 RSI。"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "为什么要把回放和放量分开",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1
+              ],
+              "text": "把请求送去更暖的副本，理论上少做 Prefill；把太多同前缀请求送向一个热门副本，又会增加等待。短请求、长上下文和多轮会话的取舍可能完全不同。回放可以固定输入及基线，把搜索成本和生产风险分开，但它看不到回放窗口外的未来流量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                0,
+                1
+              ],
+              "text": "标记为 Live 指的是 Planner 附着到运行中的 DynamoGraphDeployment，可记录请求并在主动模式修改前端策略；每个候选的性能分依然来自 DGDR 的模拟回放，不是候选承载真实请求的实测。"
+            }
+          ]
+        },
+        {
+          "id": "mechanism",
+          "title": "机制：切窗、分片、基线与落地",
+          "blocks": [
+            {
+              "type": "diagram",
+              "title": "同一份流量两次验：先验回放，再验真实副本",
+              "caption": "原创分层图。上层回答模拟候选是否可比较，下层回答控制面是否按目标落地；回退不是每次调优必经步骤。线上服务验收是额外门禁。",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                5
+              ],
+              "nodes": [
+                {
+                  "id": "cut",
+                  "label": "固定回放窗口",
+                  "detail": "把前端 request_end 记录合并为同一个窗口文件。",
+                  "column": 0,
+                  "row": 0,
+                  "tone": "communication"
+                },
+                {
+                  "id": "search",
+                  "label": "分片与探针",
+                  "detail": "固定副本和引擎；候选分片与独立重放评分探针。",
+                  "column": 1,
+                  "row": 0,
+                  "tone": "compute"
+                },
+                {
+                  "id": "score",
+                  "label": "和基线比",
+                  "detail": "评分超过门槛才推荐。单点重放一致不代表线上获益。",
+                  "column": 2,
+                  "row": 0,
+                  "tone": "control"
+                },
+                {
+                  "id": "lease",
+                  "label": "记录决策",
+                  "detail": "先持久化决策，供接任者和执行环节读取。",
+                  "column": 0,
+                  "row": 1,
+                  "tone": "control"
+                },
+                {
+                  "id": "apply",
+                  "label": "核对实际值",
+                  "detail": "开发环境主动模式才把目标写入前端；逐副本核对配置。",
+                  "column": 1,
+                  "row": 1,
+                  "tone": "communication"
+                },
+                {
+                  "id": "restore",
+                  "label": "确认恢复",
+                  "detail": "退出主动模式后观察配置收敛及回退待完成状态。未等于业务恢复。",
+                  "column": 2,
+                  "row": 1,
+                  "tone": "control"
+                }
+              ],
+              "edges": [
+                {
+                  "from": "cut",
+                  "to": "search",
+                  "label": "同一输入"
+                },
+                {
+                  "from": "search",
+                  "to": "score",
+                  "label": "基线与探针均可评分"
+                },
+                {
+                  "from": "lease",
+                  "to": "apply",
+                  "label": "先持久化"
+                },
+                {
+                  "from": "apply",
+                  "to": "restore",
+                  "label": "退出主动模式时"
+                }
+              ],
+              "presentation": {
+                "kind": "boundary",
+                "panels": [
+                  {
+                    "title": "回放决策",
+                    "tone": "compute",
+                    "nodeIds": [
+                      "cut",
+                      "search",
+                      "score"
+                    ]
+                  },
+                  {
+                    "title": "控制面确认",
+                    "tone": "control",
+                    "nodeIds": [
+                      "lease",
+                      "apply",
+                      "restore"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2,
+                5
+              ],
+              "text": "每个前端把 request_end 记录写到共享卷。Planner 在窗末后的宽限期结束时切出固定窗口，并用相同文件启动多个 DGDR Request。工作负载、引擎模型和硬件描述固定，允许搜索的仅为 overlap_score_credit、prefill_load_scale、temperature。主动落地时会设置前端路由的八个策略字段，控制范围并不等同于搜索维数。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "text": "公共随机数探针把同一个网格点单独再跑一遍，比较它与该点在分片内的得分，检查重放一致性。普通分片缺失会按缺测处理；基线不可评分或探针不一致不能当成可用比较。阈值要求严格超过，平局保留当前策略。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1
+              ],
+              "text": "官方文档示例的 108 点不是观测耗时。若用 3×36 点、并发 8、每候选上限 1800 秒，再加切窗 900 秒和启动 300 秒，算出的 12000 秒只是单片的预算下限推导，不是实际墙钟，更不包含线上验收。"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "title": "证据：同分可比较，不意味着可发布",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "标签级代码与测试源码核对，未运行源码测试",
+              "columns": [
+                "核验点",
+                "标签证据",
+                "不能推出"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "版本身份",
+                    "v1.7.0 发布存在；开发集群限定属于该标签文档。",
+                    "正式版本 ≠ 每个功能生产可用。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    0,
+                    1
+                  ]
+                },
+                {
+                  "cells": [
+                    "候选可比性",
+                    "固定引擎签名；分片和独立探针验证同点一致性；测试包含缺基线和探针偏差。",
+                    "只说明模拟证据机制，不能验证模型输出。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    2,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "分数定义",
+                    "默认 GoodputPerGPU 有 SLA 口径。回放评分以合格输出 token 吞吐为基础，不是每秒合格请求数。TTFT 作为搜索目标用均值。",
+                    "不能拿聚合值当客户端分位数或成本账。"
+                  ],
+                  "basis": "official",
+                  "sourceIndices": [
+                    3,
+                    6,
+                    7
+                  ]
+                },
+                {
+                  "cells": [
+                    "控制面回滚",
+                    "独立跟踪路由收敛与回退待处理状态；不能只查 Planner 模式。",
+                    "配置已经恢复，不代表已有请求已完成或新请求恢复达标。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tradeoffs",
+          "title": "取舍：候选覆盖、模拟偏差与配置所有权",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "官方列出部分请求类型不入轨迹，另外写入不及会丢记录且没有逐条计数。多模态、复杂采样或流量尖峰都不能由一份干净的回放文件自动代表。文档还明确限制多前端同步、路由可表达参数、模型来源和安全条件。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                2,
+                4
+              ],
+              "text": "如果只保留完成记录，超时、截断或丢失片段可能在数据里偏少。进入推荐前要用独立的入口计数与结束计数做覆盖盘点，对长尾和少流量切片设下限。即使探针通过，只有部分候选完成时也应披露覆盖率，不能把已见最优写成全局最优。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                5
+              ],
+              "text": "主动模式会接管策略字段并可覆盖人工改动。自动化如果没有唯一写入方、变更代次和停用收敛证明，会让手工止损与控制器互相打架。开发环境可先练建议模式，再把决策和执行拆开。"
+            }
+          ]
+        },
+        {
+          "id": "production",
+          "title": "生产启发：看用户请求，而不是只看模拟分",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1
+              ],
+              "text": "把路由改动写成一个可证伪假设，例如多轮长上下文流量实际复用更多 KV，且不会把热点会话堆进单个副本。沿请求记录候选版本、实际副本、真实复用、排队、首个有效内容和流结束状态。观察到先选暖副本但实际 KV 复用没升时，先查索引与实际加载或重算，不急着给策略记功。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "inference",
+              "sourceIndices": [
+                1,
+                7
+              ],
+              "text": "线上目标应独立：按同一时间窗及稳定会话分组，分别比较 p95/p99 TTFT、TPOT、非预期流截断、输出结构和单位达标请求卡时。业务要求输出正确的场景，用已标注或合成样例验证；入口无切片计数、实际生效版本未知或有缺测，先不放量。"
+            },
+            {
+              "type": "paragraph",
+              "basis": "official",
+              "sourceIndices": [
+                1
+              ],
+              "text": "上游明确不建议在生产集群打开这个实验功能；同时提醒需要隔离管理接口，并按敏感运营数据处理可能含提示词哈希链的轨迹。"
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "title": "实验矩阵：让三种失败有不同解释",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "以下均是待执行设计，不是实测",
+              "columns": [
+                "阶段",
+                "固定或改变什么",
+                "应看到什么"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "模拟回放",
+                    "开发环境固定窗口、引擎、设备、拓扑和基线；重复同一点，记录未评分候选。",
+                    "重复同点在约定误差内；缺基线或探针结果不一致时不推荐。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    2,
+                    4
+                  ]
+                },
+                {
+                  "cells": [
+                    "故障与回退",
+                    "隔离开发环境演练部分前端晚到、重启或短暂不可读；保存各前端代次。",
+                    "执行过程未完成不能宣告收敛；退出主动模式后核对每个节点初始值。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "另一套经批准的服务灰度",
+                    "只移植候选假设，不在生产启用本实验功能；先独立评估，后对一组真实负载受控验证。",
+                    "分开短请求、长上下文和多轮热点；跟踪质量、SLO 合格请求、单位成本与实际版本。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    7
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "acceptance",
+          "title": "验收：奖励收益前先要求完整证据",
+          "blocks": [
+            {
+              "type": "table",
+              "caption": "建议的发布判断，不是 Dynamo 对生产的内置承诺",
+              "columns": [
+                "判断",
+                "条件",
+                "动作"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    "保留",
+                    "基线、重复探针、有效样本或真实版本不可核。",
+                    "冻结候选，不算收益，不升流。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "cells": [
+                    "否决",
+                    "受控灰度的延迟、错误、长尾或输出完整性越过预先批准的硬门槛。",
+                    "按既有控制面回退；核对所有实例和新/存量请求恢复。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": [
+                    1,
+                    5
+                  ]
+                },
+                {
+                  "cells": [
+                    "可申请放量",
+                    "重点流量切片通过，已观察到客户端收益且没有把资源或失败成本转嫁给其他切片。",
+                    "保留完整证据，由生产负责人决定；不要直接消费模拟得分发生产。"
+                  ],
+                  "basis": "inference",
+                  "sourceIndices": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pending",
+          "title": "待验证：不同负载、模型和运行区间",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "basis": "pending",
+              "sourceIndices": [],
+              "text": "未运行 DGDR、真实网关、GPU、NPU、SGLang 或线上流量。没有 H20/昇腾适用结论、SLO 达标收益、准确开销或扩缩容收益。不同路由实现、P/D 必达负载、热状态和跨时段变化都应在各自环境核对。"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
     "id": "sglang-pd-pp-prefill-transfer-release-consensus",
     "kind": "analysis",
     "title": "SGLang P/D 与 PP：所有预填充阶段结束，才回收在途 KV",
