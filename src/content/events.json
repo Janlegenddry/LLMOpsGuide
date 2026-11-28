@@ -18,7 +18,7 @@
     "city": "杭州",
     "venue": "云谷中心 · 云谷之芯",
     "address": "杭州市西湖区灯彩街 1009 号",
-    "summary": "09:00 签到，09:30–17:30 为正式议程。15:00 真假 TTFT，16:00 推理服务不停服升级，16:30 llm-d × vLLM-MUSA 的 P/D 分离与 KV 感知路由；16:30 同时有推理性能与能效可观测。已公告全天直播，直达入口待核验。",
+    "summary": "09:00 签到，09:30–17:30 为正式议程。15:00 真假 TTFT，16:00 推理服务不停服升级，16:30 llm-d × vLLM-MUSA 的 P/D 分离与 KV 感知路由；16:30 同时有推理性能与能效可观测。不同参会指南对直播时段的说明不一致，尚未核验下午场直达入口。",
     "topics": [
       "vLLM / SGLang",
       "Kubernetes",
@@ -37,7 +37,7 @@
       "status": "pending",
       "url": null,
       "publicAccess": false,
-      "note": "主办方已公告全天直播，渠道为模力工场、蚂蚁开源、开源社、DaoCloud、霍太稳视频号。尚未核验直达直播间及各分会场分流方式，暂不提供可直接观看入口。"
+      "note": "魔搭活动页写明上午提供直播；另一公开参会指南称全天。CNCF 活动页未提供直播间，下午分论坛覆盖与直达入口均待核验。"
     },
     "replay": {
       "status": "unconfirmed",
@@ -73,9 +73,13 @@
       {
         "title": "参会指南同文镜像（仅辅助核对）",
         "url": "https://jishuzhan.net/article/2124816786940755969"
+      },
+      {
+        "title": "魔搭 KCD 参会指南（上午直播说明）",
+        "url": "https://ollama.modelscope.cn/events/441/%E6%B4%BB%E5%8A%A8%E4%BB%8B%E7%BB%8D"
       }
     ],
-    "verifiedAt": "2026-11-24",
+    "verifiedAt": "2026-11-28",
     "publicationApproved": true,
     "containsPrivateData": false
   },
@@ -404,6 +408,77 @@
       }
     ],
     "verifiedAt": "2026-11-23",
+    "publicationApproved": true,
+    "containsPrivateData": false
+  },
+  {
+    "schemaVersion": 1,
+    "id": "modelscope-devcon-shanghai-2026-12-12",
+    "title": "2026 魔搭开发者大会 · ModelScope DevCon",
+    "organizer": "魔搭 ModelScope 社区",
+    "scope": "local",
+    "region": "shanghai",
+    "scopeNote": "上海线下活动，阿里云开发者社区另列主论坛和科研专场的直播预约入口。",
+    "archiveExceptionApproved": false,
+    "status": "scheduled",
+    "startDate": "2026-12-12",
+    "endDate": "2026-12-12",
+    "startAt": null,
+    "endAt": null,
+    "timeZone": "Asia/Shanghai",
+    "format": "in-person",
+    "city": "上海",
+    "venue": "上海西岸 N 馆",
+    "address": null,
+    "summary": "议题方向包含 AI Infra、基础模型与开源生态。阿里云直播页列主论坛 10:00、科研专场 14:00（北京时间）；具体推理场次及是否在这两路覆盖待核验。",
+    "topics": [
+      "AI Infra",
+      "大模型推理",
+      "开源模型"
+    ],
+    "officialUrl": "https://modelscope.cn/DevCon2026",
+    "agendaUrl": null,
+    "registration": {
+      "status": "link",
+      "url": "https://modelscope.cn/DevCon2026",
+      "deadline": null,
+      "note": "魔搭官方日报写 12 月 11 日，活动列表曾显示 12 月 10 日 16:00，两处口径不一致，不设截止倒计时；当前受理与余位以大会官网为准。"
+    },
+    "livestream": {
+      "status": "pending",
+      "url": null,
+      "publicAccess": false,
+      "note": "来源区有主论坛（10:00）和科研专场（14:00）的官方直播预约页；观看是否需登录以及具体推理场次覆盖待核验。"
+    },
+    "replay": {
+      "status": "unconfirmed",
+      "url": null,
+      "publicAccess": false,
+      "note": "尚未确认官方回放。"
+    },
+    "sources": [
+      {
+        "title": "魔搭开发者大会官网",
+        "url": "https://modelscope.cn/DevCon2026"
+      },
+      {
+        "title": "魔搭官方日报：活动地点、主题及报名说明",
+        "url": "https://www.modelscope.cn/posts/438822"
+      },
+      {
+        "title": "魔搭活动列表入口",
+        "url": "https://ollama.modelscope.cn/events/437/%E7%AE%80%E4%BB%8B"
+      },
+      {
+        "title": "阿里云直播预约页：主论坛 10:00",
+        "url": "https://developer.aliyun.com/live/256089"
+      },
+      {
+        "title": "阿里云直播预约页：科研专场 14:00",
+        "url": "https://developer.aliyun.com/live/256090"
+      }
+    ],
+    "verifiedAt": "2026-11-28",
     "publicationApproved": true,
     "containsPrivateData": false
   }
